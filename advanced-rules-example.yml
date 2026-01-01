@@ -1,0 +1,484 @@
+# Advanced qBittorrent Rules Configuration with Resolver Layer
+# Demonstrates comprehensive use of refs with 30+ reusable components and 10 complex rules
+#
+# This example shows a realistic private tracker + public tracker management setup
+# with sophisticated automation for seeding, cleanup, categorization, and resource management.
+
+refs:
+  # ============================================================================
+  # VARIABLES (12 refs) - Centralized configuration values
+  # ============================================================================
+  vars:
+    # Ratio thresholds
+    min_ratio_private: 2.0          # Private trackers require higher ratios
+    min_ratio_public: 1.0           # Public trackers are more lenient
+    excellent_ratio: 5.0            # Consider this "well seeded"
+
+    # Time-based thresholds
+    completion_age_short: "7 days"  # Recent torrents
+    completion_age_medium: "30 days" # Standard cleanup age
+    completion_age_long: "90 days"  # Long-term seeding
+
+    # Size thresholds
+    large_file_bytes: 53687091200   # 50 GB - consider "large"
+    huge_file_bytes: 107374182400   # 100 GB - consider "huge"
+
+    # Protected categories (never auto-delete)
+    protected_categories:
+      - keep
+      - seedbox
+      - long-term
+      - permanent
+      - archive
+
+    # Content patterns
+    hd_content_pattern: '(?i).*(1080p|2160p|4k|uhd|bluray|remux).*'
+    tv_show_pattern: '(?i).*(s\d{2}e\d{2}|season[\s._-]*\d+).*'
+    movie_pattern: '(?i).*(20\d{2}|19\d{2}).*\.(mkv|mp4|avi).*'
+
+    # Activity thresholds
+    min_active_seeds: 5
+    zero_activity_hours: 168       # 7 days in hours
+
+  # ============================================================================
+  # CONDITIONS (12 refs) - Reusable condition logic
+  # ============================================================================
+  conditions:
+    # Tracker type detection
+    private-tracker:
+      any:
+        - field: trackers.url
+          operator: contains
+          value: "privatehd.to"
+        - field: trackers.url
+          operator: contains
+          value: "torrentleech.org"
+        - field: trackers.url
+          operator: contains
+          value: "iptorrents.com"
+        - field: trackers.url
+          operator: contains
+          value: "broadcasthe.net"
+        - field: trackers.url
+          operator: contains
+          value: "passthepopcorn.me"
+
+    public-tracker:
+      none:
+        - $ref: conditions.private-tracker
+
+    # Seeding quality checks
+    well-seeded-private:
+      all:
+        - field: info.ratio
+          operator: ">="
+          value: ${vars.min_ratio_private}
+        - field: info.completion_on
+          operator: older_than
+          value: ${vars.completion_age_medium}
+
+    well-seeded-public:
+      all:
+        - field: info.ratio
+          operator: ">="
+          value: ${vars.min_ratio_public}
+        - field: info.completion_on
+          operator: older_than
+          value: ${vars.completion_age_medium}
+
+    excellently-seeded:
+      all:
+        - field: info.ratio
+          operator: ">="
+          value: ${vars.excellent_ratio}
+        - field: info.seeding_time
+          operator: ">"
+          value: 2592000  # 30 days in seconds
+
+    under-seeded-private:
+      all:
+        - field: info.ratio
+          operator: "<"
+          value: ${vars.min_ratio_private}
+        - field: info.state
+          operator: in
+          value:
+            - uploading
+            - stalledUP
+            - queuedUP
+
+    # Content classification
+    hd-content:
+      all:
+        - field: info.name
+          operator: matches
+          value: ${vars.hd_content_pattern}
+
+    tv-show:
+      all:
+        - field: info.name
+          operator: matches
+          value: ${vars.tv_show_pattern}
+
+    movie:
+      all:
+        - field: info.name
+          operator: matches
+          value: ${vars.movie_pattern}
+
+    # Size-based conditions
+    large-file:
+      all:
+        - field: info.size
+          operator: ">"
+          value: ${vars.large_file_bytes}
+
+    huge-file:
+      all:
+        - field: info.size
+          operator: ">"
+          value: ${vars.huge_file_bytes}
+
+    # Activity monitoring
+    no-activity:
+      all:
+        - field: info.num_leechs
+          operator: "=="
+          value: 0
+        - field: info.num_seeds
+          operator: "<="
+          value: ${vars.min_active_seeds}
+        - field: info.last_activity
+          operator: older_than
+          value: ${vars.zero_activity_hours} hours
+
+    # Protection checks
+    protected-content:
+      any:
+        - field: info.category
+          operator: in
+          value: ${vars.protected_categories}
+        - field: info.tags
+          operator: contains
+          value: "keep"
+        - field: info.tags
+          operator: contains
+          value: "!delete"
+
+  # ============================================================================
+  # ACTIONS (6 refs) - Reusable action sequences
+  # ============================================================================
+  actions:
+    # Safe deletion workflow
+    safe-delete:
+      - type: add_tag
+        params:
+          tags:
+            - pending-delete
+            - auto-cleanup
+      - type: stop
+      - type: set_category
+        params:
+          category: cleanup-queue
+
+    # Aggressive seeding for private trackers
+    force-seed-private:
+      - type: force_start
+      - type: set_upload_limit
+        params:
+          limit: -1  # Unlimited
+      - type: add_tag
+        params:
+          tags:
+            - force-seeding
+            - private-boost
+
+    # Tag and categorize HD content
+    process-hd-content:
+      - type: add_tag
+        params:
+          tags:
+            - hd
+            - quality-content
+      - type: set_category
+        params:
+          category: hd-content
+      - type: increase_priority
+
+    # Pause low-activity torrents
+    pause-inactive:
+      - type: stop
+      - type: add_tag
+        params:
+          tags:
+            - paused-inactive
+            - low-priority
+      - type: set_upload_limit
+        params:
+          limit: 0
+
+    # Tag excellent seeders
+    reward-excellent-seeding:
+      - type: add_tag
+        params:
+          tags:
+            - excellent-seeder
+            - ratio-hero
+            - ⭐-star-content
+
+    # Bandwidth management for large files
+    limit-large-upload:
+      - type: set_upload_limit
+        params:
+          limit: 5242880  # 5 MB/s
+      - type: add_tag
+        params:
+          tags:
+            - bandwidth-limited
+            - large-file
+
+# ============================================================================
+# RULES (10 rules) - Complex automation workflows
+# ============================================================================
+rules:
+  # --------------------------------------------------------------------------
+  # Rule 1: Private Tracker Under-Seeding Emergency
+  # --------------------------------------------------------------------------
+  - name: "Force seed private tracker torrents under ratio"
+    enabled: true
+    priority: 100  # Highest priority
+    context: download-finished
+    stop_on_match: false
+    conditions:
+      - $ref: conditions.private-tracker
+      - $ref: conditions.under-seeded-private
+      - none:
+          - $ref: conditions.protected-content
+    actions:
+      - $ref: actions.force-seed-private
+
+  # --------------------------------------------------------------------------
+  # Rule 2: Private Tracker Cleanup - Well Seeded
+  # --------------------------------------------------------------------------
+  - name: "Cleanup well-seeded private tracker torrents"
+    enabled: true
+    priority: 50
+    context: weekly-cleanup
+    conditions:
+      - $ref: conditions.private-tracker
+      - $ref: conditions.well-seeded-private
+      - none:
+          - $ref: conditions.protected-content
+      - any:  # Additional safety: must be old OR inactive
+          - all:
+              - field: info.completion_on
+                operator: older_than
+                value: ${vars.completion_age_long}
+          - $ref: conditions.no-activity
+    actions:
+      - $ref: actions.safe-delete
+
+  # --------------------------------------------------------------------------
+  # Rule 3: Public Tracker Quick Cleanup
+  # --------------------------------------------------------------------------
+  - name: "Cleanup public tracker torrents after medium term"
+    enabled: true
+    priority: 40
+    context: weekly-cleanup
+    conditions:
+      - $ref: conditions.public-tracker
+      - $ref: conditions.well-seeded-public
+      - none:
+          - $ref: conditions.protected-content
+          - $ref: conditions.hd-content  # Keep HD content longer
+    actions:
+      - $ref: actions.safe-delete
+
+  # --------------------------------------------------------------------------
+  # Rule 4: HD Content Auto-Organization
+  # --------------------------------------------------------------------------
+  - name: "Auto-categorize and prioritize HD content from private trackers"
+    enabled: true
+    priority: 90
+    context: torrent-imported
+    stop_on_match: false
+    conditions:
+      - $ref: conditions.private-tracker
+      - $ref: conditions.hd-content
+      - any:
+          - $ref: conditions.tv-show
+          - $ref: conditions.movie
+    actions:
+      - $ref: actions.process-hd-content
+
+  # --------------------------------------------------------------------------
+  # Rule 5: Reward Excellent Seeders
+  # --------------------------------------------------------------------------
+  - name: "Tag and celebrate excellent seeding achievements"
+    enabled: true
+    priority: 30
+    context: weekly-cleanup
+    stop_on_match: false
+    conditions:
+      - $ref: conditions.excellently-seeded
+      - any:
+          - $ref: conditions.private-tracker
+          - $ref: conditions.hd-content
+    actions:
+      - $ref: actions.reward-excellent-seeding
+
+  # --------------------------------------------------------------------------
+  # Rule 6: Pause Inactive Large Files
+  # --------------------------------------------------------------------------
+  - name: "Pause large files with no activity to save resources"
+    enabled: true
+    priority: 25
+    context: weekly-cleanup
+    conditions:
+      - $ref: conditions.large-file
+      - $ref: conditions.no-activity
+      - none:
+          - $ref: conditions.protected-content
+          - field: info.ratio
+            operator: "<"
+            value: ${vars.min_ratio_public}  # Don't pause if under-seeded
+    actions:
+      - $ref: actions.pause-inactive
+
+  # --------------------------------------------------------------------------
+  # Rule 7: Bandwidth Management for Huge Files
+  # --------------------------------------------------------------------------
+  - name: "Limit upload speed for huge files to prevent bandwidth hogging"
+    enabled: true
+    priority: 80
+    context: download-finished
+    stop_on_match: false
+    conditions:
+      - $ref: conditions.huge-file
+      - all:
+          - field: info.state
+            operator: in
+            value:
+              - uploading
+              - forcedUP
+      - none:
+          - $ref: conditions.under-seeded-private  # Don't limit private under-seeded
+    actions:
+      - $ref: actions.limit-large-upload
+
+  # --------------------------------------------------------------------------
+  # Rule 8: Emergency Cleanup - Huge Old Public Torrents
+  # --------------------------------------------------------------------------
+  - name: "Aggressive cleanup of huge old public torrents"
+    enabled: false  # Disabled by default - enable when space needed
+    priority: 10
+    context: manual
+    conditions:
+      - $ref: conditions.public-tracker
+      - $ref: conditions.huge-file
+      - all:
+          - field: info.completion_on
+            operator: older_than
+            value: ${vars.completion_age_short}
+          - field: info.ratio
+            operator: ">="
+            value: 0.5  # At least 50% uploaded
+      - none:
+          - $ref: conditions.protected-content
+    actions:
+      - type: add_tag
+        params:
+          tags:
+            - emergency-cleanup
+            - space-recovery
+      - $ref: actions.safe-delete
+
+  # --------------------------------------------------------------------------
+  # Rule 9: Mixed Rule - Private HD TV Shows Special Treatment
+  # --------------------------------------------------------------------------
+  - name: "Special handling for private tracker HD TV shows"
+    enabled: true
+    priority: 95
+    context: torrent-imported
+    stop_on_match: false
+    conditions:
+      - $ref: conditions.private-tracker
+      - $ref: conditions.hd-content
+      - $ref: conditions.tv-show
+      - all:  # Inline condition mixed with refs
+          - field: info.size
+            operator: ">"
+            value: 2147483648  # > 2 GB per episode
+    actions:
+      - $ref: actions.process-hd-content
+      - $ref: actions.force-seed-private
+      - type: add_tag  # Inline action mixed with refs
+        params:
+          tags:
+            - premium-tv
+            - auto-managed
+      - type: set_category
+        params:
+          category: tv-premium
+
+  # --------------------------------------------------------------------------
+  # Rule 10: Long-Term Archive Protection
+  # --------------------------------------------------------------------------
+  - name: "Protect and maintain long-term archive content"
+    enabled: true
+    priority: 99  # Very high priority to prevent deletion
+    context: weekly-cleanup
+    stop_on_match: true  # Stop processing if matched
+    conditions:
+      - any:
+          - $ref: conditions.protected-content
+          - all:  # Auto-protect excellent private seeds
+              - $ref: conditions.private-tracker
+              - $ref: conditions.excellently-seeded
+              - field: info.completion_on
+                operator: older_than
+                value: ${vars.completion_age_long}
+    actions:
+      - type: add_tag
+        params:
+          tags:
+            - protected
+            - long-term-seed
+            - 🔒-locked
+      - type: set_category
+        params:
+          category: archive
+      - type: force_start  # Ensure it keeps seeding
+      - $ref: actions.reward-excellent-seeding
+
+# ============================================================================
+# SUMMARY
+# ============================================================================
+# This configuration demonstrates:
+#
+# ✅ 12 variables for centralized configuration
+# ✅ 12 reusable conditions (tracker detection, seeding quality, content type)
+# ✅ 6 reusable action sequences
+# ✅ 10 sophisticated rules covering:
+#    - Private tracker ratio management
+#    - Public tracker cleanup
+#    - HD content organization
+#    - Bandwidth management
+#    - Long-term archiving
+#    - Emergency cleanup procedures
+#
+# Total refs: 30 (12 vars + 12 conditions + 6 actions)
+# Total rules: 10
+#
+# Key Features Demonstrated:
+# - Variable substitution with type preservation
+# - Reference expansion (conditions & actions)
+# - Nested references (refs containing refs)
+# - Mixed refs + inline conditions
+# - Priority-based rule ordering
+# - Context-aware execution
+# - Protection mechanisms
+# - Resource management
+#
+# This would resolve to ~500 lines of fully expanded rules without
+# the resolver layer, demonstrating massive reduction in repetition.
