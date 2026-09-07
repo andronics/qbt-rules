@@ -228,6 +228,52 @@ class TestLogicalGroups:
         result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
         assert result is True
 
+    # Bare list conditions (no 'all'/'any'/'none' wrapper) - implicit AND
+    #
+    # Regression coverage: before this was fixed, a bare list didn't match
+    # 'all' in conditions / 'any' in conditions / 'none' in conditions (list
+    # membership checks against a list of dicts, always False), so evaluate()
+    # fell through to `return True` unconditionally -- every rule written in
+    # this style (as advanced-rules-example.yml is, throughout) matched every
+    # torrent regardless of its conditions.
+    def test_bare_list_all_conditions_true(self, mock_api, sample_torrent):
+        """Bare list: all entries true returns True."""
+        evaluator = ConditionEvaluator(mock_api)
+        conditions = [
+            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},
+            {'field': 'info.state', 'operator': '==', 'value': 'uploading'},
+        ]
+        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        assert result is True
+
+    def test_bare_list_one_condition_false(self, mock_api, sample_torrent):
+        """Bare list: one false entry returns False (must behave as AND, not vacuous True)."""
+        evaluator = ConditionEvaluator(mock_api)
+        conditions = [
+            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},  # True
+            {'field': 'info.ratio', 'operator': '>=', 'value': 999.0},  # False
+        ]
+        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        assert result is False
+
+    def test_bare_list_with_nested_logical_group(self, mock_api, sample_torrent):
+        """Bare list entries can themselves be nested all/any/none groups."""
+        evaluator = ConditionEvaluator(mock_api)
+        conditions = [
+            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},  # True
+            {'none': [
+                {'field': 'info.state', 'operator': '==', 'value': 'downloading'},  # False
+            ]},
+        ]
+        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        assert result is True
+
+    def test_bare_list_empty(self, mock_api, sample_torrent):
+        """Bare list: empty list returns True (vacuous truth, matches 'all': [])."""
+        evaluator = ConditionEvaluator(mock_api)
+        result = evaluator.evaluate(sample_torrent, [], current_context='adhoc-run')
+        assert result is True
+
     def test_combined_logical_groups(self, mock_api, sample_torrent):
         """Combined all/any/none groups."""
         evaluator = ConditionEvaluator(mock_api)

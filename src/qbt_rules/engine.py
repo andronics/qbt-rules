@@ -59,13 +59,14 @@ class ConditionEvaluator:
         self.transfer_info = None
         self.app_preferences = None
 
-    def evaluate(self, torrent: Dict, conditions: Dict, current_context: Optional[str] = None, required_context: Optional[Any] = None) -> bool:
+    def evaluate(self, torrent: Dict, conditions: Any, current_context: Optional[str] = None, required_context: Optional[Any] = None) -> bool:
         """
         Evaluate all conditions for a torrent
 
         Args:
             torrent: Torrent dictionary from qBittorrent API
-            conditions: Conditions dictionary from rule
+            conditions: Conditions from rule. Either a dict with 'all'/'any'/'none' keys,
+                        or a bare list of condition entries (treated as an implicit 'all')
             current_context: Current runtime context (torrent-imported, download-finished, weekly-cleanup, adhoc-run, custom, or None)
             required_context: Context requirement from rule level (string or list of strings)
                             When None, rule has no context requirement and executes regardless of runtime context
@@ -76,6 +77,9 @@ class ConditionEvaluator:
         Notes:
             - Rules WITHOUT context (required_context=None) execute regardless of runtime context
             - Rules WITH context only execute when runtime context matches their requirement
+            - A bare list for `conditions` (no 'all'/'any'/'none' wrapper) is treated as an
+              implicit 'all': every entry must match. Without this, a bare list silently
+              matched nothing in 'all'/'any'/'none' and always evaluated to True.
         """
         try:
             # Check context requirement first (from rule level, not inside conditions)
@@ -83,6 +87,10 @@ class ConditionEvaluator:
                 if not self._evaluate_context(current_context, required_context):
                     return False
             # If required_context is None, rule has no context requirement → continue to conditions
+
+            # A bare list of conditions is shorthand for {'all': conditions}
+            if isinstance(conditions, list):
+                return self._evaluate_all(torrent, conditions)
 
             # Evaluate logical groups
             if 'all' in conditions:

@@ -127,6 +127,52 @@ documents two capabilities that don't actually exist in the engine:
       from its summary comment, so the example only documents features that
       actually work.
 
+### Bug: bare-list `conditions:` silently matched everything (fixed)
+
+Found while drafting new rules for the live deploy, using the same bare-list
+style `advanced-rules-example.yml` uses throughout
+(`conditions: [{$ref: ...}, {$ref: ...}, {none: [...]}]`, no `all:`/`any:`
+wrapper). `engine.py`'s `evaluate()` only checked `'all' in conditions`,
+`'any' in conditions`, `'none' in conditions` — when `conditions` is a
+`list` of dicts rather than a dict, none of those checks can ever be true
+(`in` on a list checks for a matching *element*, not a dict key), so it fell
+through to `return True` unconditionally. **Every one of the 10 rules in
+`advanced-rules-example.yml` matched every torrent regardless of its
+conditions** — confirmed empirically with `ConditionEvaluator.evaluate()`
+directly before touching the fix.
+
+Also confirmed while investigating: `contains` with a *list* value (e.g. a
+naive `${vars.trackers_x}` substitution of a URL list into a `contains`
+condition) throws inside `_apply_operator` (`'in <string>' requires string
+as left operand, not list`), which the engine's broad `try/except` swallows
+and just returns `False` — silently never-matches rather than erroring
+loudly. If that pattern ever ended up inside a `none:` protection clause,
+the protection would silently never trigger, which is the wrong-shaped
+failure to have on a destructive-action guard. Not the same bug as the
+bare-list issue, but same root cause: an unvalidated shape assumption in the
+operator/condition layer failing silently instead of loudly.
+
+**Fixed**: `evaluate()` in `engine.py` now treats a bare list as an
+implicit `{'all': [...]}` — `isinstance(conditions, list)` delegates
+straight to `_evaluate_all()`, which already handles nested `all`/`any`/
+`none` dicts inside each list entry correctly via `_evaluate_condition()`.
+Purely additive — dict-wrapped `conditions:` (what production `rules.yml`
+uses) is completely unaffected. Added 4 regression tests in
+`test_condition_evaluator.py` (`TestBareListConditions`-style, inline in
+`TestLogicalGroups`): all-true, one-false, nested-logical-group, and empty
+list. Full suite: 1028 passed (was 1024), `engine.py` still 100% coverage.
+
+Side effect: `advanced-rules-example.yml` did **not** need rewriting after
+all — its bare-list style is now genuinely supported rather than silently
+broken, so it's accurate as originally written (minus the already-stripped
+`priority:` field).
+
+Not yet cut as a release — next patch version (`v0.5.3`?) should include
+this fix before the live `compose.yml` rule additions (protected-content,
+under-seeded-private force-seed, stalled-torrent pause) go out, since two
+of those new rules use bare-list conditions and depend on this fix to work
+correctly.
+
 ### Decided
 - Floating "latest build from main" tag renamed to `edge` (was `dev`, which
   never actually existed as a real published tag). `latest` now only applies
