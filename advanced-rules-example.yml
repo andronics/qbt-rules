@@ -246,7 +246,6 @@ rules:
   # --------------------------------------------------------------------------
   - name: "Force seed private tracker torrents under ratio"
     enabled: true
-    priority: 100  # Highest priority
     context: download-finished
     stop_on_match: false
     conditions:
@@ -262,7 +261,6 @@ rules:
   # --------------------------------------------------------------------------
   - name: "Cleanup well-seeded private tracker torrents"
     enabled: true
-    priority: 50
     context: weekly-cleanup
     conditions:
       - $ref: conditions.private-tracker
@@ -283,7 +281,6 @@ rules:
   # --------------------------------------------------------------------------
   - name: "Cleanup public tracker torrents after medium term"
     enabled: true
-    priority: 40
     context: weekly-cleanup
     conditions:
       - $ref: conditions.public-tracker
@@ -299,7 +296,6 @@ rules:
   # --------------------------------------------------------------------------
   - name: "Auto-categorize and prioritize HD content from private trackers"
     enabled: true
-    priority: 90
     context: torrent-imported
     stop_on_match: false
     conditions:
@@ -316,7 +312,6 @@ rules:
   # --------------------------------------------------------------------------
   - name: "Tag and celebrate excellent seeding achievements"
     enabled: true
-    priority: 30
     context: weekly-cleanup
     stop_on_match: false
     conditions:
@@ -332,7 +327,6 @@ rules:
   # --------------------------------------------------------------------------
   - name: "Pause large files with no activity to save resources"
     enabled: true
-    priority: 25
     context: weekly-cleanup
     conditions:
       - $ref: conditions.large-file
@@ -350,7 +344,6 @@ rules:
   # --------------------------------------------------------------------------
   - name: "Limit upload speed for huge files to prevent bandwidth hogging"
     enabled: true
-    priority: 80
     context: download-finished
     stop_on_match: false
     conditions:
@@ -371,7 +364,6 @@ rules:
   # --------------------------------------------------------------------------
   - name: "Aggressive cleanup of huge old public torrents"
     enabled: false  # Disabled by default - enable when space needed
-    priority: 10
     context: manual
     conditions:
       - $ref: conditions.public-tracker
@@ -398,7 +390,6 @@ rules:
   # --------------------------------------------------------------------------
   - name: "Special handling for private tracker HD TV shows"
     enabled: true
-    priority: 95
     context: torrent-imported
     stop_on_match: false
     conditions:
@@ -426,7 +417,6 @@ rules:
   # --------------------------------------------------------------------------
   - name: "Protect and maintain long-term archive content"
     enabled: true
-    priority: 99  # Very high priority to prevent deletion
     context: weekly-cleanup
     stop_on_match: true  # Stop processing if matched
     conditions:
@@ -475,7 +465,6 @@ rules:
 # - Reference expansion (conditions & actions)
 # - Nested references (refs containing refs)
 # - Mixed refs + inline conditions
-# - Priority-based rule ordering
 # - Context-aware execution
 # - Protection mechanisms
 # - Resource management

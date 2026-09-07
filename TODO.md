@@ -52,8 +52,11 @@ day-to-day maintenance items instead.
       only ever bumped `__version__.py` — it now bumps `pyproject.toml` too.
       Verified the new check logic locally against both a matching and a
       deliberately mismatched version (correctly passes / hard-fails).
-      Not yet verified with a live tag push through actual GitHub Actions —
-      next real release should confirm the check behaves the same way in CI.
+      **Verified live** in `v0.5.2`: ran `scripts/bump-version.sh patch`
+      properly this time (bump+commit before tagging), pushed, and watched
+      "Verify version matches tag" pass for real in GitHub Actions. Confirmed
+      `ghcr.io/andronics/qbt-rules:0.5.2 --version` reports `v0.5.2` —
+      tag and baked-in version agree for the first time ever in this project.
 - [ ] Consider whether `pytest` thread-race warnings in `test_sqlite_queue.py`
       (`sqlite3.OperationalError: database is locked` under
       `TestSQLiteQueueThreadSafety`) indicate a real concurrency bug in
@@ -72,6 +75,57 @@ day-to-day maintenance items instead.
       unused inside the deployed `qbittorrent-rules` container (pre-package
       prototypes, not referenced by `config.yml`). Harmless but confusing —
       candidate for cleanup on the deploy side, not this repo.
+
+### Resolver layer (v0.5.0+) — two documented-but-unimplemented features
+
+While explaining the refs/resolver layer, found `advanced-rules-example.yml`
+documents two capabilities that don't actually exist in the engine:
+
+**1. `priority:` field on rules** — the example gives every rule a numeric
+   `priority` (10–100) implying priority-based execution order. Grepped
+   `engine.py`: `priority` is never read anywhere. Rules execute strictly in
+   file order (confirmed live: "execute in file order" in `qbt-rules.log`).
+   The field is currently inert.
+
+   - Pro of implementing: decouples logical importance from physical file
+     position; would stop the example file from documenting a lie.
+   - Con: real risk to get wrong. Any `rules.yml` without explicit priorities
+     (production's, currently) needs a deterministic tie-break — almost
+     certainly "preserve file order" — and a subtle bug here could silently
+     reorder the two security-critical rules (archive block, exe/scr block)
+     to run *after* other rules instead of first. More test surface for a
+     ruleset that's currently only 7 rules, where file order is already
+     fully sufficient.
+   - **Recommendation**: don't implement yet — strip `priority:` from the
+     example file instead (done, see below). Revisit only if the ruleset
+     grows large enough that physical reordering becomes the real pain
+     point.
+
+**2. Instance-scoped variable overrides** — `resolver.py:57-84` fully
+   implements per-instance variable overrides (looks complete), but
+   `config.py:497` hardcodes `instance_id=None` (there's literally a `TODO`
+   comment on config.py:496), so it's unreachable. This would matter for
+   running one shared ruleset across *multiple* qBittorrent instances (e.g.
+   a private-tracker box + a public seedbox) with per-instance variable
+   overrides (different ratio thresholds, hosts, etc.).
+
+   - Pro: exactly what the advanced example's private/public tracker framing
+     gestures at; would eliminate near-duplicate rule files if a second
+     qBittorrent instance is ever added.
+   - Con: much bigger lift than it looks. The rest of the app (single
+     `QBittorrentAPI` client, job queue schema, webhook routes, every
+     `AutoRun` hook URL) is built around exactly one qBittorrent instance
+     per server process. Wiring real multi-instance support through means
+     threading an `&instance=` dimension through jobs/webhooks/CLI, plus no
+     good way to test it without an actual second qBittorrent instance.
+   - **Recommendation**: leave alone entirely. You run one qBittorrent
+     instance today — this is speculative infrastructure (YAGNI) until that
+     changes.
+
+- [x] Stripped `priority:` from every rule in `advanced-rules-example.yml`
+      and removed the now-inaccurate "Priority-based rule ordering" bullet
+      from its summary comment, so the example only documents features that
+      actually work.
 
 ### Decided
 - Floating "latest build from main" tag renamed to `edge` (was `dev`, which
