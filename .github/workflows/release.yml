@@ -52,19 +52,26 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Update version in code
+      - name: Verify version matches tag
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          # Update __version__.py
-          sed -i "s/__version__ = .*/__version__ = \"$VERSION\"/" src/qbt_rules/__version__.py
-          echo "Updated src/qbt_rules/__version__.py to version $VERSION"
-          cat src/qbt_rules/__version__.py
+          FILE_VERSION=$(grep -oP '__version__ = "\K[^"]+' src/qbt_rules/__version__.py)
+          TOML_VERSION=$(grep -oP '^version = "\K[^"]+' pyproject.toml)
 
-          # Update pyproject.toml
-          sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
-          echo "Updated pyproject.toml to version $VERSION"
-          grep "^version = " pyproject.toml
+          if [ "$FILE_VERSION" != "$VERSION" ] || [ "$TOML_VERSION" != "$VERSION" ]; then
+            echo "::error::Version mismatch for tag v$VERSION:"
+            echo "::error::  src/qbt_rules/__version__.py has $FILE_VERSION"
+            echo "::error::  pyproject.toml has $TOML_VERSION"
+            echo ""
+            echo "The tagged commit must already contain the bumped version files."
+            echo "Never tag manually — use ./scripts/bump-version.sh <major|minor|patch>,"
+            echo "which bumps both files and commits BEFORE creating the tag, then"
+            echo "'git push && git push --tags' to trigger this release."
+            exit 1
+          fi
+
+          echo "✓ Version files match tag v$VERSION"
 
       - name: Install package
         run: |
@@ -134,20 +141,6 @@ jobs:
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Commit version update
-        if: github.event_name == 'push'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          if git diff --quiet src/qbt_rules/__version__.py pyproject.toml; then
-            echo "No version changes to commit"
-          else
-            git add src/qbt_rules/__version__.py pyproject.toml
-            git commit -m "chore: Bump version to ${{ steps.version.outputs.version }}"
-            git push origin HEAD:main || echo "Could not push to main (might be protected)"
-          fi
 
       - name: Release summary
         run: |

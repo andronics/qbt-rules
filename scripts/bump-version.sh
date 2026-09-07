@@ -107,17 +107,19 @@ if [ "$CURRENT_BRANCH" != "main" ]; then
     fi
 fi
 
-# Update version in __version__.py
-echo -e "${BLUE}Updating version file...${NC}"
+# Update version in __version__.py and pyproject.toml
+PYPROJECT_FILE="$ROOT_DIR/pyproject.toml"
+echo -e "${BLUE}Updating version files...${NC}"
 sed -i "s/__version__ = .*/__version__ = \"${NEW_VERSION}\"/" "$VERSION_FILE"
+sed -i "s/^version = .*/version = \"${NEW_VERSION}\"/" "$PYPROJECT_FILE"
 
 # Show diff
 echo -e "${YELLOW}Changes:${NC}"
-git diff "$VERSION_FILE"
+git diff "$VERSION_FILE" "$PYPROJECT_FILE"
 
 # Commit version change
 echo -e "${BLUE}Committing version change...${NC}"
-git add "$VERSION_FILE"
+git add "$VERSION_FILE" "$PYPROJECT_FILE"
 git commit -m "chore: Bump version to ${NEW_VERSION}"
 
 # Create and push tag
