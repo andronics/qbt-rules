@@ -172,10 +172,11 @@ both succeeded on the real tag push, confirmed via `--version` inside the
 published image. Production `compose.yml` now runs `ghcr.io/andronics/
 qbt-rules:0.5.3` (was `0.5.1`).
 
-### Bug: `$ref: actions.X` breaks when actions.X is a list (found deploying v0.5.3)
+### Bug: `$ref: actions.X` breaks when actions.X is a list (found deploying v0.5.3, fixed)
 
 While deploying the four new rules to production, discovered a second,
-separate resolver bug — this one **not** fixed, worked around instead.
+separate resolver bug — worked around in production at the time, now fixed
+properly in the engine.
 
 `refs.actions.*` blocks are lists (an action sequence, e.g.
 `force-seed-private: [force_start, set_upload_limit, add_tag]`). Referencing
@@ -214,15 +215,30 @@ rules now do one `add_tag` with both tags combined instead of two actions;
 clean: `Loaded 9 rules`, a full `context=cron` sweep against 22 live
 torrents — 16 rule matches, 8 actions executed, zero errors.
 
-**Not fixed in the engine** — would need `_expand_refs` (or the call site in
-`resolve_rule`) to detect a `$ref` to an actions-group specifically and
-splice its list into the parent rather than nesting it, which is more
-involved than the bare-list conditions fix (that one only needed a type
-check at the top of `evaluate()`; this one needs the *expansion* step to
-behave differently depending on whether it's producing a single node or a
-list-of-nodes for splicing). Worth doing eventually since it'd restore the
-actions-dedup capability and fix the advanced example for real, but not
-urgent — production works correctly with actions inlined instead.
+**Fixed properly in the engine.** `_expand_refs`'s list-handling now tracks
+whether each item was itself a `$ref` node; if its expansion is a list, the
+list is spliced (`.extend()`) into the parent instead of appended
+(`.append()`) as a single nested element. Only triggers for items that were
+actually `$ref` nodes — a literal nested list already present in the source
+YAML (unrelated edge case, not expected in this rules DSL but worth
+guarding) is left untouched. `conditions.*` refs are unaffected by
+construction (they resolve to dicts, so nesting as a single list item was
+already correct — verified this stays true with a dedicated regression
+test).
+
+9 existing tests had encoded the old nested-list shape as expected
+behavior (effectively asserting the bug) — updated all of them. Added 4 new
+regression tests covering: mixed ref+inline splice, single-ref-only splice,
+condition-ref nesting unaffected, and literal nested lists not flattened.
+Full suite: 1032 passed (was 1028), CI green on `main`.
+
+Not yet cut as a release or redeployed to production — production currently
+runs the inlined-actions workaround from `v0.5.3`, which still works fine.
+Next step, if wanted: cut `v0.5.4`, then restore the `tag-private` /
+`force-seed-private` refs in production `rules.yml` to actually exercise
+the fix live (the same "prove it live" pattern used for every other fix
+tonight), and fix `advanced-rules-example.yml` Rule 9's ref+inline mixing
+now that it's no longer broken.
 
 ### Aside: Docker Compose's own `${VAR}` interpolation collides with qbt-rules' `${vars.x}` syntax
 
