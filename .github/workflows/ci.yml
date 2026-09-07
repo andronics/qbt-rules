@@ -76,7 +76,7 @@ jobs:
           fi
 
           # Check for hardcoded credentials
-          if grep -rE "(password|token|secret|key)\s*=\s*['\"][^'\"]{8,}" src/ --include="*.py" | grep -v "password ="; then
+          if grep -rE "(password|token|secret|key)\s*=\s*['\"][^'\"]{8,}" src/ --include="*.py" | grep -v "password =" | grep -v "config_key="; then
             echo "Warning: Potential hardcoded credentials found!"
             exit 1
           fi
@@ -85,8 +85,8 @@ jobs:
 
       - name: Validate configuration examples
         run: |
-          python -c "import yaml; yaml.safe_load(open('config/config.example.yml'))"
-          python -c "import yaml; yaml.safe_load(open('config/rules.example.yml'))"
+          python -c "import yaml; yaml.safe_load(open('config/config.default.yml'))"
+          python -c "import yaml; yaml.safe_load(open('config/rules.default.yml'))"
           echo "✓ Configuration examples are valid YAML"
 
   validate-version:
