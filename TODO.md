@@ -232,13 +232,19 @@ regression tests covering: mixed ref+inline splice, single-ref-only splice,
 condition-ref nesting unaffected, and literal nested lists not flattened.
 Full suite: 1032 passed (was 1028), CI green on `main`.
 
-Not yet cut as a release or redeployed to production — production currently
-runs the inlined-actions workaround from `v0.5.3`, which still works fine.
-Next step, if wanted: cut `v0.5.4`, then restore the `tag-private` /
-`force-seed-private` refs in production `rules.yml` to actually exercise
-the fix live (the same "prove it live" pattern used for every other fix
-tonight), and fix `advanced-rules-example.yml` Rule 9's ref+inline mixing
-now that it's no longer broken.
+**Update**: cut and deployed as `v0.5.4`. Production `compose.yml` restored
+to actually use `$ref: actions.tag-private` / `$ref: actions.force-seed-private`
+(reverted the `v0.5.3` inlined-actions workaround) to prove the fix live in
+the exact scenario that crashed before. Confirmed: `Loaded 9 rules`, full
+`context=cron` sweep against 22 live torrents — 16 matches, 8 actions
+executed, zero errors, `/api/version` reports `0.5.4`.
+
+- [ ] `advanced-rules-example.yml` Rule 9 ("Special handling for private
+      tracker HD TV shows") still mixes `$ref: actions.process-hd-content` +
+      `$ref: actions.force-seed-private` + inline actions the way that used
+      to crash — worth revisiting now that the engine handles it correctly,
+      just to confirm the example actually runs end-to-end for real (never
+      verified, only read).
 
 ### Aside: Docker Compose's own `${VAR}` interpolation collides with qbt-rules' `${vars.x}` syntax
 
