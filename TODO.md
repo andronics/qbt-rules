@@ -35,16 +35,25 @@ day-to-day maintenance items instead.
       `compose.yml` now pins `ghcr.io/andronics/qbt-rules:0.5.1`. Verified via
       `docker inspect`, `/api/health`, `/api/version`, a clean `Loaded 7 rules`
       startup, and a manual `context=cron` sweep against the live torrent list.
-- [ ] **New bug found while verifying the pin**: `/api/version` on the freshly
-      deployed `0.5.1` image reports internal version `"0.5.0"`, not `0.5.1`.
-      Root cause: `release.yml` tags `vX.Y.Z` on the pre-bump commit, then
-      pushes the `__version__.py`/`pyproject.toml` bump as a *separate* commit
-      to `main` afterward — but `docker-build.yml` fires on the same tag push
-      and builds from the tag's commit (pre-bump), so the baked-in version
-      string is always one release behind the Docker tag it ships under.
-      Cosmetic only (doesn't affect rule behavior), but worth fixing the
-      ordering in `release.yml` (bump version and commit *before* creating/
-      pushing the tag, not after) so `/api/version` and the image tag agree.
+- [x] **Bug found while verifying the pin**: `/api/version` on the freshly
+      deployed `0.5.1` image reported internal version `"0.5.0"`, not `0.5.1`.
+      Real root cause: `v0.5.1` was tagged manually (`git tag && git push`)
+      instead of via `scripts/bump-version.sh`, which is the only thing that
+      bumps the version files *before* creating the tag. `release.yml`'s old
+      "Update version in code" + "Commit version update" steps silently
+      re-bumped and re-committed to `main` *after* the tag already existed —
+      too late for `docker-build.yml`, which had already built from the
+      pre-bump commit the tag pointed to. **Fixed**: `release.yml` no longer
+      auto-corrects; it now hard-fails ("Verify version matches tag") if the
+      tagged commit's `__version__.py`/`pyproject.toml` don't already match
+      the tag name, forcing `bump-version.sh` to be used and turning any
+      future manual-tag mistake into an immediate CI failure instead of a
+      silent, permanent mismatch. Also fixed `bump-version.sh` itself, which
+      only ever bumped `__version__.py` — it now bumps `pyproject.toml` too.
+      Verified the new check logic locally against both a matching and a
+      deliberately mismatched version (correctly passes / hard-fails).
+      Not yet verified with a live tag push through actual GitHub Actions —
+      next real release should confirm the check behaves the same way in CI.
 - [ ] Consider whether `pytest` thread-race warnings in `test_sqlite_queue.py`
       (`sqlite3.OperationalError: database is locked` under
       `TestSQLiteQueueThreadSafety`) indicate a real concurrency bug in
