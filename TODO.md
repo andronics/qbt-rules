@@ -313,3 +313,41 @@ coverage. Cut as `v0.5.5`, deployed live: `Loaded 9 rules`, sweep against
 22 real torrents produced **identical match counts** to the regex version
 (2 iptorrent, 6 torrentday, 0 myanonamouse — same as pre-change), zero
 errors, `/api/version` reports `0.5.5`.
+
+### Bug: negation operators against list fields used ANY instead of ALL (found + fixed, v0.5.6)
+
+Found while drafting a `tagged-private`/`tagged-public` condition pair at
+andronics' request — the exact `not_contains "private"` pattern already
+live in production's "Delete Public Torrents" rule.
+
+`info.tags` resolves to a **list** (`parse_tags` splits on comma).
+`_apply_operator`'s collection handling applied `any(...)` uniformly across
+every operator. Correct for positive checks (`contains`/`==`/`in`: "does at
+least one item match"), **wrong** for negations (`not_contains`/`!=`/
+`not_in`): `any(item satisfies negation)` is true if even one item fails to
+match, which is true for almost any multi-item collection — it doesn't mean
+"none of the items match."
+
+Confirmed live: for tags `['private', 'iptorrent.com']` (exactly what the
+tag rules produce), `not_contains "private"` incorrectly returned `True`
+because the `iptorrent.com` tag alone satisfied "doesn't contain private,"
+regardless of the `private` tag sitting right next to it. Verified all 8
+current production torrents have this exact multi-tag shape. They're
+currently shielded from the bug by the `protected-content` category check
+(`Seed Private Torrents After Download` moves them to `seedbox` category
+within 30 minutes of completion) — but there's a real window before that
+reassignment (during download, and up to 30 min after) where a private
+torrent that happened to already read as 3+ days old or ratio ≥ 2.0 (e.g. a
+re-imported older private torrent) would have wrongly matched the public
+deletion rule.
+
+**Fixed**: when `actual` is a list, negation operators now use `all(...)`
+— true only when *no* item positively matches. Positive operators
+unchanged. The empty-list early return was already vacuously correct for
+negations and needed no change. 7 new regression tests (not_contains/!=/
+not_in against lists with one match, no matches, and the empty-list edge
+case). Full suite: 1042 passed (was 1035), `engine.py` back to 100%
+coverage. Cut as `v0.5.6`, deployed live: `Loaded 9 rules`, clean sweep
+against 22 real torrents (16 matches, 8 actions, zero errors),
+`/api/version` reports `0.5.6`. Confirmed via direct qBittorrent API query
+that real production torrents carry the exact tag shape this fixes.
