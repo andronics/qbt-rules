@@ -653,6 +653,27 @@ class TestOperators:
         assert evaluator._apply_operator('hello world', 'not_contains', 'test', 'field') is True
         assert evaluator._apply_operator('hello world', 'not_contains', 'world', 'field') is False
 
+    def test_operator_contains_with_list_value(self, mock_api):
+        """contains with a list value matches if ANY item is a substring
+        (e.g. matching a tracker URL against several known tracker domains
+        without needing a hand-built regex alternation)."""
+        evaluator = ConditionEvaluator(mock_api)
+        url = 'https://sync.td-peers.com:1234/announce?pk=abc'
+        assert evaluator._apply_operator(url, 'contains', ['sync.td-peers.com', 'td.jumbohostpro.eu'], 'field') is True
+        assert evaluator._apply_operator(url, 'contains', ['nomatch1.com', 'nomatch2.com'], 'field') is False
+
+    def test_operator_contains_with_empty_list_value(self, mock_api):
+        """contains with an empty list value matches nothing."""
+        evaluator = ConditionEvaluator(mock_api)
+        assert evaluator._apply_operator('hello world', 'contains', [], 'field') is False
+
+    def test_operator_not_contains_with_list_value(self, mock_api):
+        """not_contains with a list value is True only if NO item is a substring."""
+        evaluator = ConditionEvaluator(mock_api)
+        url = 'https://sync.td-peers.com:1234/announce?pk=abc'
+        assert evaluator._apply_operator(url, 'not_contains', ['nomatch1.com', 'nomatch2.com'], 'field') is True
+        assert evaluator._apply_operator(url, 'not_contains', ['sync.td-peers.com', 'nomatch.com'], 'field') is False
+
     def test_operator_matches_regex(self, mock_api):
         """Operator matches works with regex."""
         evaluator = ConditionEvaluator(mock_api)

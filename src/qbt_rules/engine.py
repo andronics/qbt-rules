@@ -303,8 +303,12 @@ class ConditionEvaluator:
         elif operator == '!=':
             return actual != expected
         elif operator == 'contains':
+            if isinstance(expected, list):
+                return any(str(item) in str(actual) for item in expected)
             return expected in str(actual)
         elif operator == 'not_contains':
+            if isinstance(expected, list):
+                return not any(str(item) in str(actual) for item in expected)
             return expected not in str(actual)
         elif operator == 'matches':
             return re.search(str(expected), str(actual)) is not None
