@@ -285,3 +285,31 @@ after correct interpolation, so it's not a reliable way to check this.
   "mark as latest release" behavior on GitHub's Releases page probably isn't
   doing anything. Low priority; would need bumping to a newer major version
   of that action or dropping the input.
+
+### Feature: `contains`/`not_contains` now accept a list value (v0.5.5)
+
+Follow-up to the actions-ref splice fix. Rather than hand-writing regex
+alternation strings for the tracker-matching conditions
+(`'(?i)(domain1|domain2|domain3)'`), extended `_apply_operator` in
+`engine.py`: `contains` with a list `value` now matches if ANY item is a
+substring of the actual value; `not_contains` is true only if none are.
+Single-string values keep their exact original behavior — fully backward
+compatible, confirmed via test.
+
+This also closes the silent-failure gap noted earlier in this file: a list
+value previously threw inside `_apply_operator` and was swallowed by
+`evaluate()`'s broad `try/except` into an always-`False` result. Now it
+does the intuitive thing.
+
+Production `rules.yml` updated to match: `trackers_iptorrent` /
+`trackers_torrentday` / `trackers_myanonamouse` vars are now plain lists of
+domains instead of regex strings, and the tracker-matching conditions were
+extracted into `refs.conditions.tag-iptorrent` / `tag-torrentday` /
+`tag-myanonamouse` (referenced via `$ref`, matching how actions already
+work) instead of being inlined per rule.
+
+5 new tests, full suite 1035 passed (was 1032), `engine.py` still 100%
+coverage. Cut as `v0.5.5`, deployed live: `Loaded 9 rules`, sweep against
+22 real torrents produced **identical match counts** to the regex version
+(2 iptorrent, 6 torrentday, 0 myanonamouse — same as pre-change), zero
+errors, `/api/version` reports `0.5.5`.
