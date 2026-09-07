@@ -828,6 +828,55 @@ class TestOperators:
         values = ['apple', 'banana', 'cherry']
         assert evaluator._apply_operator(values, '==', 'grape', 'field') is False
 
+    # Negation operators against list values must check ALL items, not ANY
+    # (regression: e.g. tags ['private', 'iptorrent.com'] with not_contains
+    # 'private' used to return True because the 'iptorrent.com' tag alone
+    # satisfied not_contains, even though the 'private' tag was also present
+    # -- silently defeating the production rule meant to skip private
+    # torrents from public cleanup)
+    def test_list_value_not_contains_one_item_matches(self, mock_api):
+        """not_contains on a list is False if ANY item positively contains
+        the value -- a single matching item should veto the whole check."""
+        evaluator = ConditionEvaluator(mock_api)
+        tags = ['private', 'iptorrent.com']
+        assert evaluator._apply_operator(tags, 'not_contains', 'private', 'field') is False
+
+    def test_list_value_not_contains_no_items_match(self, mock_api):
+        """not_contains on a list is True only when NO item contains the value."""
+        evaluator = ConditionEvaluator(mock_api)
+        tags = ['iptorrent.com', 'hd']
+        assert evaluator._apply_operator(tags, 'not_contains', 'private', 'field') is True
+
+    def test_list_value_not_equals_one_item_matches(self, mock_api):
+        """!= on a list is False if ANY item equals the value."""
+        evaluator = ConditionEvaluator(mock_api)
+        values = ['apple', 'banana', 'cherry']
+        assert evaluator._apply_operator(values, '!=', 'banana', 'field') is False
+
+    def test_list_value_not_equals_no_items_match(self, mock_api):
+        """!= on a list is True only when NO item equals the value."""
+        evaluator = ConditionEvaluator(mock_api)
+        values = ['apple', 'banana', 'cherry']
+        assert evaluator._apply_operator(values, '!=', 'grape', 'field') is True
+
+    def test_list_value_not_in_one_item_matches(self, mock_api):
+        """not_in on a list is False if ANY item is in the excluded set."""
+        evaluator = ConditionEvaluator(mock_api)
+        values = ['private', 'iptorrent.com']
+        assert evaluator._apply_operator(values, 'not_in', ['private', 'seedbox'], 'field') is False
+
+    def test_list_value_not_in_no_items_match(self, mock_api):
+        """not_in on a list is True only when NO item is in the excluded set."""
+        evaluator = ConditionEvaluator(mock_api)
+        values = ['iptorrent.com', 'hd']
+        assert evaluator._apply_operator(values, 'not_in', ['private', 'seedbox'], 'field') is True
+
+    def test_list_value_not_contains_empty_list_stays_vacuous(self, mock_api):
+        """Empty list with not_contains is still vacuously True (unchanged
+        by the ALL-vs-ANY fix -- this path is a separate early return)."""
+        evaluator = ConditionEvaluator(mock_api)
+        assert evaluator._apply_operator([], 'not_contains', 'private', 'field') is True
+
 
 # ============================================================================
 # Error Handling

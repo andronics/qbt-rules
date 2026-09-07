@@ -290,11 +290,21 @@ class ConditionEvaluator:
 
         # Handle list values (from collection fields)
         if isinstance(actual, list):
-            # For collections, check if ANY item matches
             if not actual:  # Empty list
                 return operator in ['!=', 'not_in', 'not_contains']
 
-            # Apply operator to each item, return True if any match
+            # Negation operators need ALL items to satisfy the check (i.e. none
+            # of the items positively match) -- applying ANY here would mean
+            # "at least one item doesn't match", which is true for almost any
+            # multi-item collection and defeats the point of a negation check.
+            # E.g. tags ['private', 'iptorrent.com'] with not_contains 'private':
+            # the 'iptorrent.com' tag alone satisfies not_contains, so ANY
+            # incorrectly returns True even though the torrent IS tagged
+            # private. Positive operators keep ANY semantics: "does at least
+            # one item match" is the natural meaning for e.g. contains/==/in.
+            if operator in ('!=', 'not_in', 'not_contains'):
+                return all(self._apply_operator(item, operator, expected, field) for item in actual)
+
             return any(self._apply_operator(item, operator, expected, field) for item in actual)
 
         # String operators
