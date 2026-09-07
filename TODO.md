@@ -167,11 +167,79 @@ all — its bare-list style is now genuinely supported rather than silently
 broken, so it's accurate as originally written (minus the already-stripped
 `priority:` field).
 
-Not yet cut as a release — next patch version (`v0.5.3`?) should include
-this fix before the live `compose.yml` rule additions (protected-content,
-under-seeded-private force-seed, stalled-torrent pause) go out, since two
-of those new rules use bare-list conditions and depend on this fix to work
-correctly.
+**Update**: cut and deployed as `v0.5.3`. `release.yml`/`docker-build.yml`
+both succeeded on the real tag push, confirmed via `--version` inside the
+published image. Production `compose.yml` now runs `ghcr.io/andronics/
+qbt-rules:0.5.3` (was `0.5.1`).
+
+### Bug: `$ref: actions.X` breaks when actions.X is a list (found deploying v0.5.3)
+
+While deploying the four new rules to production, discovered a second,
+separate resolver bug — this one **not** fixed, worked around instead.
+
+`refs.actions.*` blocks are lists (an action sequence, e.g.
+`force-seed-private: [force_start, set_upload_limit, add_tag]`). Referencing
+one via `$ref: actions.x` from *within* a rule's own `actions:` list (also a
+list) doesn't splice/flatten — `_expand_refs`'s list-handling just maps each
+list item through expansion and returns the result in place, so the ref gets
+replaced by its list value *nested inside* the parent list. The engine then
+iterates the parent list expecting each item to be an action dict and
+crashes: `TypeError: list indices must be integers or slices, not str`
+(`action['type']` on what's actually a list).
+
+Confirmed live: "Tag iptorrent.com Trackers" (using `$ref: actions.tag-private`
+alongside an inline `add_tag`) matched correctly but crashed on execute.
+This is **not** limited to mixed ref+inline usage — a rule using *only* a
+single action ref (no inline actions) breaks identically, same list-in-list
+shape. All four of the new rules that referenced `actions.tag-private` /
+`actions.force-seed-private` were affected.
+
+This also means `advanced-rules-example.yml` Rule 9 ("Special handling for
+private tracker HD TV shows"), which mixes `$ref: actions.process-hd-content`
++ `$ref: actions.force-seed-private` + inline actions in one list, has this
+exact same bug — a third real issue in that file, on top of the already-fixed
+bare-list-conditions bug and the already-fixed `priority:` field.
+
+Note this is **not symmetric with conditions**: `$ref: conditions.x` used
+inside a rule's `conditions: {all/any/none: [...]}` list works correctly,
+because `refs.conditions.*` blocks are single dicts, not lists — a dict
+nested as one list item is exactly the correct shape. Only `actions.*` refs
+have this problem, because they're lists by design.
+
+**Workaround applied to production**: removed the `tag-private` and
+`force-seed-private` entries from `refs.actions` entirely and inlined their
+action steps directly into each of the four rules (the three tracker-tag
+rules now do one `add_tag` with both tags combined instead of two actions;
+`Force Seed Under-Ratio Private Torrents` inlines all three steps). Verified
+clean: `Loaded 9 rules`, a full `context=cron` sweep against 22 live
+torrents — 16 rule matches, 8 actions executed, zero errors.
+
+**Not fixed in the engine** — would need `_expand_refs` (or the call site in
+`resolve_rule`) to detect a `$ref` to an actions-group specifically and
+splice its list into the parent rather than nesting it, which is more
+involved than the bare-list conditions fix (that one only needed a type
+check at the top of `evaluate()`; this one needs the *expansion* step to
+behave differently depending on whether it's producing a single node or a
+list-of-nodes for splicing). Worth doing eventually since it'd restore the
+actions-dedup capability and fix the advanced example for real, but not
+urgent — production works correctly with actions inlined instead.
+
+### Aside: Docker Compose's own `${VAR}` interpolation collides with qbt-rules' `${vars.x}` syntax
+
+Also hit while deploying: production's `qbtr_rules` config is an inline
+`content: |` block inside `compose.yml`, and Docker Compose does its own
+`${VAR}`/`$VAR` interpolation on that text *before* writing it out — which
+collides with qbt-rules' own `${vars.x}` resolver syntax **and** the bare
+`$ref:` key (Compose treats unbraced `$ref` as short-form variable syntax
+too, silently blanking it to `- : actions.x` and emitting "the "ref"
+variable is not set" warnings — which explains warnings seen earlier this
+session before any refs/vars were in use). Fixed by escaping every literal
+`$` the resolver needs as `$$` (`${vars.x}` → `$${vars.x}`, `$ref:` →
+`$$ref:`) so Compose collapses it back to a single `$` in the file it
+actually writes to the bind mount. Verified via the real file inside the
+container (`docker exec ... cat /config/rules.yml`), not `docker compose
+config`'s preview — the preview keeps showing the doubled `$$` form even
+after correct interpolation, so it's not a reliable way to check this.
 
 ### Decided
 - Floating "latest build from main" tag renamed to `edge` (was `dev`, which
