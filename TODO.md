@@ -29,9 +29,22 @@ day-to-day maintenance items instead.
       is ever lost, a redeploy would fail outright on `docker compose pull`.
 
 ### Still to do
-- [ ] Pin `qbittorrent` compose's `rules` service to a real, reliably-published
+- [x] Pin `qbittorrent` compose's `rules` service to a real, reliably-published
       version tag once the fixed workflow produces one (deferred until after
-      this fix + a verified tag-triggered build succeeds).
+      this fix + a verified tag-triggered build succeeds). **Done**: production
+      `compose.yml` now pins `ghcr.io/andronics/qbt-rules:0.5.1`. Verified via
+      `docker inspect`, `/api/health`, `/api/version`, a clean `Loaded 7 rules`
+      startup, and a manual `context=cron` sweep against the live torrent list.
+- [ ] **New bug found while verifying the pin**: `/api/version` on the freshly
+      deployed `0.5.1` image reports internal version `"0.5.0"`, not `0.5.1`.
+      Root cause: `release.yml` tags `vX.Y.Z` on the pre-bump commit, then
+      pushes the `__version__.py`/`pyproject.toml` bump as a *separate* commit
+      to `main` afterward — but `docker-build.yml` fires on the same tag push
+      and builds from the tag's commit (pre-bump), so the baked-in version
+      string is always one release behind the Docker tag it ships under.
+      Cosmetic only (doesn't affect rule behavior), but worth fixing the
+      ordering in `release.yml` (bump version and commit *before* creating/
+      pushing the tag, not after) so `/api/version` and the image tag agree.
 - [ ] Consider whether `pytest` thread-race warnings in `test_sqlite_queue.py`
       (`sqlite3.OperationalError: database is locked` under
       `TestSQLiteQueueThreadSafety`) indicate a real concurrency bug in
