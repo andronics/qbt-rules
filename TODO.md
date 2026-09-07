@@ -58,3 +58,18 @@ day-to-day maintenance items instead.
   "latest stable release." `compose.yml` in the qbittorrent deploy needs to
   move from `:dev` to `:edge` (or a pinned `vX.Y.Z` once available) as a
   follow-up — not done yet, tracked above.
+
+### Verified fixed (v0.5.1 release, 2026-09-07)
+- Cut and pushed `v0.5.1` from `main` with the workflow fixes in place.
+  Both `release.yml` and `docker-build.yml` completed successfully on the
+  real tag-push trigger (previously: 100% failure on every version tag ever
+  pushed). Confirmed via `ghcr.io/v2/andronics/qbt-rules/tags/list` that
+  `0.5.1`, `0.5`, and `0` now exist in the registry for the first time ever,
+  alongside `latest` and the new `edge`.
+- Minor non-blocking warning surfaced in `release.yml`'s "Create Release"
+  step: `softprops/action-gh-release@v1` doesn't actually support the
+  `make_latest` input (`Unexpected input(s) 'make_latest'`) — it's silently
+  ignored rather than failing, so releases still get created fine, but the
+  "mark as latest release" behavior on GitHub's Releases page probably isn't
+  doing anything. Low priority; would need bumping to a newer major version
+  of that action or dropping the input.
