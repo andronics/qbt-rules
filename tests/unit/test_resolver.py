@@ -227,7 +227,10 @@ class TestReferenceExpansion:
         assert resolved['conditions'][0] == refs['conditions']['private-tracker']
 
     def test_expand_action_ref(self):
-        """Should expand action reference"""
+        """Should expand and splice action reference (actions.* refs are lists;
+        the ref's items become siblings in the parent actions list, not a
+        single nested list -- otherwise the engine can't iterate them as
+        individual action dicts)"""
         refs = {
             'actions': {
                 'safe-delete': [
@@ -245,7 +248,103 @@ class TestReferenceExpansion:
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['actions'][0] == refs['actions']['safe-delete']
+        assert resolved['actions'] == refs['actions']['safe-delete']
+        assert all(isinstance(a, dict) for a in resolved['actions'])
+
+    def test_expand_action_ref_mixed_with_inline_actions(self):
+        """A ref mixed with inline actions in the same list should splice
+        the ref's items in place, not nest them (regression test: this exact
+        shape crashed the engine's ActionExecutor with
+        `TypeError: list indices must be integers or slices, not str`,
+        since it tried to treat the nested list as a single action dict)"""
+        refs = {
+            'actions': {
+                'tag-private': [
+                    {'type': 'add_tag', 'params': {'tags': ['private']}},
+                ],
+            }
+        }
+        resolver = RuleResolver(refs=refs)
+
+        rule = {
+            'name': 'Tag iptorrent.com Trackers',
+            'conditions': [],
+            'actions': [
+                {'$ref': 'actions.tag-private'},
+                {'type': 'add_tag', 'params': {'tags': ['iptorrent.com']}},
+            ],
+        }
+
+        resolved = resolver.resolve_rule(rule)
+        assert resolved['actions'] == [
+            {'type': 'add_tag', 'params': {'tags': ['private']}},
+            {'type': 'add_tag', 'params': {'tags': ['iptorrent.com']}},
+        ]
+        assert all(isinstance(a, dict) for a in resolved['actions'])
+
+    def test_expand_action_ref_single_item_list(self):
+        """A ref to a single-item action list must still be a flat dict at
+        that position, not a 1-item list (regression: this shape also
+        crashed the engine even with no inline actions mixed in)"""
+        refs = {
+            'actions': {
+                'force-seed-private': [
+                    {'type': 'force_start'},
+                    {'type': 'set_upload_limit', 'params': {'limit': -1}},
+                    {'type': 'add_tag', 'params': {'tags': ['force-seeding']}},
+                ],
+            }
+        }
+        resolver = RuleResolver(refs=refs)
+
+        rule = {
+            'name': 'Force Seed Under-Ratio Private Torrents',
+            'conditions': [],
+            'actions': [{'$ref': 'actions.force-seed-private'}],
+        }
+
+        resolved = resolver.resolve_rule(rule)
+        assert resolved['actions'] == refs['actions']['force-seed-private']
+        assert all(isinstance(a, dict) for a in resolved['actions'])
+
+    def test_condition_ref_still_nests_as_single_item(self):
+        """Sanity check that the splice behavior is specific to actions.*
+        refs (which are lists) and doesn't affect conditions.* refs (which
+        are dicts) -- a condition ref should still nest as exactly one item
+        in the parent conditions list, unchanged from before this fix"""
+        refs = {
+            'conditions': {
+                'under-seeded-private': {
+                    'all': [{'field': 'info.ratio', 'operator': '<', 'value': 1.0}]
+                },
+            }
+        }
+        resolver = RuleResolver(refs=refs)
+
+        rule = {
+            'name': 'test',
+            'conditions': [{'$ref': 'conditions.under-seeded-private'}],
+            'actions': [],
+        }
+
+        resolved = resolver.resolve_rule(rule)
+        assert resolved['conditions'] == [refs['conditions']['under-seeded-private']]
+
+    def test_literal_nested_list_not_flattened(self):
+        """A literal nested list already present in the source YAML (not
+        produced by a $ref) must not be flattened -- only $ref expansions
+        that resolve to a list get spliced"""
+        resolver = RuleResolver(refs={})
+
+        rule = {
+            'name': 'test',
+            'conditions': [],
+            'actions': [],
+            'some_field': [[1, 2], [3, 4]],
+        }
+
+        resolved = resolver.resolve_rule(rule)
+        assert resolved['some_field'] == [[1, 2], [3, 4]]
 
     def test_expand_nested_refs(self):
         """Should handle nested reference expansion"""
@@ -452,7 +551,10 @@ class TestResolutionPipeline:
         assert 'any' in resolved['conditions'][0]
         assert 'all' in resolved['conditions'][1]
         assert 'none' in resolved['conditions'][2]
-        assert isinstance(resolved['actions'][0], list)
+        # actions.safe-delete is a 2-item action sequence -- spliced into the
+        # parent list, not nested as a single list element
+        assert resolved['actions'] == refs['actions']['safe-delete']
+        assert all(isinstance(a, dict) for a in resolved['actions'])
 
         # Check variables were substituted
         assert resolved['conditions'][1]['all'][0]['value'] == 1.0

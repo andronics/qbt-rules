@@ -195,23 +195,24 @@ class TestResolverRealWorldScenarios:
         assert rule1['conditions'][1]['all'][0]['value'] == 1.5  # min_ratio
         assert rule1['conditions'][1]['all'][1]['value'] == '30 days'  # cleanup_age
         assert rule1['conditions'][2]['none'][0]['any'][0]['value'] == ['keep', 'seedbox', 'long-term']
-        # Verify action expansion
-        assert isinstance(rule1['actions'][0], list)
-        assert rule1['actions'][0][0]['type'] == 'add_tag'
-        assert rule1['actions'][0][1]['type'] == 'stop'
+        # Verify action expansion -- actions.safe-delete (2 items) is spliced
+        # into the parent actions list, not nested as a single list element
+        assert rule1['actions'][0]['type'] == 'add_tag'
+        assert rule1['actions'][1]['type'] == 'stop'
+        assert len(rule1['actions']) == 2
 
         # Verify Rule 2: Force seed under ratio
         rule2 = resolved_rules[1]
         assert rule2['name'] == 'Force seed private tracker under ratio'
         assert rule2['conditions'][1]['all'][0]['value'] == 1.5  # Variable substituted
-        assert rule2['actions'][0][0]['type'] == 'force_start'
+        assert rule2['actions'][0]['type'] == 'force_start'
 
         # Verify Rule 3: Tag HD content
         rule3 = resolved_rules[2]
         assert rule3['name'] == 'Tag HD content from private trackers'
         # Verify pattern substitution
         assert '1080p' in rule3['conditions'][1]['all'][0]['value']
-        assert rule3['actions'][0][1]['params']['category'] == 'hd-content'
+        assert rule3['actions'][1]['params']['category'] == 'hd-content'
 
         # Verify Rule 4: Pause highly seeded
         rule4 = resolved_rules[3]
@@ -224,9 +225,12 @@ class TestResolverRealWorldScenarios:
         assert 'any' in rule5['conditions'][0]  # Expanded ref
         assert 'all' in rule5['conditions'][1]  # Inline condition
         assert rule5['conditions'][1]['all'][0]['value'] == 10737418240  # Inline value
-        # Has both expanded action and inline action
+        # Has both expanded action and inline action -- the ref's 2 items are
+        # spliced in after the inline action, not nested as a single list
         assert rule5['actions'][0]['type'] == 'add_tag'  # Inline
-        assert isinstance(rule5['actions'][1], list)  # Expanded ref
+        assert rule5['actions'][1]['type'] == 'force_start'  # Expanded ref, item 1
+        assert rule5['actions'][2]['type'] == 'add_tag'  # Expanded ref, item 2
+        assert len(rule5['actions']) == 3
 
         # Verify raw rules still have $ref and ${vars.*}
         raw_rules = config.get_rules(resolved=False)

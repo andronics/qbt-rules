@@ -83,10 +83,11 @@ class TestResolverConfigIntegration:
         assert rule['conditions'][0]['all'][0]['value'] == 1.5
         assert rule['conditions'][0]['all'][1]['value'] == '30 days'
 
-        # Check actions were expanded
-        assert isinstance(rule['actions'][0], list)
-        assert rule['actions'][0][0]['type'] == 'add_tag'
-        assert rule['actions'][0][1]['type'] == 'stop'
+        # Check actions were expanded -- the 2-item action sequence is spliced
+        # into the parent list rather than nested as a single list element
+        assert rule['actions'][0]['type'] == 'add_tag'
+        assert rule['actions'][1]['type'] == 'stop'
+        assert len(rule['actions']) == 2
 
     def test_config_handles_rules_without_refs(self, tmp_path):
         """Should handle rules without refs block (backward compatibility)"""
@@ -383,11 +384,19 @@ class TestResolverConfigIntegration:
         assert rule1['conditions'][1]['all'][1]['value'] == '30 days'
         assert 'none' in rule1['conditions'][2]
         assert rule1['conditions'][2]['none'][0]['any'][0]['value'] == ['keep', 'seedbox']
-        assert isinstance(rule1['actions'][0], list)
+        # actions.safe-delete (2 items) is spliced into the parent list
+        assert rule1['actions'] == [
+            {'type': 'add_tag', 'params': {'tags': ['pending-delete']}},
+            {'type': 'stop'},
+        ]
 
         # Rule 2: Force seed
         rule2 = rules[1]
         assert rule2['name'] == 'Force seed private under ratio'
         assert 'any' in rule2['conditions'][0]
         assert rule2['conditions'][1]['all'][0]['value'] == 1.0  # Variable substituted
-        assert isinstance(rule2['actions'][0], list)
+        # actions.force-seed (2 items) is spliced into the parent list
+        assert rule2['actions'] == [
+            {'type': 'force_start'},
+            {'type': 'add_tag', 'params': {'tags': ['force-seeding']}},
+        ]

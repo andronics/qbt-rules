@@ -227,16 +227,29 @@ class RuleResolver:
                 }
 
         elif isinstance(node, list):
-            # Recursively process each list item
-            return [
-                self._expand_refs(
+            # Recursively process each list item.
+            #
+            # A $ref that resolves to a list (e.g. an actions.* block, which is
+            # itself an action sequence) is spliced into the parent list rather
+            # than nested as a single element -- otherwise a rule's `actions:`
+            # list ends up containing a list-shaped item instead of an action
+            # dict, and the engine crashes trying to treat it as one.
+            # Only applies when the *item itself* was a $ref node; a literal
+            # nested list already present in the source YAML is left untouched.
+            result = []
+            for i, item in enumerate(node):
+                was_ref = isinstance(item, dict) and '$ref' in item
+                expanded = self._expand_refs(
                     item,
                     ref_stack,
                     allowed_groups,
                     f"{path}[{i}]"
                 )
-                for i, item in enumerate(node)
-            ]
+                if was_ref and isinstance(expanded, list):
+                    result.extend(expanded)
+                else:
+                    result.append(expanded)
+            return result
 
         else:
             # Scalar value - return as-is

@@ -310,7 +310,9 @@ class TestReferenceEdgeCases:
         assert resolved['conditions'][0] == {}
 
     def test_ref_with_empty_action_list(self):
-        """Should handle references to empty action lists"""
+        """Should handle references to empty action lists (spliced -> contributes
+        zero actions, not a nested empty-list placeholder that would crash the
+        engine's executor when it tries to treat it as an action dict)"""
         refs = {
             'actions': {
                 'empty': []
@@ -325,7 +327,7 @@ class TestReferenceEdgeCases:
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['actions'][0] == []
+        assert resolved['actions'] == []
 
     def test_ref_with_hyphenated_name(self):
         """Should handle references with hyphens in names"""
@@ -668,10 +670,11 @@ class TestRefTypeValidation:
             'actions': [{'$ref': 'actions.my-action'}]
         }
 
-        # Should not raise
+        # Should not raise, and should splice the 2-item action sequence into
+        # the parent list rather than nesting it as a single list element
         resolved = resolver.resolve_rule(rule)
-        assert isinstance(resolved['actions'][0], list)
-        assert len(resolved['actions'][0]) == 2
+        assert resolved['actions'] == [{'type': 'stop'}, {'type': 'pause'}]
+        assert len(resolved['actions']) == 2
 
     def test_nested_wrong_ref_caught(self):
         """Should catch wrong ref type even when nested in logical operators"""
@@ -849,7 +852,7 @@ class TestRefTypeValidation:
         }
         resolved = resolver.resolve_rule(good_rule)
         assert 'all' in resolved['conditions'][0]
-        assert isinstance(resolved['actions'][0], list)
+        assert resolved['actions'] == [{'type': 'pause'}]
 
         # Now verify wrong ref is caught
         bad_rule = {
@@ -1061,7 +1064,10 @@ class TestComplexScenarios:
         assert 'all' in resolved['conditions'][0]
         assert 'any' in resolved['conditions'][1]
         assert 'none' in resolved['conditions'][2]
-        assert isinstance(resolved['actions'][0], list)
+        # actions.cleanup is a 3-item action sequence -- spliced into the
+        # parent list rather than nested as a single list element
+        assert resolved['actions'] == refs['actions']['cleanup']
+        assert all(isinstance(a, dict) for a in resolved['actions'])
 
         # Verify all vars substituted
         assert resolved['conditions'][0]['all'][0]['value'] == 1.0
