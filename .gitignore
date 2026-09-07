@@ -47,3 +47,6 @@ config/rules.yml
 
 # User-specific logs
 config/logs/*.log
+
+# graphify local cache/output
+.graphify/
