@@ -375,3 +375,35 @@ checks for `$ref: conditions.tagged-public` / `$ref: conditions.is-complete`).
 No image rebuild needed (`v0.5.6` already supports everything used) — just
 a config redeploy. Verified live: `Loaded 9 rules`, identical match/action
 counts to the pre-refactor run (16 matches, 8 actions, zero errors).
+
+### Added `has-archive` / `has-executable` / `seed-grace-period` / `public-ratio`
+
+Requested by andronics ("what other conditions can we do"). These were the
+last remaining raw `field:`/`operator:`/`value:` blocks inlined directly in
+rules rather than expressed as refs — after this, **every** condition
+check in the whole ruleset goes through a named `$ref`, no exceptions:
+
+- `has-archive` / `has-executable`: extracted from "Remove Archive Based
+  Torrents" / "Remove Torrents Containing Windows Executables" (the two
+  security-critical, `stop_on_match: true`, `context: added` rules).
+- `seed-grace-period`: extracted from "Seed Private Torrents After
+  Download"'s inline `completion_on older_than` check.
+- `public-ratio`: extracted from "Delete Public Torrents"'s inline
+  `info.ratio >= ...` check.
+- Bonus cleanup: `under-seeded-private` no longer duplicates the tags
+  check — it now nests `$ref: conditions.tagged-private` instead of
+  repeating `field: info.tags, operator: contains, value: "private"`
+  inline. Confirmed nested refs-within-refs resolve correctly (already
+  relied on transitively by the resolver's recursive `$ref` expansion,
+  just hadn't been exercised by production config until now).
+
+No image rebuild needed. Verified live twice: (1) a full sweep against 25
+real torrents produced identical match/action counts to the pre-refactor
+run (16 matches, 8 actions, zero errors) — including the two
+security-critical rules processing without error; (2) re-ran the
+fake-exe-torrent test from earlier in the session against the *refactored*
+"Remove Torrents Containing Windows Executables" rule specifically, since
+it's the most safety-critical rule in the system and "processes without
+erroring" isn't the same as "still actually catches the exe" — confirmed
+it still deletes the torrent + files within ~1 second, same as before the
+refactor.
