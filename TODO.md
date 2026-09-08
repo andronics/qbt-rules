@@ -407,3 +407,34 @@ it's the most safety-critical rule in the system and "processes without
 erroring" isn't the same as "still actually catches the exe" — confirmed
 it still deletes the torrent + files within ~1 second, same as before the
 refactor.
+
+### Added seed counterbalance rule for private torrents (10th rule)
+
+Requested by andronics to address the "private torrents seed forever, no
+upper bound" gap flagged earlier. Non-destructive by design — tags only,
+never auto-deletes private content (real H&R risk on their trackers if
+automated wrong).
+
+- `vars`: `archive_candidate_seed_time: 3888000` (45 days, in seconds —
+  `info.seeding_time` is a raw duration field, not a timestamp, so
+  `older_than` doesn't apply; used a plain `>=` comparison instead, same
+  approach `advanced-rules-example.yml` uses for `info.seeding_time`),
+  `archive_candidate_min_ratio: 2.0`.
+- `conditions.private-archive-candidate`: `$ref: conditions.tagged-private`
+  AND `seeding_time >= 45 days` AND `ratio >= 2.0` — explicitly AND, not
+  OR (confirmed with andronics; OR would have matched the existing
+  "Delete Public Torrents" pattern but was deliberately not what was
+  wanted here).
+- New rule "Flag Long-Seeded Private Torrents for Archive Review":
+  `add_tag: [archive-candidate]` when matched. That's it — no category
+  change, no force actions, no deletion. Purely a signal for manual
+  review.
+
+No image rebuild needed. Verified live: `Loaded 10 rules`, clean sweep
+(zero errors, zero matches yet since nothing in the library has 45+ days
+seeding time). Since there's no way to wait 45 real days to prove the
+match logic itself, verified synthetically instead: 4 torrents (meets
+both thresholds / old-but-low-ratio / high-ratio-but-young / public with
+identical stats) all evaluated correctly against the exact condition
+shape deployed — only the one meeting every criterion (private + old +
+well-seeded) matched.
