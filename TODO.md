@@ -351,3 +351,27 @@ coverage. Cut as `v0.5.6`, deployed live: `Loaded 9 rules`, clean sweep
 against 22 real torrents (16 matches, 8 actions, zero errors),
 `/api/version` reports `0.5.6`. Confirmed via direct qBittorrent API query
 that real production torrents carry the exact tag shape this fixes.
+
+### Added `tagged-private` / `tagged-public` / `is-complete` conditions
+
+Requested by andronics once the negation-semantics fix above made
+`not_contains` safe to build on. Added to production `refs.conditions`:
+
+```yaml
+tagged-private:
+  all: [{field: info.tags, operator: contains, value: "private"}]
+tagged-public:
+  all: [{field: info.tags, operator: not_contains, value: "private"}]
+is-complete:
+  all: [{field: info.completion_on, operator: older_than, value: ${vars.public_max_age}}]
+```
+
+Refactored both rules that previously inlined these checks to use the
+refs instead: `Seed Private Torrents After Download` (swapped its inline
+`info.tags operator: in value: ["private"]` for `$ref: conditions.tagged-private`
+— same practical effect for a single-value list) and `Delete Public
+Torrents After 3 Days or 2.0 Ratio` (swapped its inline tags/completion-age
+checks for `$ref: conditions.tagged-public` / `$ref: conditions.is-complete`).
+No image rebuild needed (`v0.5.6` already supports everything used) — just
+a config redeploy. Verified live: `Loaded 9 rules`, identical match/action
+counts to the pre-refactor run (16 matches, 8 actions, zero errors).
