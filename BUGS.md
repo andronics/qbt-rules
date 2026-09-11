@@ -7,6 +7,48 @@ technical postmortem detail behind the entries that matter.
 
 ---
 
+## `docker-build.yml` ran a full multi-arch build on every doc-only commit
+
+**Symptom**: found by chance while verifying the newly-restored
+`read:packages` scope — `gh api /user/packages/container/qbt-rules/versions`
+returned **251 image versions** for a project with nowhere near that many
+real code changes. Cross-checked against `gh run list --workflow=
+docker-build.yml`: every single doc-only commit tonight (`TODO.md`/
+`BUGS.md` updates with zero source changes) had triggered a full
+multi-arch build and published 2-3 more image versions (one manifest list
++ one child manifest per platform) to the registry.
+
+**Root cause**: `docker-build.yml`'s `push`/`pull_request` triggers had no
+path filtering at all — every push to `main`, regardless of what changed,
+ran the full build-and-publish job.
+
+**Fix**: added `paths-ignore: ['**.md', 'LICENSE', 'docs/**']` to both the
+`push` and `pull_request` triggers. Deliberately narrow — doesn't touch
+anything that could actually affect the image (`src/`, `Dockerfile`,
+`pyproject.toml`, `requirements*.txt`, `config/`, `scripts/`, workflow
+files themselves all still trigger normally).
+
+**Verified live**, both directions: pushed a commit that edited the
+workflow file itself (not doc-only) — build correctly still ran. Then
+pushed a pure `TODO.md` edit — confirmed via `gh run list` that only `CI`
+fired, no `Build and Publish Docker Image` run at all for that commit.
+
+Known, accepted residual risk: GitHub Actions' `paths-ignore` applies
+uniformly to the whole `push` trigger, including the `tags: 'v*'` pattern
+— there's no way to exempt tag pushes from the same filter within one
+`on.push` block. In practice this can't actually skip a real release,
+since `scripts/bump-version.sh` always touches `pyproject.toml` and
+`src/qbt_rules/__version__.py` as part of any legitimate version bump, so
+a tag push is never doc-only. Worth knowing if the release process ever
+changes.
+
+**Status**: Fixed. The 251 already-accumulated versions are a separate,
+riskier cleanup (need to avoid deleting a manifest still referenced by a
+currently-tagged multi-arch index) — handled separately, see below if
+attempted.
+
+---
+
 ## `release.yml`/`main` version-bump divergence — already resolved, closing the TODO
 
 **Symptom** (as originally logged): `release.yml` used to commit a

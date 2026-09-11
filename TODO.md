@@ -30,4 +30,3 @@ Currently-open items only. Resolved bugs and their postmortems live in
   an `&instance=` dimension through jobs/webhooks/CLI, with no way to test
   it without an actual second qBittorrent instance. Pure speculative
   infrastructure until a second instance actually exists.
-
