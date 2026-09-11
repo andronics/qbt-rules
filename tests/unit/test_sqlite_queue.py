@@ -460,21 +460,33 @@ class TestSQLiteQueueDequeue:
         queue.close()
 
     def test_dequeue_atomic_operation(self, tmp_path):
-        """dequeue() is atomic (transaction-safe)"""
+        """dequeue() is atomic (transaction-safe) -- regression guard for
+        the missing busy_timeout/BEGIN IMMEDIATE bug (see BUGS.md): 5
+        threads racing to dequeue the same single job used to raise
+        'sqlite3.OperationalError: database is locked' in worker threads,
+        silently swallowed by pytest as a warning rather than a test
+        failure. Explicitly capturing exceptions here turns any
+        regression into a real assertion failure."""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
         job_id = queue.enqueue()
 
         # Simulate concurrent dequeue attempts
         results = []
+        errors = []
         def dequeue_worker():
-            job = queue.dequeue()
-            results.append(job)
+            try:
+                job = queue.dequeue()
+                results.append(job)
+            except Exception as e:
+                errors.append(e)
 
         threads = [threading.Thread(target=dequeue_worker) for _ in range(5)]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
+
+        assert errors == [], f"dequeue() raised in {len(errors)} thread(s): {errors}"
 
         # Only one thread should get the job
         non_none_results = [r for r in results if r is not None]
@@ -1005,21 +1017,30 @@ class TestSQLiteQueueCancelJob:
         queue.close()
 
     def test_cancel_job_transaction_safe(self, tmp_path):
-        """cancel_job() is transaction-safe"""
+        """cancel_job() is transaction-safe -- regression guard for the
+        missing busy_timeout/BEGIN IMMEDIATE bug (see BUGS.md): concurrent
+        cancel_job() calls used to raise 'sqlite3.OperationalError:
+        database is locked' in worker threads."""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
         job_id = queue.enqueue()
 
         # Simulate concurrent cancellation
         results = []
+        errors = []
         def cancel_worker():
-            success = queue.cancel_job(job_id)
-            results.append(success)
+            try:
+                success = queue.cancel_job(job_id)
+                results.append(success)
+            except Exception as e:
+                errors.append(e)
 
         threads = [threading.Thread(target=cancel_worker) for _ in range(3)]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
+
+        assert errors == [], f"cancel_job() raised in {len(errors)} thread(s): {errors}"
 
         # Only one thread should succeed
         assert sum(results) == 1
@@ -1337,7 +1358,10 @@ class TestSQLiteQueueThreadSafety:
         queue.close()
 
     def test_concurrent_dequeue(self, tmp_path):
-        """Multiple threads can dequeue concurrently without duplicates"""
+        """Multiple threads can dequeue concurrently without duplicates --
+        regression guard for the missing busy_timeout/BEGIN IMMEDIATE bug
+        (see BUGS.md): concurrent dequeue() calls used to raise
+        'sqlite3.OperationalError: database is locked' in worker threads."""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
         # Enqueue jobs
@@ -1345,9 +1369,14 @@ class TestSQLiteQueueThreadSafety:
             queue.enqueue(context=f"job-{i}")
 
         dequeued_jobs = []
+        errors = []
         def dequeue_worker():
             while True:
-                job = queue.dequeue()
+                try:
+                    job = queue.dequeue()
+                except Exception as e:
+                    errors.append(e)
+                    break
                 if job:
                     dequeued_jobs.append(job)
                 else:
@@ -1359,6 +1388,8 @@ class TestSQLiteQueueThreadSafety:
             t.start()
         for t in threads:
             t.join()
+
+        assert errors == [], f"dequeue() raised in {len(errors)} thread(s): {errors}"
 
         # All jobs should be dequeued exactly once
         assert len(dequeued_jobs) == 10

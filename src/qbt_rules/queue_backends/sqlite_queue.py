@@ -34,6 +34,7 @@ class SQLiteQueue(QueueManager):
     """
 
     SCHEMA_VERSION = 1
+    BUSY_TIMEOUT_MS = 5000
 
     def __init__(self, db_path: str = '/config/qbt-rules.db'):
         """
@@ -73,6 +74,11 @@ class SQLiteQueue(QueueManager):
             conn.execute('PRAGMA journal_mode=WAL')
             # Enable foreign keys
             conn.execute('PRAGMA foreign_keys=ON')
+            # Wait for contended locks instead of failing immediately.
+            # Needed alongside BEGIN IMMEDIATE in _transaction() below --
+            # without it, a connection blocked at BEGIN IMMEDIATE raises
+            # 'database is locked' right away instead of waiting its turn.
+            conn.execute(f'PRAGMA busy_timeout = {self.BUSY_TIMEOUT_MS}')
 
             # Track this connection
             with self._conn_lock:
@@ -93,7 +99,18 @@ class SQLiteQueue(QueueManager):
         """
         conn = self._get_connection()
         try:
-            conn.execute('BEGIN')
+            # IMMEDIATE acquires the write lock up front, rather than
+            # deferring it to the first write statement. With a plain
+            # BEGIN, concurrent threads can each acquire a read lock via
+            # their own SELECT and then all try to upgrade to a write lock
+            # at once -- a real deadlock among mutually-blocking readers
+            # that busy_timeout alone cannot resolve, since none of them
+            # will release their read lock until they win or their
+            # transaction ends. BEGIN IMMEDIATE avoids that entirely: only
+            # one transaction ever holds the write lock at a time, and
+            # everyone else cleanly waits their turn (via busy_timeout)
+            # instead of racing.
+            conn.execute('BEGIN IMMEDIATE')
             yield conn
             conn.execute('COMMIT')
         except Exception:
