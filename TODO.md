@@ -5,13 +5,6 @@ Currently-open items only. Resolved bugs and their postmortems live in
 
 ## Open
 
-- [ ] **Investigate `pytest` thread-race warnings** in
-      `test_sqlite_queue.py` (`sqlite3.OperationalError: database is
-      locked` under `TestSQLiteQueueThreadSafety`). Non-fatal today
-      (pytest doesn't treat them as failures), but unclear whether this
-      points to a real concurrency issue in `sqlite_queue.py`'s locking or
-      is just test-harness noise. SQLite's default `busy_timeout` may be
-      too short for the concurrent test.
 - [ ] **`release.yml` version-bump commit lands on `main` after the tag is
       already pushed** — the tag and `main`'s release state diverge
       slightly (the tag never contains its own version-bump commit).

@@ -7,6 +7,53 @@ technical postmortem detail behind the entries that matter.
 
 ---
 
+## `SQLiteQueue` missing `busy_timeout` caused real thread-race failures (v0.5.8)
+
+**Symptom**: found while investigating the `pytest` thread-race warnings
+(a TODO item) — `sqlite3.OperationalError: database is locked` raised
+inside worker threads under `TestSQLiteQueueThreadSafety`, in
+`test_concurrent_dequeue`, `test_dequeue_atomic_operation`, and
+`test_cancel_job_transaction_safe`. Confirmed this was **not** test-harness
+noise — it's a real, 100%-reproducible bug that just happened to only ever
+surface as a warning rather than a failure, because pytest doesn't fail on
+`PytestUnhandledThreadExceptionWarning` by default.
+
+**Root cause**: `_get_connection()` never set `PRAGMA busy_timeout`
+(SQLite's default is `0` — fail immediately on a contended lock instead of
+waiting). `_transaction()` used a plain deferred `BEGIN`, so concurrent
+threads each acquire a *read* lock via their own `SELECT` and only try to
+upgrade to a *write* lock afterward. When multiple threads do this at
+nearly the same time, none of them will release their read lock until they
+win or their transaction ends — a genuine deadlock among mutually-blocking
+readers, not a "wait a bit longer" problem. Confirmed empirically before
+touching source: adding `busy_timeout` alone did **not** fix it (still
+failed ~4/5 in an isolated repro, completing near-instantly — proof it
+wasn't actually waiting). WAL mode doesn't help either; SQLite only ever
+allows one writer at a time regardless of journal mode.
+
+**Fix**: `BEGIN IMMEDIATE` instead of plain `BEGIN`, so the write lock is
+acquired up front — only one transaction is ever "in" at a time, and
+everyone else cleanly queues via `busy_timeout` (set to 5000ms) instead of
+racing to upgrade. Verified empirically: `BEGIN IMMEDIATE` + `busy_timeout`
+= 5/5 succeed; `busy_timeout` alone = still 4/5 fail.
+
+**Verified**: hardened the three affected tests to explicitly capture and
+assert on thread exceptions instead of relying on pytest's default
+warn-only behavior — confirmed by *reverting* the fix that these now fail
+loudly with a real `AssertionError` (`dequeue() raised in 2 thread(s):
+[OperationalError('database is locked'), ...]`) instead of just warning,
+then re-applied the fix. Full suite: 1048 passed, `sqlite_queue.py` 98.93%
+coverage, zero thread warnings for the first time. Deployed as `v0.5.8`
+(no production redeploy strictly needed — production's single worker
+thread never calls `dequeue()`/`cancel_job()` concurrently today, but the
+`SQLiteQueue` class itself is now actually thread-safe as advertised,
+which matters if `server.workers`/gunicorn ever runs with more than one
+worker).
+
+**Status**: Fixed.
+
+---
+
 ## `increase_priority`/`decrease_priority`/`set_top_priority`/`set_bottom_priority` never wired into the action dispatch (v0.5.7)
 
 **Symptom**: found while verifying `advanced-rules-example.yml` Rule 9
