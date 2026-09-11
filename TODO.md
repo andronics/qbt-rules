@@ -5,10 +5,6 @@ Currently-open items only. Resolved bugs and their postmortems live in
 
 ## Open
 
-- [ ] **`release.yml` version-bump commit lands on `main` after the tag is
-      already pushed** — the tag and `main`'s release state diverge
-      slightly (the tag never contains its own version-bump commit).
-      Cosmetic, low priority.
 - [ ] **No `read:packages` scope on the `andronics` GitHub CLI token** —
       `gh api` can't query package versions directly; worked around by
       hitting the GHCR OCI API with an anonymous pull token. Minor

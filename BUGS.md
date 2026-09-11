@@ -7,6 +7,35 @@ technical postmortem detail behind the entries that matter.
 
 ---
 
+## `release.yml`/`main` version-bump divergence — already resolved, closing the TODO
+
+**Symptom** (as originally logged): `release.yml` used to commit a
+version-bump to `main` *after* the tag was already pushed, so the tag and
+`main`'s release state diverged slightly — the tag itself never contained
+its own version-bump commit.
+
+**Investigation**: re-checked the current `release.yml` while working
+through the TODO list. The "Commit version update" step this described no
+longer exists at all — it was removed entirely back when the
+version/tag-mismatch bug was fixed (see the `v0.5.2` entry below):
+`release.yml` now hard-fails via "Verify version matches tag" instead of
+ever committing anything itself. The only thing that commits a version
+bump is `scripts/bump-version.sh`, run locally *before* the tag is
+created — so by construction there's nothing left for a tag to diverge
+from.
+
+**Verified**: checked `git merge-base --is-ancestor` for the three most
+recent tags (`v0.5.7`, `v0.5.8`, `v0.5.9`) against `main` — each tag's
+commit is a direct ancestor of `main`, not a divergent branch. `main`
+simply moves forward afterward with normal, unrelated commits, which is
+expected, healthy history, not the bug originally described.
+
+**Status**: Already fixed as a side effect of the earlier version-mismatch
+fix; nobody had gone back to close this TODO item until now. No code
+change needed here.
+
+---
+
 ## `release.yml`'s `make_latest` input silently did nothing (v0.5.9)
 
 **Symptom**: every "Create Release" step logged `Unexpected input(s)
