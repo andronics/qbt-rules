@@ -7,6 +7,39 @@ technical postmortem detail behind the entries that matter.
 
 ---
 
+## `increase_priority`/`decrease_priority`/`set_top_priority`/`set_bottom_priority` never wired into the action dispatch (v0.5.7)
+
+**Symptom**: found while verifying `advanced-rules-example.yml` Rule 9
+end-to-end (a TODO item, following up on the actions-ref splice fix
+below). The splice fix itself checked out — all 8 actions in Rule 9
+resolved as flat dicts and no longer threw the old `TypeError` — but
+actually *executing* the resolved rule surfaced a second, separate gap:
+`increase_priority` (used by `actions.process-hd-content`) fell through to
+`ActionExecutor`'s "Unknown action type" branch, silently did nothing, and
+logged an ERROR every time the rule matched.
+
+**Root cause**: `api.py`'s `QBittorrentAPI` already had all four priority
+methods (wrapping qBittorrent's real priority endpoints), they were just
+never wired into `_execute_action`'s dispatch table.
+
+**Fix**: added all four as real action types, matching the existing
+dispatch pattern exactly. Also added the same four methods to the shared
+`MockAPI` test fixture (`tests/conftest.py`), which didn't have them
+either.
+
+**Verified**: 4 new unit tests, plus a new integration test file
+(`tests/integration/test_advanced_example.py`) that loads the real
+committed `advanced-rules-example.yml` (not a re-typed copy) and drives
+Rule 9 through the actual `RulesEngine.run()` path — both the matching and
+non-matching cases — so this stays verified going forward. Full suite:
+1048 passed (was 1042), `engine.py` 100% coverage. Deployed as `v0.5.7`
+(no production redeploy needed — the live `rules.yml` doesn't use any
+priority actions today).
+
+**Status**: Fixed.
+
+---
+
 ## INCIDENT: 15 malware torrents evaded the exe-block rule (2026-09-11)
 
 **Symptom**: andronics found a completed torrent with an executable despite

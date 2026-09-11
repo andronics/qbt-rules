@@ -5,11 +5,6 @@ Currently-open items only. Resolved bugs and their postmortems live in
 
 ## Open
 
-- [ ] **Verify `advanced-rules-example.yml` Rule 9 end-to-end.** It mixes
-      multiple `$ref: actions.*` entries with inline actions in one list —
-      the exact shape that used to crash (see `BUGS.md`). The engine
-      handles it correctly now, but this specific example was never
-      actually run, only read. Worth confirming for real.
 - [ ] **Investigate `pytest` thread-race warnings** in
       `test_sqlite_queue.py` (`sqlite3.OperationalError: database is
       locked` under `TestSQLiteQueueThreadSafety`). Non-fatal today
