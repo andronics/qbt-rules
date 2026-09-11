@@ -529,6 +529,30 @@ class ActionExecutor:
                 logger.info(f"  Set download limit for {torrent['name']} to {limit}")
             return success
 
+        elif action_type == 'increase_priority':
+            success = self.api.increase_priority([torrent_hash])
+            if success:
+                logger.info(f"  Increased priority for {torrent['name']}")
+            return success
+
+        elif action_type == 'decrease_priority':
+            success = self.api.decrease_priority([torrent_hash])
+            if success:
+                logger.info(f"  Decreased priority for {torrent['name']}")
+            return success
+
+        elif action_type == 'set_top_priority':
+            success = self.api.set_top_priority([torrent_hash])
+            if success:
+                logger.info(f"  Set top priority for {torrent['name']}")
+            return success
+
+        elif action_type == 'set_bottom_priority':
+            success = self.api.set_bottom_priority([torrent_hash])
+            if success:
+                logger.info(f"  Set bottom priority for {torrent['name']}")
+            return success
+
         else:
             logger.error(f"  Unknown action type: {action_type}")
             return False

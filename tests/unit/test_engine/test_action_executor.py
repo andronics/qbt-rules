@@ -313,6 +313,61 @@ class TestSpeedLimitActions:
         mock_api.set_download_limit.assert_called_once_with([sample_torrent['hash']], 2097152)
 
 
+class TestPriorityActions:
+    """Test torrent priority actions (increase_priority/decrease_priority/
+    set_top_priority/set_bottom_priority). The API client methods for all
+    four already existed in api.py, but weren't wired into the action
+    dispatch -- using them from a rule fell through to the 'Unknown action
+    type' branch (logged error, returned False), silently never doing
+    anything. Found while verifying advanced-rules-example.yml Rule 9,
+    which uses increase_priority as part of its process-hd-content action
+    sequence."""
+
+    def test_increase_priority(self, mock_api, sample_torrent):
+        """Increase priority action."""
+        mock_api.increase_priority = Mock(return_value=True)
+        executor = ActionExecutor(mock_api, dry_run=False)
+
+        action = {'type': 'increase_priority'}
+        success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        mock_api.increase_priority.assert_called_once_with([sample_torrent['hash']])
+
+    def test_decrease_priority(self, mock_api, sample_torrent):
+        """Decrease priority action."""
+        mock_api.decrease_priority = Mock(return_value=True)
+        executor = ActionExecutor(mock_api, dry_run=False)
+
+        action = {'type': 'decrease_priority'}
+        success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        mock_api.decrease_priority.assert_called_once_with([sample_torrent['hash']])
+
+    def test_set_top_priority(self, mock_api, sample_torrent):
+        """Set top priority action."""
+        mock_api.set_top_priority = Mock(return_value=True)
+        executor = ActionExecutor(mock_api, dry_run=False)
+
+        action = {'type': 'set_top_priority'}
+        success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        mock_api.set_top_priority.assert_called_once_with([sample_torrent['hash']])
+
+    def test_set_bottom_priority(self, mock_api, sample_torrent):
+        """Set bottom priority action."""
+        mock_api.set_bottom_priority = Mock(return_value=True)
+        executor = ActionExecutor(mock_api, dry_run=False)
+
+        action = {'type': 'set_bottom_priority'}
+        success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        mock_api.set_bottom_priority.assert_called_once_with([sample_torrent['hash']])
+
+
 # ============================================================================
 # Dry Run Mode
 # ============================================================================

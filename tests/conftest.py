@@ -75,6 +75,10 @@ class MockQBittorrentAPI:
             'remove_tags': [],
             'set_upload_limit': [],
             'set_download_limit': [],
+            'increase_priority': [],
+            'decrease_priority': [],
+            'set_top_priority': [],
+            'set_bottom_priority': [],
         }
 
     def get_torrents(self, category=None, tag=None, hashes=None):
@@ -217,6 +221,26 @@ class MockQBittorrentAPI:
         for hash in hashes:
             if hash in self.torrents_data:
                 self.torrents_data[hash]['dl_limit'] = limit
+        return True
+
+    def increase_priority(self, hashes):
+        """Increase torrent priority."""
+        self.calls['increase_priority'].append(hashes)
+        return True
+
+    def decrease_priority(self, hashes):
+        """Decrease torrent priority."""
+        self.calls['decrease_priority'].append(hashes)
+        return True
+
+    def set_top_priority(self, hashes):
+        """Set maximum torrent priority."""
+        self.calls['set_top_priority'].append(hashes)
+        return True
+
+    def set_bottom_priority(self, hashes):
+        """Set minimum torrent priority."""
+        self.calls['set_bottom_priority'].append(hashes)
         return True
 
 
