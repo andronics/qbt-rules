@@ -42,10 +42,33 @@ since `scripts/bump-version.sh` always touches `pyproject.toml` and
 a tag push is never doc-only. Worth knowing if the release process ever
 changes.
 
-**Status**: Fixed. The 251 already-accumulated versions are a separate,
-riskier cleanup (need to avoid deleting a manifest still referenced by a
-currently-tagged multi-arch index) — handled separately, see below if
-attempted.
+**Status**: Fixed.
+
+**Follow-up — the "251 accumulated versions" turned out not to be
+waste.** Built the actual reference graph before deleting anything:
+fetched every one of the 56 currently-published tags' manifests, and for
+each multi-arch index, its child manifest digests. Result: of 256 total
+versions, **255 were legitimately referenced** by a current tag (every
+`main-<sha>` tag permanently owns its own per-platform child manifests —
+that's the tagging scheme working as designed, not clutter). Only **1**
+version was genuinely orphaned (from 2026-01-13, pre-dating this session's
+work entirely). The "251 versions, that's a lot of waste" framing used to
+propose this cleanup was wrong — it was based on total version count
+without checking what was actually still referenced.
+
+Deleted just that 1 confirmed-orphaned version after re-verifying it was
+still untagged and unreferenced immediately before deletion (`DELETE
+/user/packages/container/qbt-rules/versions/640970704` → `204`). Verified
+afterward: total version count dropped by exactly 1 (256 → 255), all 56
+tags remained intact, and `docker pull ghcr.io/andronics/qbt-rules:latest`
+still succeeded.
+
+The real opportunity to shrink the registry is pruning the 50+ permanent
+`main-<sha>` tags themselves (one per historical commit, most of which
+will never be pulled again) — but that's revoking previously-published
+tags, a different and more consequential decision than deleting orphaned
+data, deliberately left for a separate explicit decision rather than
+folded into this cleanup.
 
 ---
 
