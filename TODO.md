@@ -5,10 +5,7 @@ Currently-open items only. Resolved bugs and their postmortems live in
 
 ## Open
 
-- [ ] **Legacy `/config/scripts/archive_filter.py` and `rules_engine.py`**
-      sitting unused inside the deployed `qbittorrent-rules` container
-      (pre-package prototypes, not referenced by `config.yml`). Harmless
-      but confusing. Cleanup candidate on the deploy side, not this repo.
+Nothing currently open.
 
 ## Decided against (don't re-propose without reading this first)
 
