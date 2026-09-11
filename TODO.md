@@ -5,10 +5,6 @@ Currently-open items only. Resolved bugs and their postmortems live in
 
 ## Open
 
-- [ ] **No `read:packages` scope on the `andronics` GitHub CLI token** —
-      `gh api` can't query package versions directly; worked around by
-      hitting the GHCR OCI API with an anonymous pull token. Minor
-      friction for future debugging sessions, not blocking.
 - [ ] **Legacy `/config/scripts/archive_filter.py` and `rules_engine.py`**
       sitting unused inside the deployed `qbittorrent-rules` container
       (pre-package prototypes, not referenced by `config.yml`). Harmless
