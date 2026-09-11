@@ -438,3 +438,70 @@ both thresholds / old-but-low-ratio / high-ratio-but-young / public with
 identical stats) all evaluated correctly against the exact condition
 shape deployed — only the one meeting every criterion (private + old +
 well-seeded) matched.
+
+## 2026-09-11
+
+### INCIDENT: 15 malware torrents evaded the exe-block rule — root cause: `context: added` gate
+
+andronics reported a completed torrent with an executable despite the
+exe-block rule. Investigation found **15 torrents**, not 1 — all
+disguised with fake "YTS" branding, subtitle files and an NFO-style
+`.txt` as camouflage, with the actual "video" being a ~1GB `.exe` sharing
+the exact filename the real video file would have had.
+
+**Root cause**: both `"Remove Archive Based Torrents"` and `"Remove
+Torrents Containing Windows Executables"` had `context: added` — meaning
+they only ever got evaluated once, at the exact instant qBittorrent fires
+its `OnTorrentAdded` webhook. Confirmed via qBittorrent's own log
+(`qbittorrent.log`) that the webhook *did* fire correctly for the affected
+torrent (`06:22:01`, immediately after "Added new torrent") — so this
+was never a webhook-delivery failure. The failure is that `files.name`
+isn't necessarily populated yet at that exact moment for a torrent added
+by magnet link (no embedded file list — qBittorrent has to fetch it from
+peers/DHT after joining the swarm), so the condition evaluated against an
+empty/incomplete file list and silently passed. By the time the torrent
+*finished* downloading and its files were 100% known (`06:49:31`,
+confirmed via the `context=finished` webhook also firing correctly), the
+rule's `context: added` restriction meant it was never even attempted —
+and no other context (`finished`, `cron`) was ever allowed to re-check it.
+Every earlier test tonight of this rule used a pre-built `.torrent` file
+upload (metadata known synchronously at add-time), which is exactly why
+the bug never surfaced until real magnet-link content hit the queue.
+
+**Remediation** (immediate): retroactively re-triggered `context=added`
+for all 15 known hashes against qbt-rules directly — now that their files
+are 100% known (all long since finished downloading), the exe-block
+condition correctly matched every one and deleted them (`Deleted <name>
+(keep_files=False)`). Rescanned all remaining torrents (30) via
+`qBittorrent /api/v2/torrents/files` for any other `.exe`/`.scr` —
+confirmed zero remaining.
+
+**Fix** (engine/config, not a bug in `qbt-rules` itself — this was a
+rules-authoring gap from before this repo's fixes started): removed
+`context: added` entirely from both security rules in production
+`rules.yml`. With no `context` key, `required_context` is `None`, and
+`evaluate()`'s context check is documented to skip entirely when that's
+the case ("Rules WITHOUT context execute regardless of runtime context")
+— so both rules now evaluate on **every** trigger: `added` (catches the
+common case immediately, same as before), `finished` (new — catches
+anything whose metadata wasn't ready at add-time, once the download
+completes and the full file list is known), and the recurring `cron`
+sweep every 30 minutes (new — a persistent safety net that eventually
+catches anything that slipped past both of the above for any reason).
+
+**Verified live, isolating the fix from the `added` path specifically**:
+temporarily disabled qBittorrent's `autorun_on_torrent_added_enabled` via
+its own API (not the rules config) so the `added` webhook wouldn't fire
+at all, added a fresh fake-exe test torrent, confirmed it survived (proof
+the `added` path was fully bypassed), then manually triggered
+`context=cron` alone — confirmed it caught and deleted the torrent.
+Re-enabled the autorun setting afterward. This is airtight proof that a
+context other than `added` now independently catches what `added` alone
+would have missed — the exact failure mode of the incident.
+
+No image rebuild needed (config-only change). No new tests added to the
+`qbt-rules` repo itself for this one, since it isn't an engine bug — it's
+a rules-authoring pattern (don't gate security rules to a single context
+when file metadata isn't guaranteed available at that context) worth
+remembering for any future rule design, not something to unit-test in
+the engine.
