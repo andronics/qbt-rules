@@ -9,11 +9,6 @@ Currently-open items only. Resolved bugs and their postmortems live in
       already pushed** — the tag and `main`'s release state diverge
       slightly (the tag never contains its own version-bump commit).
       Cosmetic, low priority.
-- [ ] **`softprops/action-gh-release@v1`'s `make_latest` input is silently
-      ignored** (unsupported by that action version) — releases still get
-      created fine, but "mark as latest" on GitHub's Releases page
-      probably isn't doing anything. Needs a newer action version or drop
-      the input.
 - [ ] **No `read:packages` scope on the `andronics` GitHub CLI token** —
       `gh api` can't query package versions directly; worked around by
       hitting the GHCR OCI API with an anonymous pull token. Minor

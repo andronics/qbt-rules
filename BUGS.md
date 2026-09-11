@@ -7,6 +7,40 @@ technical postmortem detail behind the entries that matter.
 
 ---
 
+## `release.yml`'s `make_latest` input silently did nothing (v0.5.9)
+
+**Symptom**: every "Create Release" step logged `Unexpected input(s)
+'make_latest', valid inputs are [...]` — release.yml had passed
+`make_latest: true` since it was written, but it was silently ignored
+every single time. Releases were created fine; "mark as latest" on
+GitHub's Releases page was never actually happening.
+
+**Root cause**: `softprops/action-gh-release@v1` — confirmed by pulling
+`v1`'s actual `action.yml` from GitHub: zero mentions of `make_latest`
+anywhere in it. The input simply doesn't exist in v1. It was added in v2
+and remains in v3 (the current major version, which also runs on Node 24
+rather than v1's deprecated Node 20 — a bonus fix for the "Node.js 20 is
+deprecated" warnings that were showing up everywhere in CI).
+
+**Fix**: bumped to `softprops/action-gh-release@v3`. Confirmed first that
+every input `release.yml` actually uses (`tag_name`, `name`, `body_path`,
+`draft`, `prerelease`, `make_latest`) is unchanged in v3 — no renames, a
+safe drop-in bump. Used the floating `@v3` tag to match every other
+third-party action in these workflows (`actions/checkout@v4`,
+`docker/build-push-action@v5`, etc. — none of them pinned to an exact
+version either).
+
+**Verified**: cut a real release (`v0.5.9`). The "Unexpected input(s)"
+warning is gone from the Actions log. More importantly, confirmed the
+actual *behavior* now works, not just the absence of a warning: `gh
+release list` shows `v0.5.9` marked `Latest`, with `v0.5.8` correctly
+un-marked, and `GET /repos/andronics/qbt-rules/releases/latest` resolves
+to `v0.5.9`.
+
+**Status**: Fixed.
+
+---
+
 ## `SQLiteQueue` missing `busy_timeout` caused real thread-race failures (v0.5.8)
 
 **Symptom**: found while investigating the `pytest` thread-race warnings
