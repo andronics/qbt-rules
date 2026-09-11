@@ -1,0 +1,264 @@
+# qbt-rules — Bug Log
+
+Record of bugs found, root-caused, and fixed (or explicitly not fixed, with
+why) across this project's development and production deployment. Newest
+first. `CHANGELOG.md` is the user-facing release history; this file is the
+technical postmortem detail behind the entries that matter.
+
+---
+
+## INCIDENT: 15 malware torrents evaded the exe-block rule (2026-09-11)
+
+**Symptom**: andronics found a completed torrent with an executable despite
+the "Remove Torrents Containing Windows Executables" rule. Investigation
+found 15, not 1 — all disguised with fake "YTS" branding, subtitle files,
+and an NFO-style `.txt` as camouflage, with the actual "video" being a
+~1GB `.exe` sharing the exact filename the real video file would have had.
+
+**Root cause**: both security rules (`"Remove Archive Based Torrents"` and
+`"Remove Torrents Containing Windows Executables"`) had `context: added` —
+evaluated exactly once, at the instant qBittorrent's `OnTorrentAdded`
+webhook fires. Confirmed via `qbittorrent.log` that the webhook *did* fire
+correctly (`06:22:01`, immediately after "Added new torrent") — not a
+webhook-delivery failure. The real issue: `files.name` isn't necessarily
+populated yet at that exact moment for a torrent added by magnet link (no
+embedded file list — qBittorrent fetches it from peers/DHT after joining
+the swarm), so the condition evaluated against an empty/incomplete file
+list and silently passed. By the time the torrent *finished* downloading
+and its files were 100% known (`06:49:31`, `context=finished` webhook also
+confirmed firing), the rule's `context: added` restriction meant it was
+never even attempted again — and no other context (`finished`, `cron`)
+was ever allowed to re-check it. Every test of this rule before the
+incident used a pre-built `.torrent` file upload (metadata known
+synchronously at add-time), which is exactly why the bug never surfaced
+until real magnet-link content hit the queue.
+
+**Remediation** (immediate): retroactively re-triggered `context=added`
+for all 15 known hashes — now that their files were 100% known, the
+exe-block condition correctly matched and deleted every one. Rescanned all
+remaining torrents via `/api/v2/torrents/files` for any other `.exe`/
+`.scr` — confirmed zero remaining.
+
+**Fix**: removed `context: added` entirely from both security rules in
+production `rules.yml`. With no `context` key, `required_context` is
+`None`, and `evaluate()` skips the context check entirely in that case —
+so both rules now evaluate on *every* trigger: `added` (unchanged),
+`finished` (new — catches anything whose metadata wasn't ready at
+add-time), and the recurring 30-minute `cron` sweep (new — a persistent
+safety net).
+
+**Verified**: isolated the fix from the `added` path specifically by
+temporarily disabling qBittorrent's `autorun_on_torrent_added_enabled` via
+its own API, adding a fresh fake-exe test torrent, confirming it survived
+(proof `added` was fully bypassed), then manually triggering `context=cron`
+alone — confirmed it caught and deleted the torrent. Re-enabled autorun
+afterward.
+
+**Status**: Fixed and deployed. Not an engine bug — a rules-authoring
+pattern (don't gate security rules to a single context when file metadata
+isn't guaranteed available at that context). No engine tests added for
+this one; the lesson is about rule design, not `qbt-rules` code.
+
+---
+
+## Negation operators against list fields used ANY instead of ALL (v0.5.6)
+
+**Symptom**: found while drafting a `tagged-private`/`tagged-public`
+condition pair — the exact `not_contains "private"` pattern already live
+in production's "Delete Public Torrents" rule.
+
+**Root cause**: `info.tags` resolves to a list (`parse_tags` splits on
+comma). `_apply_operator`'s collection handling applied `any(...)`
+uniformly across every operator — correct for positive checks
+(`contains`/`==`/`in`), wrong for negations (`not_contains`/`!=`/`not_in`):
+`any(item satisfies negation)` is true if even one item fails to match,
+which is true for almost any multi-item collection. For tags
+`['private', 'iptorrent.com']`, `not_contains "private"` incorrectly
+returned `True` because the `iptorrent.com` tag alone satisfied "doesn't
+contain private," regardless of the `private` tag right next to it.
+Confirmed all production torrents at the time had this exact multi-tag
+shape; they were incidentally shielded by the `protected-content` category
+check, but a real window existed (before that category reassignment)
+where a private torrent could have wrongly matched the public-deletion
+rule.
+
+**Fix**: when `actual` is a list, negation operators now use `all(...)` —
+true only when *no* item positively matches. Positive operators unchanged.
+
+**Verified**: 7 new regression tests, full suite 1042 passed (was 1035),
+`engine.py` back to 100% coverage. Deployed as `v0.5.6`, confirmed live
+against real production torrents carrying the affected tag shape.
+
+**Status**: Fixed.
+
+---
+
+## `$ref: actions.X` breaks when `actions.X` is a list (v0.5.4)
+
+**Symptom**: found deploying new rules — "Tag iptorrent.com Trackers"
+(using `$ref: actions.tag-private` alongside an inline `add_tag`) matched
+correctly but crashed on execute: `TypeError: list indices must be
+integers or slices, not str`.
+
+**Root cause**: `refs.actions.*` blocks are lists (an action sequence).
+Referencing one via `$ref: actions.x` from inside a rule's own `actions:`
+list (also a list) didn't splice/flatten — `_expand_refs`'s list-handling
+just mapped each item through expansion and returned the result in place,
+nesting the ref's list value inside the parent list instead of merging it.
+Not limited to mixed ref+inline usage — a rule using only a single action
+ref broke identically. Also affected `advanced-rules-example.yml` Rule 9,
+which mixes multiple action refs with inline actions the same way.
+
+**Fix**: `_expand_refs`'s list-handling now tracks whether each item was
+itself a `$ref` node; if its expansion is a list, it's spliced (`.extend()`)
+into the parent instead of appended as a nested element. Only triggers for
+items that were actually `$ref` nodes. `conditions.*` refs are unaffected
+by construction (they resolve to dicts, so nesting as a single list item
+was already correct).
+
+**Verified**: 9 existing tests had encoded the old nested-list shape as
+expected behavior (effectively asserting the bug) — corrected all of them.
+4 new regression tests. Full suite 1032 passed (was 1028). Deployed as
+`v0.5.4`, production restored to actually use the action refs (reverting
+the temporary inlining workaround) to prove the fix live in the exact
+scenario that crashed.
+
+**Status**: Fixed.
+
+---
+
+## Bare-list `conditions:` silently matched everything (v0.5.3)
+
+**Symptom**: found while drafting new rules using the same bare-list style
+`advanced-rules-example.yml` uses throughout
+(`conditions: [{$ref: ...}, {none: [...]}]`, no `all:`/`any:` wrapper).
+
+**Root cause**: `engine.py`'s `evaluate()` only checked `'all' in
+conditions`, `'any' in conditions`, `'none' in conditions`. When
+`conditions` is a `list` of dicts rather than a dict, none of those `in`
+checks can ever be true (`in` on a list checks for a matching *element*,
+not a dict key), so it fell through to `return True` unconditionally.
+Every one of the 10 rules in `advanced-rules-example.yml` matched every
+torrent regardless of its conditions — confirmed empirically before
+touching the fix.
+
+Also found while investigating: `contains` with a *list* value threw
+inside `_apply_operator` (`'in <string>' requires string as left operand,
+not list`), silently swallowed by `evaluate()`'s broad `try/except` into
+an always-`False` result — dangerous if that pattern ever landed inside a
+`none:` protection clause. (Later addressed properly — see "Feature:
+`contains`/`not_contains` accept a list value" below.)
+
+**Fix**: a bare list is now treated as an implicit `{'all': [...]}`.
+Purely additive — dict-wrapped `conditions:` is unaffected.
+
+**Verified**: 4 new regression tests. Full suite 1028 passed (was 1024),
+`engine.py` 100% coverage. Deployed as `v0.5.3`.
+
+**Status**: Fixed. Side effect: `advanced-rules-example.yml` did not need
+rewriting — its bare-list style is now genuinely supported.
+
+---
+
+## `release.yml` silently re-bumped version after the tag already existed (v0.5.2)
+
+**Symptom**: `/api/version` on freshly deployed `v0.5.1` reported internal
+version `"0.5.0"`.
+
+**Root cause**: `v0.5.1` was tagged manually (`git tag && git push`)
+instead of via `scripts/bump-version.sh`, the only thing that bumps
+version files *before* creating the tag. `release.yml`'s old "Update
+version in code" + "Commit version update" steps silently re-bumped and
+re-committed to `main` *after* the tag already existed — too late for
+`docker-build.yml`, which had already built from the pre-bump commit the
+tag pointed to.
+
+**Fix**: `release.yml` no longer auto-corrects. It now hard-fails
+("Verify version matches tag") if the tagged commit's version files don't
+already match the tag name, forcing `bump-version.sh` to be used. Also
+fixed `bump-version.sh`, which only ever bumped `__version__.py` — now
+bumps `pyproject.toml` too.
+
+**Verified**: locally (matching and deliberately-mismatched cases), then
+live in `v0.5.2` — "Verify version matches tag" passed for real in GitHub
+Actions, and `ghcr.io/andronics/qbt-rules:0.5.2 --version` correctly
+reported `v0.5.2` for the first time ever in this project.
+
+**Status**: Fixed.
+
+---
+
+## `docker-build.yml` produced an invalid tag on every version-tag push
+
+**Symptom**: every tag-triggered release build failed. No `vX.Y.Z` image
+had ever actually been published to GHCR — confirmed via
+`ghcr.io/v2/andronics/qbt-rules/tags/list`, which only showed `main`,
+`latest`, `main-<sha>`. Production's `compose.yml` referenced
+`ghcr.io/andronics/qbt-rules:dev`, a tag that didn't exist in the registry
+at all — the running container was on a locally-cached image from
+2025-12-20, manually tagged at some point.
+
+**Root cause**: the tag list included `type=sha,prefix={{branch}}-`, which
+only resolves on branch-triggered builds. On a tag push, `{{branch}}` is
+empty, producing the invalid tag `-<sha>` and aborting the whole
+multi-arch build before any of the other (valid) tags could be pushed.
+
+**Fix**: gated the sha-prefix tag to branch events only
+(`enable=${{ github.ref_type == 'branch' }}`), and while fixing it, also
+renamed the floating "latest build from main" tag from the
+never-actually-published `dev` to `edge`, with `latest` now only applying
+to tag-triggered (semver) builds.
+
+**Verified**: cut `v0.5.1` — both `release.yml` and `docker-build.yml`
+succeeded on the real tag-push trigger for the first time. Confirmed
+`0.5.1`, `0.5`, `0`, `latest`, `edge` all present in the registry.
+
+**Status**: Fixed. Production later pinned to a real version instead of
+the phantom `:dev`.
+
+---
+
+## `ci.yml` failed on every single run since it was added (Dec 2025 – Sep 2026)
+
+**Symptom**: CI red on every commit for ~9 months.
+
+**Root cause**: two independent, unconditional failures —
+1. The "Check for common issues" credential-detection regex
+   false-positived on its own docstring in `config.py`
+   (`config_key='server.api_key'` matches the pattern) and hard-failed
+   with `exit 1` on any match, benign or not.
+2. The "Validate configuration examples" step referenced
+   `config/config.example.yml` / `config/rules.example.yml`, which don't
+   exist — renamed to `config/config.default.yml` / `rules.default.yml`
+   at some point, workflow never updated.
+
+**Fix**: excluded the `config_key=` false-positive pattern from the
+credential check; corrected the file paths.
+
+**Verified**: CI green for the first time since it was introduced.
+
+**Status**: Fixed.
+
+---
+
+## Known, not fixed (by design or low priority)
+
+- **`contains`/`not_contains` accepting a list value** isn't a bug fix so
+  much as a feature added in `v0.5.5` to close the silent-failure gap
+  noted above — `contains` with a list `value` now matches if *any* item
+  is a substring; `not_contains` only if none are. Mentioned here for
+  completeness since it originated from a bug investigation.
+- **`release.yml` commits the version-bump to `main` *after* the tag is
+  already pushed** — the tag and `main`'s "release state" diverge
+  slightly (the tag never contains its own version-bump commit). Cosmetic,
+  low priority.
+- **`softprops/action-gh-release@v1`'s `make_latest` input is silently
+  ignored** (`Unexpected input(s) 'make_latest'`) — releases still get
+  created fine, but "mark as latest" on GitHub's Releases page probably
+  isn't doing anything. Would need bumping to a newer action version or
+  dropping the input.
+- **`pytest` thread-race warnings** in `test_sqlite_queue.py`
+  (`sqlite3.OperationalError: database is locked` under
+  `TestSQLiteQueueThreadSafety`) — not yet determined whether this is a
+  real concurrency issue in `sqlite_queue.py`'s locking or just
+  test-harness noise. Non-fatal today.
