@@ -7,6 +7,54 @@ technical postmortem detail behind the entries that matter.
 
 ---
 
+## Added broadened malware blocklist + structural "no video file" security rule
+
+Direct follow-up to the malware-evasion incident above. The exe-block rule
+only ever caught the specific `.exe`/`.scr` extensions used in that
+incident; a disguise using any other Windows-executable-adjacent extension
+would have sailed through untouched, same as before the fix.
+
+- **Broadened `has-executable`**: `.exe|.scr` → `.exe|.scr|.bat|.cmd|.com|
+  .msi|.vbs|.ps1|.scf|.pif|.lnk|.jar`. Same rule, same regex-anchor
+  approach, just a longer list of Windows-executable/script extensions.
+- **New rule: "Remove Fake Video Torrents With No Video File"** — the
+  actual incident torrent had *zero* real video files, just the fake
+  payload plus subtitles/an image as camouflage. Rather than only relying
+  on an extension blocklist (which only catches extensions someone
+  thought to list), this catches the pattern structurally: any torrent in
+  a video-only category (`tv`, `movies`, `standup`) that contains *none*
+  of `.mkv/.mp4/.avi/.m4v/.wmv/.mov/.ts/.m2ts/.webm` gets deleted,
+  regardless of what disguise technique produced that state.
+- **Explicitly excluded by design, not by omission**: `audiobooks`,
+  `ebooks`, `music`, `software`, and any uncategorized torrent are outside
+  the `is-video-category` condition entirely — a legitimate audiobook
+  (audio files, no video) or a future software download (executables by
+  definition) will never even reach this check. Confirmed the `software`
+  category has zero torrents in it today, so no live conflict, but the
+  category exists in `categories.json` for a reason and this scoping
+  keeps it usable for that purpose going forward.
+
+**Verified live** with four real test torrents added via the qBittorrent
+API, isolating each mechanism:
+1. `category=tv`, fake payload named as the release + a `.exe` — deleted
+   by the (broadened) exe-block rule, as before.
+2. `category=tv`, same shape but a `.bat` instead of `.exe` — deleted by
+   the *broadened* extension list specifically (proves the extension
+   addition works, not just the pre-existing `.exe` case).
+3. `category=audiobooks`, real `.mp3`, no video file — **survived**,
+   proving the category exclusion actually protects legitimate non-video
+   content as designed.
+4. `category=tv`, no malicious extension at all (just a `.txt` and
+   `.jpg`, no video file) — deleted specifically by the new "Remove Fake
+   Video Torrents With No Video File" rule, isolating it from the
+   extension blocklist and proving the structural check works
+   independently.
+
+No image rebuild needed (pure `rules.yml` config change, existing
+operators only). `Loaded 11 rules` (was 10).
+
+---
+
 ## `docker-build.yml` ran a full multi-arch build on every doc-only commit
 
 **Symptom**: found by chance while verifying the newly-restored
