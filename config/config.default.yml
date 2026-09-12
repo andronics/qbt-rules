@@ -179,4 +179,6 @@ engine:
 #   qbt_password:
 #     file: ./secrets/qbt_password.txt
 #
-# See docs/Docker.md for complete Docker deployment guide.
+# See https://github.com/andronics/qbt-rules/wiki/In‐Depth-Configuration
+# and https://github.com/andronics/qbt-rules/wiki/Security for the complete
+# configuration and secrets-management reference.

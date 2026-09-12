@@ -5,10 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.9] - 2026-09-11
+
+### Fixed
+- Bumped `softprops/action-gh-release` from v1 to v3 in `release.yml` to restore `make_latest` support.
+
+## [0.5.8] - 2026-09-11
+
+### Fixed
+- `SQLiteQueue` was missing a `busy_timeout`, causing real thread-race failures under concurrent job submission.
+
+## [0.5.7] - 2026-09-11
 
 ### Added
-- **Hot-Reload Rules**: Rules file (`rules.yml`) is now automatically reloaded when modified, without requiring server restart. The system checks file modification time on each job execution and reloads only when changed. Graceful error handling ensures the server continues using cached rules if the reload fails (e.g., syntax errors).
+- Four new actions: `increase_priority`, `decrease_priority`, `set_top_priority`, `set_bottom_priority`, wired up to qBittorrent's torrent queue endpoints.
+
+## [0.5.6] - 2026-09-07
+
+### Fixed
+- **Collection field negation operators used the wrong match semantics.** `!=`/`not_in`/`not_contains` against a collection field (`trackers.*`, `files.*`, `peers.*`, `webseeds.*`) now require **all** items to satisfy the negation, not just one — previously a single non-matching item in a multi-item collection could make a negation check trivially pass. Positive operators (`==`, `contains`, `in`, ...) are unaffected and keep ANY-match semantics.
+
+## [0.5.5] - 2026-09-07
+
+### Added
+- `contains`/`not_contains` now accept a list as `value:`, matching if **any** item in the list is found (previously list values only worked with `in`/`not_in`).
+
+## [0.5.4] - 2026-09-07
+
+### Fixed
+- A `$ref: actions.name` reference that resolved to a list (an action sequence) was nested as a single list-shaped item inside the parent `actions:` list instead of being spliced in — the engine crashed trying to execute it as one action.
+
+## [0.5.3] - 2026-09-07
+
+### Fixed
+- A bare list under `conditions:` (no `all`/`any`/`none` wrapper) silently matched **every** torrent instead of being treated as an implicit `all:`. This affected any rule mixing `$ref:` entries directly under `conditions:`, a pattern the resolver layer encourages.
+
+## [0.5.2] - 2026-09-07
+
+### Fixed
+- `release.yml` was silently self-correcting a version mismatch between a pushed tag and `__version__.py`/`pyproject.toml` instead of failing the release — it now fails loudly, since a mismatch means the tagged commit wasn't produced by `scripts/bump-version.sh`.
+
+## [0.5.1] - 2026-09-07
+
+### Fixed
+- Repaired the CI/Docker publish pipeline: `docker-build.yml`'s `type=sha,prefix={{branch}}-` tag rule produced an invalid empty-prefix tag on every tag-triggered build, meaning no versioned image had ever actually reached GHCR despite the workflow reporting success.
+
+## [0.5.0] - 2025-12-20
+
+### Added
+- **Reusable References (resolver layer)**: a `refs:` block in `rules.yml` for defining `vars`, `conditions`, and `actions` once and reusing them across rules via `$ref: conditions.name`/`$ref: actions.name` and `${vars.x}` substitution. Includes context-aware type validation (a `conditions.*` ref can't be used where an `actions.*` ref is expected, and vice versa) and circular-reference detection.
+- **Hot-reload for `rules.yml`**: the rules file is checked for modification on each job and reloaded automatically without a server restart. If the reload fails (e.g. a YAML syntax error), the server keeps using the last known-good rules rather than crashing.
 
 ## [0.4.1] - 2025-12-19
 
@@ -555,7 +601,20 @@ services:
 - Action 'pause' → 'stop'
 - Action 'resume' → 'start'
 
-[Unreleased]: https://github.com/andronics/qbt-rules/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/andronics/qbt-rules/compare/v0.5.9...HEAD
+[0.5.9]: https://github.com/andronics/qbt-rules/compare/v0.5.8...v0.5.9
+[0.5.8]: https://github.com/andronics/qbt-rules/compare/v0.5.7...v0.5.8
+[0.5.7]: https://github.com/andronics/qbt-rules/compare/v0.5.6...v0.5.7
+[0.5.6]: https://github.com/andronics/qbt-rules/compare/v0.5.5...v0.5.6
+[0.5.5]: https://github.com/andronics/qbt-rules/compare/v0.5.4...v0.5.5
+[0.5.4]: https://github.com/andronics/qbt-rules/compare/v0.5.3...v0.5.4
+[0.5.3]: https://github.com/andronics/qbt-rules/compare/v0.5.2...v0.5.3
+[0.5.2]: https://github.com/andronics/qbt-rules/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/andronics/qbt-rules/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/andronics/qbt-rules/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/andronics/qbt-rules/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/andronics/qbt-rules/compare/v0.3.2...v0.4.0
+[0.3.2]: https://github.com/andronics/qbt-rules/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/andronics/qbt-rules/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/andronics/qbt-rules/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/andronics/qbt-rules/compare/v0.1.0...v0.2.0
