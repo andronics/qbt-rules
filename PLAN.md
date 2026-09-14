@@ -1579,17 +1579,23 @@ New `integrations:` config section (`integrations.sonarr.url`/`.api_key`, `integ
 
 ### 5. Read-only web dashboard
 
-**Status**: Planned.
+**Status**: Implemented.
 
-First web UI — 100% greenfield (no existing templates/static serving/Jinja2 usage anywhere in `server.py`). Server-rendered via Flask + Jinja2 (no new frontend framework/build pipeline), reusing data the JSON API already exposes:
+First web UI — 100% greenfield (no prior templates/static serving/Jinja2 usage anywhere in `server.py`). Server-rendered via Flask + Jinja2 (no new frontend framework/build pipeline), reusing data the JSON API already exposes, no new query logic:
 
-- `GET /dashboard` — health + stats overview
-- `GET /dashboard/jobs`, `GET /dashboard/jobs/<job_id>` — job list/detail
+- `GET /dashboard` — worker/queue status + job counts by status, version
+- `GET /dashboard/jobs` (paginated, `?status=` filter), `GET /dashboard/jobs/<job_id>` — job list/detail
 - `GET /dashboard/rules` — read-only, sourced from the already hot-reload-aware `config_obj.get_rules()`
 
-Auth: reuses the existing `require_api_key` decorator (same `?key=` query param the JSON API already supports) rather than building a login form — accepted trade-off for a read-only, home-lab-scale v0.6 dashboard.
+`create_app()` gained an optional 4th `config: Optional[Config] = None` param (stored as the module-level `dashboard_config` global) for the rules view — optional so every pre-existing 3-arg call site keeps working unchanged; `/dashboard/rules` reports itself unavailable if `config` wasn't provided rather than erroring. `cli.py`'s `run_server_mode()` passes `config=config_obj`.
 
-**Packaging risk requiring pre-merge verification**: `pyproject.toml`'s `package-data` currently only declares `py.typed` — templates must be added (`"templates/*.html"`) or the built wheel silently omits them, surfacing only at runtime as `TemplateNotFound`. Verify by building the wheel and installing it in a clean venv before relying on the Docker build to catch it.
+Auth: reuses the existing `require_api_key` decorator (same `?key=` query param the JSON API already supports) rather than building a login form — accepted trade-off for a read-only, home-lab-scale v0.6 dashboard. Every internal link carries `?key=` forward so navigation stays authenticated. `FilteredLogger.access()` (Gunicorn access log filter) now also suppresses `/dashboard*` paths by default, alongside the pre-existing `/api/health` suppression, since a browsing session generates far more key-bearing URLs than a scripted API client typically would.
+
+**Packaging risk — verified fixed**: `pyproject.toml`'s `package-data` now includes `"templates/*.html"` (was only `py.typed`). Confirmed via `python -m build --wheel` + a clean-venv install that all 5 template files land in the installed package — not just a code-review note, actually built and checked before merge.
+
+Templates: `base.html` (nav + shared styling, light/dark via `prefers-color-scheme`) plus one template per page (`dashboard.html`, `jobs.html`, `job_detail.html`, `rules.html`), all under `src/qbt_rules/templates/` — Flask's default `template_folder` resolution (relative to `server.py`'s package) needed no explicit override.
+
+Tested against a real running server (not just unit-mocked): submitted a real job through `/api/execute`, confirmed it appeared correctly in `/dashboard/jobs` and rendered its result in `/dashboard/jobs/<id>`; confirmed 401 without a key and the rules page rendering real `rules.yml` content.
 
 ### Sequencing
 

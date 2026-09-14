@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Overview - qbt-rules{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Status</h2>
+  <div class="stat-grid">
+    <div class="stat">
+      <div class="value">{{ 'Running' if worker_status.running else 'Stopped' }}</div>
+      <div class="label">Worker</div>
+    </div>
+    <div class="stat">
+      <div class="value">{{ queue_backend }}</div>
+      <div class="label">Queue backend</div>
+    </div>
+    <div class="stat">
+      <div class="value">{{ queue_stats.total_jobs }}</div>
+      <div class="label">Total jobs</div>
+    </div>
+    <div class="stat">
+      <div class="value">{{ version }}</div>
+      <div class="label">Version</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Jobs by status</h2>
+  <div class="stat-grid">
+    <div class="stat"><div class="value">{{ queue_stats.pending }}</div><div class="label">Pending</div></div>
+    <div class="stat"><div class="value">{{ queue_stats.processing }}</div><div class="label">Processing</div></div>
+    <div class="stat"><div class="value">{{ queue_stats.completed }}</div><div class="label">Completed</div></div>
+    <div class="stat"><div class="value">{{ queue_stats.failed }}</div><div class="label">Failed</div></div>
+    <div class="stat"><div class="value">{{ queue_stats.cancelled }}</div><div class="label">Cancelled</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Performance</h2>
+  <p class="muted">Average execution time: {{ (queue_stats.average_execution_time ~ 's') if queue_stats.average_execution_time else 'N/A' }}</p>
+  <p class="muted">Last job completed: {{ worker_status.last_job_completed or 'never' }}</p>
+</div>
+
+<p><a href="{{ url_for('dashboard_jobs', key=api_key) }}">View all jobs &rarr;</a></p>
+{% endblock %}

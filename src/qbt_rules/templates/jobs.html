@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Jobs - qbt-rules{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Jobs{% if status %} <span class="muted">(status: {{ status }})</span>{% endif %}</h2>
+  {% if jobs %}
+  <table>
+    <thead>
+      <tr><th>Job ID</th><th>Status</th><th>Context</th><th>Created</th></tr>
+    </thead>
+    <tbody>
+      {% for job in jobs %}
+      <tr>
+        <td><a href="{{ url_for('dashboard_job_detail', job_id=job.job_id, key=api_key) }}">{{ job.job_id[:8] }}&hellip;</a></td>
+        <td><span class="badge badge-{{ job.status }}">{{ job.status }}</span></td>
+        <td>{{ job.context or 'none' }}</td>
+        <td>{{ job.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="pagination">
+    <span class="muted">Showing {{ jobs|length }} of {{ total }}</span>
+    {% if offset > 0 %}
+      <a href="{{ url_for('dashboard_jobs', key=api_key, status=status, limit=limit, offset=[offset - limit, 0]|max) }}">&larr; Previous</a>
+    {% endif %}
+    {% if offset + limit < total %}
+      <a href="{{ url_for('dashboard_jobs', key=api_key, status=status, limit=limit, offset=offset + limit) }}">Next &rarr;</a>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="empty">No jobs found.</p>
+  {% endif %}
+</div>
+{% endblock %}

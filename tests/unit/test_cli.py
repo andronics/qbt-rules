@@ -366,7 +366,8 @@ class TestRunServerMode:
         mock_create_app.assert_called_once_with(
             queue_manager=mock_queue,
             worker_instance=mock_worker,
-            api_key='test-key'
+            api_key='test-key',
+            config=config_obj
         )
 
         # Verify server run

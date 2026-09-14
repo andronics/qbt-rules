@@ -12,13 +12,14 @@ import os
 import secrets
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from functools import wraps
 
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, render_template
 
 from qbt_rules.queue_manager import QueueManager, JobStatus
 from qbt_rules.worker import Worker
+from qbt_rules.config import Config
 from qbt_rules.__version__ import __version__
 
 logger = logging.getLogger(__name__)
@@ -27,9 +28,15 @@ logger = logging.getLogger(__name__)
 queue: QueueManager = None
 worker: Worker = None
 api_key_config: str = None
+dashboard_config: Optional[Config] = None
 
 
-def create_app(queue_manager: QueueManager, worker_instance: Worker, api_key: str) -> Flask:
+def create_app(
+    queue_manager: QueueManager,
+    worker_instance: Worker,
+    api_key: str,
+    config: Optional[Config] = None
+) -> Flask:
     """
     Create and configure Flask application
 
@@ -37,15 +44,20 @@ def create_app(queue_manager: QueueManager, worker_instance: Worker, api_key: st
         queue_manager: Queue manager instance
         worker_instance: Worker instance
         api_key: API authentication key
+        config: Loaded Config instance, used by the read-only /dashboard/rules
+            view. Optional (defaults to None) so existing callers that don't
+            need the dashboard's rules view are unaffected; that one route
+            reports itself unavailable if config wasn't provided
 
     Returns:
         Configured Flask app
     """
-    global queue, worker, api_key_config
+    global queue, worker, api_key_config, dashboard_config
 
     queue = queue_manager
     worker = worker_instance
     api_key_config = api_key
+    dashboard_config = config
 
     app = Flask(__name__)
     app.config['JSON_SORT_KEYS'] = False
@@ -56,6 +68,7 @@ def create_app(queue_manager: QueueManager, worker_instance: Worker, api_key: st
 
     # Register blueprints/routes
     register_routes(app)
+    register_dashboard_routes(app)
 
     logger.info("Flask application created")
     return app
@@ -383,6 +396,86 @@ def register_routes(app: Flask):
         }), 500
 
 
+def register_dashboard_routes(app: Flask):
+    """
+    Register read-only web dashboard routes
+
+    Server-rendered via Flask + Jinja2 (templates in src/qbt_rules/templates/),
+    reusing the same queue/worker/config data the JSON API already exposes --
+    no new query logic. Auth reuses require_api_key via the same ?key=
+    query param the JSON API supports; every internal link carries it
+    forward so navigating between pages stays authenticated.
+    """
+
+    @app.route('/dashboard', methods=['GET'])
+    @require_api_key
+    def dashboard_overview():
+        """Dashboard home: worker/queue status + job counts by status"""
+        queue_stats = queue.get_stats()
+        worker_status = worker.get_status()
+
+        return render_template(
+            'dashboard.html',
+            active='overview',
+            api_key=request.args.get('key', ''),
+            queue_backend=queue.__class__.__name__,
+            queue_stats=queue_stats,
+            worker_status=worker_status,
+            version=__version__,
+        )
+
+    @app.route('/dashboard/jobs', methods=['GET'])
+    @require_api_key
+    def dashboard_jobs():
+        """Paginated job list, optionally filtered by status"""
+        status = request.args.get('status')
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+
+        jobs = queue.list_jobs(status=status, limit=limit, offset=offset)
+        total = queue.count_jobs(status=status)
+
+        return render_template(
+            'jobs.html',
+            active='jobs',
+            api_key=request.args.get('key', ''),
+            jobs=jobs,
+            total=total,
+            limit=limit,
+            offset=offset,
+            status=status,
+        )
+
+    @app.route('/dashboard/jobs/<job_id>', methods=['GET'])
+    @require_api_key
+    def dashboard_job_detail(job_id: str):
+        """Single job's full detail, including result/error if present"""
+        job = queue.get_job(job_id)
+
+        return render_template(
+            'job_detail.html',
+            active='jobs',
+            api_key=request.args.get('key', ''),
+            job=job,
+            job_id=job_id,
+        ), (200 if job else 404)
+
+    @app.route('/dashboard/rules', methods=['GET'])
+    @require_api_key
+    def dashboard_rules():
+        """Read-only rules.yml view, sourced from the same hot-reload-aware
+        Config.get_rules() the rules engine itself uses"""
+        rules = dashboard_config.get_rules() if dashboard_config is not None else None
+
+        return render_template(
+            'rules.html',
+            active='rules',
+            api_key=request.args.get('key', ''),
+            rules=rules,
+            config_available=dashboard_config is not None,
+        )
+
+
 def run_server(
     app: Flask,
     host: str = '0.0.0.0',
@@ -404,14 +497,21 @@ def run_server(
     from gunicorn.glogging import Logger
 
     class FilteredLogger(Logger):
-        """Custom Gunicorn logger that filters out health check requests"""
+        """Custom Gunicorn logger that filters out health check and dashboard requests"""
 
         def access(self, resp, req, environ, request_time):
-            """Override access log to filter /api/health requests"""
+            """Override access log to filter /api/health and /dashboard* requests"""
             # Only filter if log_http_access is False
             if not log_http_access:
                 # Skip logging for health check endpoint
                 if environ.get('PATH_INFO') == '/api/health':
+                    return
+                # Skip logging for dashboard pages -- the dashboard's only
+                # auth mechanism is a ?key= query param, and a browsing
+                # session hits many more URLs than a scripted API client
+                # typically would, so logging every one repeats the key
+                # in cleartext far more than the JSON API does
+                if environ.get('PATH_INFO', '').startswith('/dashboard'):
                     return
 
             # Log all other requests (or all requests if log_http_access is True)

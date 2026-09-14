@@ -240,7 +240,8 @@ def run_server_mode(args, config_obj):
     app = create_app(
         queue_manager=queue,
         worker_instance=worker,
-        api_key=server_config['api_key']
+        api_key=server_config['api_key'],
+        config=config_obj
     )
 
     # Run server

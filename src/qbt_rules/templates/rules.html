@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Rules - qbt-rules{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Rules</h2>
+  {% if not config_available %}
+  <p class="empty">Rules view is unavailable (server started without a config reference).</p>
+  {% elif rules %}
+  <table>
+    <thead>
+      <tr><th>#</th><th>Name</th><th>Enabled</th><th>Context</th><th>stop_on_match</th></tr>
+    </thead>
+    <tbody>
+      {% for rule in rules %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ rule.name }}</td>
+        <td>{{ 'Yes' if rule.get('enabled', True) else 'No' }}</td>
+        <td>{{ rule.context or '(any)' }}</td>
+        <td>{{ 'Yes' if rule.get('stop_on_match', False) else 'No' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">Rules execute top to bottom, in the order listed above.</p>
+  {% else %}
+  <p class="empty">No rules configured.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Job {{ job_id }} - qbt-rules{% endblock %}
+{% block content %}
+
+{% if job %}
+<div class="card">
+  <h2>Job {{ job.job_id }}</h2>
+  <table>
+    <tr><th>Status</th><td><span class="badge badge-{{ job.status }}">{{ job.status }}</span></td></tr>
+    <tr><th>Context</th><td>{{ job.context or 'none' }}</td></tr>
+    <tr><th>Hash</th><td>{{ job.hash or 'all torrents' }}</td></tr>
+    <tr><th>Created</th><td>{{ job.created_at }}</td></tr>
+    <tr><th>Started</th><td>{{ job.started_at or 'not started' }}</td></tr>
+    <tr><th>Completed</th><td>{{ job.completed_at or 'not completed' }}</td></tr>
+  </table>
+</div>
+
+{% if job.result %}
+<div class="card">
+  <h2>Result</h2>
+  <table>
+    {% for key, value in job.result.items() %}
+    <tr><th>{{ key }}</th><td>{{ value }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% if job.error %}
+<div class="card">
+  <h2>Error</h2>
+  <pre>{{ job.error }}</pre>
+</div>
+{% endif %}
+
+{% else %}
+<div class="card">
+  <p class="empty">Job not found: {{ job_id }}</p>
+</div>
+{% endif %}
+
+<p><a href="{{ url_for('dashboard_jobs', key=api_key) }}">&larr; Back to jobs</a></p>
+{% endblock %}

@@ -1141,3 +1141,211 @@ class TestPostForkHook:
             assert worker_instance.running is False
             worker_instance.start.assert_called_once()
             assert logger.info.call_count == 2
+
+
+class TestDashboardRoutes:
+    """Test the read-only web dashboard (/dashboard*)"""
+
+    @pytest.fixture
+    def mock_config(self, mocker):
+        """Mock Config instance for the rules view"""
+        config = mocker.MagicMock()
+        config.get_rules.return_value = [
+            {'name': 'Delete old torrents', 'enabled': True, 'context': 'nightly', 'stop_on_match': False},
+            {'name': 'Block executables', 'enabled': False, 'context': None, 'stop_on_match': True},
+        ]
+        return config
+
+    @pytest.fixture
+    def app_with_config(self, mock_queue, mock_worker, mock_config):
+        """Flask app created WITH a config reference (rules view available)"""
+        app = create_app(mock_queue, mock_worker, 'test-api-key-12345', config=mock_config)
+        app.config['TESTING'] = True
+        return app
+
+    @pytest.fixture
+    def client_with_config(self, app_with_config):
+        return app_with_config.test_client()
+
+    # -- Auth -----------------------------------------------------------
+
+    @pytest.mark.parametrize('path', [
+        '/dashboard',
+        '/dashboard/jobs',
+        '/dashboard/jobs/test-job-id-123',
+        '/dashboard/rules',
+    ])
+    def test_requires_api_key(self, client, path):
+        """Every dashboard route 401s without a key, same as the JSON API"""
+        response = client.get(path)
+        assert response.status_code == 401
+
+    @pytest.mark.parametrize('path', [
+        '/dashboard',
+        '/dashboard/jobs',
+        '/dashboard/jobs/test-job-id-123',
+        '/dashboard/rules',
+    ])
+    def test_accepts_query_param_key(self, client, path):
+        response = client.get(f'{path}?key=test-api-key-12345')
+        assert response.status_code == 200
+
+    # -- Overview ---------------------------------------------------------
+
+    def test_overview_renders_stats(self, client, mock_queue, mock_worker):
+        mock_queue.get_stats.return_value = {
+            'total_jobs': 42, 'pending': 1, 'processing': 2,
+            'completed': 35, 'failed': 3, 'cancelled': 1,
+            'average_execution_time': 1.5,
+        }
+        response = client.get('/dashboard?key=test-api-key-12345')
+
+        assert response.status_code == 200
+        body = response.data.decode()
+        assert '42' in body
+        assert 'SQLiteQueue' in body
+        assert __version__ in body
+
+    def test_overview_shows_stopped_worker(self, client, mock_worker):
+        mock_worker.get_status.return_value = {'running': False, 'last_job_completed': None}
+        response = client.get('/dashboard?key=test-api-key-12345')
+
+        assert response.status_code == 200
+        assert 'Stopped' in response.data.decode()
+
+    # -- Jobs list ----------------------------------------------------------
+
+    def test_jobs_list_empty_state(self, client, mock_queue):
+        mock_queue.list_jobs.return_value = []
+        response = client.get('/dashboard/jobs?key=test-api-key-12345')
+
+        assert response.status_code == 200
+        assert 'No jobs found' in response.data.decode()
+
+    def test_jobs_list_renders_jobs(self, client, mock_queue):
+        mock_queue.list_jobs.return_value = [
+            {
+                'job_id': 'abcdef12-3456-7890-abcd-ef1234567890',
+                'status': JobStatus.COMPLETED,
+                'context': 'nightly',
+                'created_at': '2025-01-01T12:00:00',
+            },
+        ]
+        mock_queue.count_jobs.return_value = 1
+        response = client.get('/dashboard/jobs?key=test-api-key-12345')
+
+        assert response.status_code == 200
+        body = response.data.decode()
+        assert 'abcdef12' in body
+        assert 'nightly' in body
+        assert 'badge-completed' in body
+
+    def test_jobs_list_passes_status_filter_through(self, client, mock_queue):
+        client.get('/dashboard/jobs?key=test-api-key-12345&status=failed')
+
+        mock_queue.list_jobs.assert_called_once_with(status='failed', limit=50, offset=0)
+        mock_queue.count_jobs.assert_called_once_with(status='failed')
+
+    def test_jobs_list_pagination_next_link_when_more_remain(self, client, mock_queue):
+        mock_queue.list_jobs.return_value = [{'job_id': f'job-{i}', 'status': 'completed',
+                                                'context': None, 'created_at': 'now'} for i in range(50)]
+        mock_queue.count_jobs.return_value = 200
+        response = client.get('/dashboard/jobs?key=test-api-key-12345&limit=50&offset=0')
+
+        body = response.data.decode()
+        assert 'Next' in body
+        assert 'Previous' not in body
+
+    def test_jobs_list_pagination_previous_link_when_offset_positive(self, client, mock_queue):
+        mock_queue.list_jobs.return_value = [
+            {'job_id': 'job-x', 'status': 'completed', 'context': None, 'created_at': 'now'},
+        ]
+        mock_queue.count_jobs.return_value = 60
+        response = client.get('/dashboard/jobs?key=test-api-key-12345&limit=50&offset=50')
+
+        assert 'Previous' in response.data.decode()
+
+    # -- Job detail -----------------------------------------------------
+
+    def test_job_detail_found(self, client, mock_queue):
+        mock_queue.get_job.return_value = {
+            'job_id': 'test-job-id-123',
+            'status': JobStatus.COMPLETED,
+            'context': 'nightly',
+            'hash': None,
+            'created_at': '2025-01-01T12:00:00',
+            'started_at': '2025-01-01T12:00:01',
+            'completed_at': '2025-01-01T12:00:05',
+            'result': {'torrents_processed': 10, 'actions_executed': 3},
+            'error': None,
+        }
+        response = client.get('/dashboard/jobs/test-job-id-123?key=test-api-key-12345')
+
+        assert response.status_code == 200
+        body = response.data.decode()
+        assert 'test-job-id-123' in body
+        assert 'torrents_processed' in body
+
+    def test_job_detail_shows_error(self, client, mock_queue):
+        mock_queue.get_job.return_value = {
+            'job_id': 'test-job-id-123',
+            'status': JobStatus.FAILED,
+            'context': None,
+            'hash': None,
+            'created_at': '2025-01-01T12:00:00',
+            'started_at': None,
+            'completed_at': None,
+            'result': None,
+            'error': 'Traceback: something broke',
+        }
+        response = client.get('/dashboard/jobs/test-job-id-123?key=test-api-key-12345')
+
+        assert 'something broke' in response.data.decode()
+
+    def test_job_detail_not_found(self, client, mock_queue):
+        mock_queue.get_job.return_value = None
+        response = client.get('/dashboard/jobs/nonexistent?key=test-api-key-12345')
+
+        assert response.status_code == 404
+        assert 'not found' in response.data.decode().lower()
+
+    # -- Rules --------------------------------------------------------------
+
+    def test_rules_unavailable_without_config(self, client):
+        """create_app() without config= -- the shared `app` fixture's case"""
+        response = client.get('/dashboard/rules?key=test-api-key-12345')
+
+        assert response.status_code == 200
+        assert 'unavailable' in response.data.decode().lower()
+
+    def test_rules_renders_when_config_provided(self, client_with_config, mock_config):
+        response = client_with_config.get('/dashboard/rules?key=test-api-key-12345')
+
+        assert response.status_code == 200
+        body = response.data.decode()
+        assert 'Delete old torrents' in body
+        assert 'Block executables' in body
+        mock_config.get_rules.assert_called_once()
+
+    def test_rules_empty_state(self, client_with_config, mock_config):
+        mock_config.get_rules.return_value = []
+        response = client_with_config.get('/dashboard/rules?key=test-api-key-12345')
+
+        assert response.status_code == 200
+        assert 'No rules configured' in response.data.decode()
+
+    # -- Access log filtering -------------------------------------------
+
+    def test_run_server_source_filters_dashboard_paths(self):
+        """run_server()'s FilteredLogger.access() should also suppress
+        /dashboard* paths, same as /api/health -- checked via source
+        inspection, matching this file's existing convention for
+        run_server()'s Gunicorn-specific internals (see
+        TestGunicornIntegration above), since invoking a real Gunicorn
+        arbiter isn't practical in a unit test."""
+        from qbt_rules.server import run_server
+        import inspect
+
+        source = inspect.getsource(run_server)
+
+        assert "PATH_INFO', '').startswith('/dashboard')" in source
