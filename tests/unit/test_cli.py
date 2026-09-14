@@ -84,23 +84,23 @@ class TestGetNotificationsConfig:
 
         config = get_notifications_config(args, config_obj)
 
-        assert config['default_webhook_url'] is None
-        assert config['default_service'] == 'generic'
+        assert config['webhook_url'] is None
+        assert config['service'] == 'generic'
 
     def test_uses_config_file_values(self):
         """Should use config file values when present"""
         args = Namespace()
         config_obj = Mock(config={
             'notifications': {
-                'default_webhook_url': 'https://example.com/webhook',
-                'default_service': 'discord',
+                'webhook_url': 'https://example.com/webhook',
+                'service': 'discord',
             }
         })
 
         config = get_notifications_config(args, config_obj)
 
-        assert config['default_webhook_url'] == 'https://example.com/webhook'
-        assert config['default_service'] == 'discord'
+        assert config['webhook_url'] == 'https://example.com/webhook'
+        assert config['service'] == 'discord'
 
 
 class TestGetClientConfig:
@@ -231,7 +231,7 @@ class TestRunServerMode:
             queue=mock_queue,
             api=mock_api,
             config=config_obj,
-            notifications_config={'default_webhook_url': None, 'default_service': 'generic'}
+            notifications_config={'webhook_url': None, 'service': 'generic'}
         )
         mock_worker.start.assert_called_once()
 

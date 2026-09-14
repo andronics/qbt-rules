@@ -134,18 +134,18 @@ def get_notifications_config(args, config_obj) -> dict:
         Dictionary with notifications configuration
     """
     return {
-        'default_webhook_url': resolve_config(
-            getattr(args, 'notifications_default_webhook_url', None),
-            ENV_VAR_MAP.get('notifications.default_webhook_url', 'QBT_RULES_NOTIFICATIONS_WEBHOOK_URL'),
+        'webhook_url': resolve_config(
+            getattr(args, 'notifications_webhook_url', None),
+            ENV_VAR_MAP.get('notifications.webhook_url', 'QBT_RULES_NOTIFICATIONS_WEBHOOK_URL'),
             config_obj.config,
-            'notifications.default_webhook_url',
+            'notifications.webhook_url',
             default=None
         ),
-        'default_service': resolve_config(
-            getattr(args, 'notifications_default_service', None),
-            ENV_VAR_MAP.get('notifications.default_service', 'QBT_RULES_NOTIFICATIONS_SERVICE'),
+        'service': resolve_config(
+            getattr(args, 'notifications_service', None),
+            ENV_VAR_MAP.get('notifications.service', 'QBT_RULES_NOTIFICATIONS_SERVICE'),
             config_obj.config,
-            'notifications.default_service',
+            'notifications.service',
             default='generic'
         ),
     }

@@ -385,8 +385,8 @@ class ActionExecutor:
             api: qBittorrent API client
             dry_run: If True, only log actions without executing
             notifications_config: Pre-resolved notifications config
-                ({'default_webhook_url': ..., 'default_service': ...}) for
-                the notify action, already _FILE-resolved at server startup
+                ({'webhook_url': ..., 'service': ...}) for the notify
+                action, already _FILE-resolved at server startup
         """
         self.api = api
         self.dry_run = dry_run
@@ -451,7 +451,7 @@ class ActionExecutor:
             delete_files = self._resolve_delete_files(params)
             logger.info(f"  Would delete {torrent['name']} (delete_files={delete_files})")
         elif action_type == 'notify':
-            service = params.get('service', self.notifications_config.get('default_service', 'generic'))
+            service = params.get('service', self.notifications_config.get('service', 'generic'))
             message = self._render_notify_message(torrent, params.get('message'))
             logger.info(f"  Would notify via {service}: {message}")
         else:
@@ -649,11 +649,11 @@ class ActionExecutor:
         matches; pair with add_tag + a condition excluding already-tagged
         torrents if that's not desired.
         """
-        service = params.get('service', self.notifications_config.get('default_service', 'generic'))
-        url = params.get('url') or self.notifications_config.get('default_webhook_url')
+        service = params.get('service', self.notifications_config.get('service', 'generic'))
+        url = params.get('url') or self.notifications_config.get('webhook_url')
 
         if not url:
-            logger.error("  notify: no webhook URL configured (set params.url or notifications.default_webhook_url)")
+            logger.error("  notify: no webhook URL configured (set params.url or notifications.webhook_url)")
             return False
 
         message = self._render_notify_message(torrent, params.get('message'))

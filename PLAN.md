@@ -1563,11 +1563,11 @@ New `notify` action, single type with a `service` selector (`discord`/`slack`/`n
 - type: notify
   params:
     service: discord
-    url: "https://discord.com/api/webhooks/..."   # optional if notifications.default_webhook_url is set
+    url: "https://discord.com/api/webhooks/..."   # optional if notifications.webhook_url is set
     message: "Torrent {name} matched rule, ratio {ratio}, tags: {tags}"
 ```
 
-New `notifications:` config section (`default_webhook_url` with `_FILE` secret support, `default_service`). `ActionExecutor` does **not** hold a `Config` reference — `_FILE` resolution only happens via `cli.py`'s `resolve_config()`, which needs CLI `args` that `ActionExecutor` never has. Instead, `get_notifications_config(args, config_obj)` resolves the webhook URL/service once at server startup (same place `server_config`/`schedule_entries` already are) and threads the plain resolved dict down through `Worker` → `RulesEngine` → `ActionExecutor` as an optional `notifications_config` param. Always-fire, no idempotency tracking (matches `reannounce`/`recheck`); accepted risk that a rule re-evaluated across multiple contexts will re-notify — documented, with the `add_tag` + condition-exclusion workaround. `{tags}` in message templates is cleaned up via `parse_tags()` rather than exposing the raw comma-separated API string. Confirmed via a real end-to-end test (not mocked) that `notify` placed after `delete_torrent` in the same rule still renders the correct torrent name.
+New `notifications:` config section (`webhook_url` with `_FILE` secret support, `service`). `ActionExecutor` does **not** hold a `Config` reference — `_FILE` resolution only happens via `cli.py`'s `resolve_config()`, which needs CLI `args` that `ActionExecutor` never has. Instead, `get_notifications_config(args, config_obj)` resolves the webhook URL/service once at server startup (same place `server_config`/`schedule_entries` already are) and threads the plain resolved dict down through `Worker` → `RulesEngine` → `ActionExecutor` as an optional `notifications_config` param. Always-fire, no idempotency tracking (matches `reannounce`/`recheck`); accepted risk that a rule re-evaluated across multiple contexts will re-notify — documented, with the `add_tag` + condition-exclusion workaround. `{tags}` in message templates is cleaned up via `parse_tags()` rather than exposing the raw comma-separated API string. Confirmed via a real end-to-end test (not mocked) that `notify` placed after `delete_torrent` in the same rule still renders the correct torrent name.
 
 ### 4. Sonarr/Radarr blocklist-and-research action
 

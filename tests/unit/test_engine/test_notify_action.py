@@ -247,7 +247,7 @@ class TestNotifyConfigDefaults:
         mock_post.return_value = _mock_response()
         executor = ActionExecutor(
             mock_api, dry_run=False,
-            notifications_config={'default_webhook_url': 'https://example.com/default', 'default_service': 'generic'}
+            notifications_config={'webhook_url': 'https://example.com/default', 'service': 'generic'}
         )
 
         action = {'type': 'notify', 'params': {'message': 'Torrent {name} matched'}}
@@ -265,7 +265,7 @@ class TestNotifyConfigDefaults:
         mock_post.return_value = _mock_response()
         executor = ActionExecutor(
             mock_api, dry_run=False,
-            notifications_config={'default_webhook_url': 'https://example.com/default', 'default_service': 'generic'}
+            notifications_config={'webhook_url': 'https://example.com/default', 'service': 'generic'}
         )
 
         action = {
