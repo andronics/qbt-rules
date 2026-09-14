@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 from flask import Flask
 
-from qbt_rules.server import create_app, require_api_key, run_server
+from qbt_rules.server import create_app, require_api_key, run_server, _summarize_error
 from qbt_rules.queue_manager import JobStatus
 from qbt_rules.__version__ import __version__
 
@@ -1143,6 +1143,76 @@ class TestPostForkHook:
             assert logger.info.call_count == 2
 
 
+class TestSummarizeError:
+    """Test _summarize_error() -- extracts the final exception's summary
+    from a full traceback, for the job detail dashboard page."""
+
+    def test_empty_string_returns_empty(self):
+        assert _summarize_error('') == ''
+
+    def test_plain_message_with_no_traceback_returned_as_is(self):
+        assert _summarize_error('Something just broke') == 'Something just broke'
+
+    def test_single_exception_line(self):
+        assert _summarize_error('ValueError: bad input') == 'ValueError: bad input'
+
+    def test_chained_exceptions_returns_only_the_final_one(self):
+        """A traceback with multiple 'During handling of...'-chained
+        exceptions should surface only the last (most relevant) one,
+        not the earlier framework-internal causes."""
+        traceback_text = (
+            'Traceback (most recent call last):\n'
+            '  File "urllib3/connection.py", line 204, in _new_conn\n'
+            '    sock = connection.create_connection(\n'
+            'socket.gaierror: [Errno -2] Name or service not known\n'
+            '\n'
+            'The above exception was the direct cause of the following exception:\n'
+            '\n'
+            'Traceback (most recent call last):\n'
+            '  File "qbt_rules/api.py", line 70, in _ensure_connected\n'
+            '    self.client.auth_log_in()\n'
+            'qbittorrentapi.exceptions.APIConnectionError: Failed to connect\n'
+            '\n'
+            'During handling of the above exception, another exception occurred:\n'
+            '\n'
+            'Traceback (most recent call last):\n'
+            '  File "qbt_rules/worker.py", line 161, in _process_job\n'
+            '    result = self._execute_job(context, hash_filter)\n'
+            'qbt_rules.errors.ConnectionError: Cannot reach qBittorrent server\n'
+            '  • Host: http://unreachable.invalid:8080\n'
+            '  • Fix: Check that qBittorrent is running'
+        )
+
+        summary = _summarize_error(traceback_text)
+
+        assert summary.startswith('qbt_rules.errors.ConnectionError: Cannot reach qBittorrent server')
+        assert 'Fix: Check that qBittorrent is running' in summary
+        assert 'socket.gaierror' not in summary
+        assert 'APIConnectionError' not in summary
+        assert 'File "' not in summary
+
+    def test_multiline_custom_error_message_kept_intact(self):
+        """This project's own error classes format multi-line, bulleted
+        messages -- the whole thing (not just the first line) should be
+        part of the summary, since it's all one logical error."""
+        traceback_text = (
+            'Traceback (most recent call last):\n'
+            '  File "qbt_rules/worker.py", line 1, in x\n'
+            '    raise ConfigurationError(...)\n'
+            'qbt_rules.errors.ConfigurationError: Invalid config\n'
+            '  • File: /config/config.yml\n'
+            '  • Fix: Check the syntax'
+        )
+
+        summary = _summarize_error(traceback_text)
+
+        assert summary == (
+            'qbt_rules.errors.ConfigurationError: Invalid config\n'
+            '  • File: /config/config.yml\n'
+            '  • Fix: Check the syntax'
+        )
+
+
 class TestDashboardRoutes:
     """Test the read-only web dashboard (/dashboard*)"""
 
@@ -1301,6 +1371,61 @@ class TestDashboardRoutes:
         response = client.get('/dashboard/jobs/test-job-id-123?key=test-api-key-12345')
 
         assert 'something broke' in response.data.decode()
+
+    def test_job_detail_long_traceback_shows_summary_with_collapsed_full_trace(self, client, mock_queue):
+        """A multi-exception traceback should render the compact summary
+        by default, with the full trace tucked behind a <details> toggle
+        rather than dumped inline."""
+        full_traceback = (
+            'Traceback (most recent call last):\n'
+            '  File "urllib3/connection.py", line 204, in _new_conn\n'
+            'socket.gaierror: [Errno -2] Name or service not known\n'
+            '\n'
+            'During handling of the above exception, another exception occurred:\n'
+            '\n'
+            'Traceback (most recent call last):\n'
+            '  File "qbt_rules/worker.py", line 161, in _process_job\n'
+            'qbt_rules.errors.ConnectionError: Cannot reach qBittorrent server\n'
+            '  • Fix: Check that qBittorrent is running'
+        )
+        mock_queue.get_job.return_value = {
+            'job_id': 'test-job-id-123',
+            'status': JobStatus.FAILED,
+            'context': None,
+            'hash': None,
+            'created_at': '2025-01-01T12:00:00',
+            'started_at': None,
+            'completed_at': None,
+            'result': None,
+            'error': full_traceback,
+        }
+        response = client.get('/dashboard/jobs/test-job-id-123?key=test-api-key-12345')
+        body = response.data.decode()
+
+        assert 'qbt_rules.errors.ConnectionError: Cannot reach qBittorrent server' in body
+        assert '<details>' in body
+        assert 'Show full traceback' in body
+        assert 'socket.gaierror' in body  # present, but inside the collapsed <details> block
+
+    def test_job_detail_short_error_has_no_details_toggle(self, client, mock_queue):
+        """When the summary IS the whole error (no traceback framing to
+        strip), there's nothing extra to hide -- no <details> toggle."""
+        mock_queue.get_job.return_value = {
+            'job_id': 'test-job-id-123',
+            'status': JobStatus.FAILED,
+            'context': None,
+            'hash': None,
+            'created_at': '2025-01-01T12:00:00',
+            'started_at': None,
+            'completed_at': None,
+            'result': None,
+            'error': 'ValueError: bad input',
+        }
+        response = client.get('/dashboard/jobs/test-job-id-123?key=test-api-key-12345')
+        body = response.data.decode()
+
+        assert 'ValueError: bad input' in body
+        assert '<details>' not in body
 
     def test_job_detail_not_found(self, client, mock_queue):
         mock_queue.get_job.return_value = None

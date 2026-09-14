@@ -9,6 +9,7 @@ Provides REST API for:
 """
 
 import os
+import re
 import secrets
 import logging
 from datetime import datetime, timezone
@@ -396,6 +397,37 @@ def register_routes(app: Flask):
         }), 500
 
 
+_TRACEBACK_EXCEPTION_LINE = re.compile(r'^[A-Za-z_][\w.]*(?:Error|Exception|Warning)\b.*:', re.MULTILINE)
+
+
+def _summarize_error(error: str) -> str:
+    """
+    Extract the final exception's summary line(s) from a full Python
+    traceback (as stored by worker.py via traceback.format_exc())
+
+    A traceback can be a chain of several exceptions ("During handling
+    of the above exception..."), each contributing its own zero-indent
+    "SomeError: message" line -- stack frame lines are always indented,
+    so matching only zero-indent lines and taking the last match finds
+    the final, most relevant exception, skipping past every earlier
+    cause and every "File ..." frame line. Returns everything from that
+    point to the end of the string (covering multi-line messages, like
+    this project's own bulleted ConnectionError format).
+
+    Falls back to the input's last non-empty line if it doesn't look
+    like a Python traceback at all.
+    """
+    if not error:
+        return error
+
+    matches = list(_TRACEBACK_EXCEPTION_LINE.finditer(error))
+    if not matches:
+        lines = error.strip().splitlines()
+        return lines[-1] if lines else error
+
+    return error[matches[-1].start():].strip()
+
+
 def register_dashboard_routes(app: Flask):
     """
     Register read-only web dashboard routes
@@ -451,6 +483,7 @@ def register_dashboard_routes(app: Flask):
     def dashboard_job_detail(job_id: str):
         """Single job's full detail, including result/error if present"""
         job = queue.get_job(job_id)
+        error_summary = _summarize_error(job['error']) if job and job.get('error') else None
 
         return render_template(
             'job_detail.html',
@@ -458,6 +491,7 @@ def register_dashboard_routes(app: Flask):
             api_key=request.args.get('key', ''),
             job=job,
             job_id=job_id,
+            error_summary=error_summary,
         ), (200 if job else 404)
 
     @app.route('/dashboard/rules', methods=['GET'])

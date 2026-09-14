@@ -29,7 +29,13 @@
 {% if job.error %}
 <div class="card">
   <h2>Error</h2>
-  <pre>{{ job.error }}</pre>
+  <pre>{{ error_summary }}</pre>
+  {% if error_summary != job.error %}
+  <details>
+    <summary class="muted">Show full traceback</summary>
+    <pre>{{ job.error }}</pre>
+  </details>
+  {% endif %}
 </div>
 {% endif %}
 
