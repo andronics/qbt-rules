@@ -243,35 +243,23 @@ class TestProcessArgs:
 
         assert 'DRY_RUN' not in os.environ
 
-    def test_sets_log_level_env_var(self, monkeypatch):
-        """Sets LOG_LEVEL environment variable when provided."""
-        # Clean env
+    def test_does_not_set_bare_log_env_vars(self, monkeypatch):
+        """--log-level/--trace are resolved directly by cli.py's
+        get_logging_config(), not by setting bare LOG_LEVEL/TRACE_MODE
+        env vars here."""
         monkeypatch.delenv('LOG_LEVEL', raising=False)
-
-        args = Mock()
-        args.dry_run = False
-        args.log_level = 'DEBUG'
-        args.trace = False
-        args.config_dir = '/test/config'
-
-        process_args(args)
-
-        assert os.environ.get('LOG_LEVEL') == 'DEBUG'
-
-    def test_sets_trace_mode_env_var(self, monkeypatch):
-        """Sets TRACE_MODE environment variable when args.trace=True."""
-        # Clean env
         monkeypatch.delenv('TRACE_MODE', raising=False)
 
         args = Mock()
         args.dry_run = False
-        args.log_level = None
+        args.log_level = 'DEBUG'
         args.trace = True
         args.config_dir = '/test/config'
 
         process_args(args)
 
-        assert os.environ.get('TRACE_MODE') == 'true'
+        assert 'LOG_LEVEL' not in os.environ
+        assert 'TRACE_MODE' not in os.environ
 
     def test_config_dir_from_args_highest_priority(self, monkeypatch):
         """config_dir from args.config_dir has highest priority."""

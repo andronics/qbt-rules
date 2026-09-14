@@ -38,14 +38,15 @@ ENV_VAR_MAP = {
     'config.dir': 'QBT_RULES_CONFIG_DIR',
     'queue.cleanup_after': 'QBT_RULES_QUEUE_CLEANUP_AFTER',
 
-    # logging.* uses QBT_RULES_LOG_* rather than QBT_RULES_LOGGING_*
-    'logging.level': 'QBT_RULES_LOG_LEVEL',
-    'logging.file': 'QBT_RULES_LOG_FILE',
-    'logging.trace_mode': 'QBT_RULES_LOG_TRACE_MODE',
-
     # engine.dry_run has no section prefix at all
     'engine.dry_run': 'QBT_RULES_DRY_RUN',
 }
+
+# Note: logging.* is NOT resolved through this map or resolve_section_config()
+# -- cli.py's get_logging_config() hand-resolves each field directly (its CLI
+# flag names, --log-level/--trace, don't match the mechanical <section>_<field>
+# convention this map/helper assume). Its env vars are QBT_RULES_LOGGING_*,
+# matching the convention exactly -- no exception entry needed here.
 
 # Default config location (Linux FHS standard)
 DEFAULT_CONFIG_SHARE_PATH = Path('/usr/share/qbt-rules')
@@ -604,44 +605,6 @@ class Config:
 
         # Fall back to config file
         config_value = self.get('engine.dry_run', False)
-
-        # Handle string values from YAML
-        if isinstance(config_value, str):
-            return config_value.lower() in ('true', '1', 'yes', 'on')
-
-        return bool(config_value)
-
-    def get_log_level(self) -> str:
-        """Get logging level"""
-        return os.environ.get('LOG_LEVEL', self.get('logging.level', 'INFO')).upper()
-
-    def get_log_file(self) -> Path:
-        """
-        Get log file path
-
-        If path is relative, make it relative to CONFIG_DIR.
-        If path is absolute, use as-is (backward compatibility).
-        """
-        log_file_str = os.environ.get('LOG_FILE', self.get('logging.file', 'logs/qbittorrent.log'))
-        log_path = Path(log_file_str)
-
-        # If relative path, make it relative to CONFIG_DIR
-        if not log_path.is_absolute():
-            log_path = self.config_dir / log_path
-
-        return log_path
-
-    def get_trace_mode(self) -> bool:
-        """Check if trace mode is enabled (detailed logging with module/function/line)"""
-        # ENV var takes precedence
-        env_trace = os.environ.get('TRACE_MODE', '').lower()
-        if env_trace in ('true', '1', 'yes', 'on'):
-            return True
-        elif env_trace in ('false', '0', 'no', 'off'):
-            return False
-
-        # Fall back to config file
-        config_value = self.get('logging.trace_mode', False)
 
         # Handle string values from YAML
         if isinstance(config_value, str):

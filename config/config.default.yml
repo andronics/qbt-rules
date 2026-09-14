@@ -210,19 +210,19 @@ metrics:
 
 logging:
   # Log level: DEBUG, INFO, WARNING, ERROR
-  # Env: QBT_RULES_LOG_LEVEL or QBT_RULES_LOG_LEVEL_FILE
+  # Env: QBT_RULES_LOGGING_LEVEL or QBT_RULES_LOGGING_LEVEL_FILE
   level: INFO
 
   # Log file path (relative to CONFIG_DIR or absolute)
-  # Env: QBT_RULES_LOG_FILE or QBT_RULES_LOG_FILE_FILE
+  # Env: QBT_RULES_LOGGING_FILE or QBT_RULES_LOGGING_FILE_FILE
   file: /config/qbt-rules.log
 
   # Trace mode: Include module/function/line numbers in logs (for debugging)
-  # Env: QBT_RULES_LOG_TRACE_MODE or QBT_RULES_LOG_TRACE_MODE_FILE
+  # Env: QBT_RULES_LOGGING_TRACE_MODE or QBT_RULES_LOGGING_TRACE_MODE_FILE
   trace_mode: false
 
   # Log HTTP access requests (including health checks)
-  # Env: QBT_RULES_LOG_HTTP_ACCESS or QBT_RULES_LOG_HTTP_ACCESS_FILE
+  # Env: QBT_RULES_LOGGING_HTTP_ACCESS or QBT_RULES_LOGGING_HTTP_ACCESS_FILE
   # Set to true to see all HTTP requests (useful for debugging)
   # Set to false (default) to suppress health check logs
   http_access: false
@@ -262,7 +262,7 @@ engine:
 #       QBT_RULES_QBITTORRENT_PASSWORD_FILE: /run/secrets/qbt_password
 #
 #       # Logging
-#       QBT_RULES_LOG_LEVEL: INFO
+#       QBT_RULES_LOGGING_LEVEL: INFO
 #     secrets:
 #       - api_key
 #       - qbt_password

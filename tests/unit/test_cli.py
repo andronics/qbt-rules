@@ -4,12 +4,14 @@ Tests for qbt_rules.cli module (v0.4.0 client-server architecture)
 
 import pytest
 import os
+from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock, call
 from argparse import Namespace
 import json
 
 from qbt_rules.cli import (
     resolve_section_config,
+    get_logging_config,
     get_qbittorrent_config,
     get_server_config,
     get_client_config,
@@ -117,18 +119,18 @@ class TestResolveSectionConfig:
 
     def test_env_var_map_override_takes_precedence_over_convention(self):
         """A config_key present in ENV_VAR_MAP wins over the mechanical
-        QBT_RULES_<SECTION>_<FIELD> guess -- this is how genuine naming
-        exceptions like logging.* (QBT_RULES_LOG_* rather than
-        QBT_RULES_LOGGING_*) stay working."""
+        QBT_RULES_<SECTION>_<FIELD> guess -- this is how the one remaining
+        genuine naming exception (engine.dry_run, no section prefix at
+        all) stays working."""
         args = Namespace()
         config_obj = Mock(config={})
 
-        # logging.level is mapped to QBT_RULES_LOG_LEVEL in ENV_VAR_MAP,
-        # not the mechanically-derived QBT_RULES_LOGGING_LEVEL
-        with patch.dict(os.environ, {'QBT_RULES_LOG_LEVEL': 'DEBUG'}):
-            result = resolve_section_config(args, config_obj, 'logging', {'level': 'INFO'})
+        # engine.dry_run is mapped to the bare QBT_RULES_DRY_RUN in
+        # ENV_VAR_MAP, not the mechanically-derived QBT_RULES_ENGINE_DRY_RUN
+        with patch.dict(os.environ, {'QBT_RULES_DRY_RUN': 'true'}):
+            result = resolve_section_config(args, config_obj, 'engine', {'dry_run': False})
 
-        assert result['level'] == 'DEBUG'
+        assert result['dry_run'] == 'true'
 
     def test_cli_value_takes_precedence_over_env(self):
         args = Namespace(server_port=1111)
@@ -138,6 +140,132 @@ class TestResolveSectionConfig:
             result = resolve_section_config(args, config_obj, 'server', {'port': 5000})
 
         assert result['port'] == 1111
+
+
+class TestGetLoggingConfig:
+    """Test get_logging_config() function
+
+    Doesn't use resolve_section_config() directly -- --log-level/--trace
+    are the established CLI flag names, not --logging-level/
+    --logging-trace-mode, so each field is hand-resolved. Still gets full
+    CLI > _FILE env var > env var > config.yml > default resolution via
+    resolve_config() for every field, matching every other section
+    (previously, this all went through bare, unprefixed env vars --
+    LOG_LEVEL/LOG_FILE/TRACE_MODE -- with no _FILE support at all, despite
+    config.default.yml documenting QBT_RULES_LOG_* with _FILE support)."""
+
+    def test_returns_default_config(self, tmp_path):
+        """Should return defaults when nothing is set"""
+        args = Namespace()
+        config_obj = Mock(config={}, config_dir=tmp_path)
+
+        config = get_logging_config(args, config_obj)
+
+        assert config['level'] == 'INFO'
+        assert config['file'] == tmp_path / 'logs' / 'qbittorrent.log'
+        assert config['trace_mode'] is False
+        assert config['http_access'] is False
+
+    def test_uses_config_file_values(self, tmp_path):
+        """Should use config.yml values"""
+        args = Namespace()
+        config_obj = Mock(config={
+            'logging': {
+                'level': 'debug',
+                'file': 'custom/path.log',
+                'trace_mode': True,
+                'http_access': True,
+            }
+        }, config_dir=tmp_path)
+
+        config = get_logging_config(args, config_obj)
+
+        assert config['level'] == 'DEBUG'
+        assert config['file'] == tmp_path / 'custom' / 'path.log'
+        assert config['trace_mode'] is True
+        assert config['http_access'] is True
+
+    def test_absolute_file_path_used_as_is(self, tmp_path):
+        """An absolute logging.file path isn't rebased under config_dir"""
+        args = Namespace()
+        config_obj = Mock(config={'logging': {'file': '/var/log/qbt-rules.log'}}, config_dir=tmp_path)
+
+        config = get_logging_config(args, config_obj)
+
+        assert config['file'] == Path('/var/log/qbt-rules.log')
+
+    def test_uses_cli_args(self, tmp_path):
+        """--log-level and --trace (args.log_level / args.trace) should win"""
+        args = Namespace(log_level='WARNING', trace=True)
+        config_obj = Mock(config={}, config_dir=tmp_path)
+
+        config = get_logging_config(args, config_obj)
+
+        assert config['level'] == 'WARNING'
+        assert config['trace_mode'] is True
+
+    def test_trace_flag_false_does_not_override_config_yml(self, tmp_path):
+        """--trace not passed (False) must not clobber a true value from
+        config.yml -- only an explicit --trace should force True via CLI"""
+        args = Namespace(trace=False)
+        config_obj = Mock(config={'logging': {'trace_mode': True}}, config_dir=tmp_path)
+
+        config = get_logging_config(args, config_obj)
+
+        assert config['trace_mode'] is True
+
+    def test_uses_env_vars(self, tmp_path):
+        """The bug this replaces: QBT_RULES_LOGGING_* env vars used to have
+        zero effect -- only bare, unprefixed LOG_LEVEL/LOG_FILE/TRACE_MODE
+        worked. Confirm the documented, prefixed names now actually work."""
+        args = Namespace()
+        config_obj = Mock(config={}, config_dir=tmp_path)
+
+        env = {
+            'QBT_RULES_LOGGING_LEVEL': 'error',
+            'QBT_RULES_LOGGING_FILE': '/env/qbt-rules.log',
+            'QBT_RULES_LOGGING_TRACE_MODE': 'true',
+            'QBT_RULES_LOGGING_HTTP_ACCESS': 'true',
+        }
+        with patch.dict(os.environ, env):
+            config = get_logging_config(args, config_obj)
+
+        assert config['level'] == 'ERROR'
+        assert config['file'] == Path('/env/qbt-rules.log')
+        assert config['trace_mode'] is True
+        assert config['http_access'] is True
+
+    def test_uses_file_env_var(self, tmp_path):
+        """QBT_RULES_LOGGING_LEVEL_FILE -- previously unsupported at all
+        for logging config, unlike every other section."""
+        secret_file = tmp_path / "log_level"
+        secret_file.write_text("debug\n")
+
+        args = Namespace()
+        config_obj = Mock(config={}, config_dir=tmp_path)
+
+        with patch.dict(os.environ, {'QBT_RULES_LOGGING_LEVEL_FILE': str(secret_file)}):
+            config = get_logging_config(args, config_obj)
+
+        assert config['level'] == 'DEBUG'
+
+    def test_bare_unprefixed_env_vars_no_longer_work(self, tmp_path):
+        """The old (undocumented, no _FILE support) bare LOG_LEVEL/LOG_FILE/
+        TRACE_MODE env vars must no longer have any effect."""
+        args = Namespace()
+        config_obj = Mock(config={}, config_dir=tmp_path)
+
+        env = {
+            'LOG_LEVEL': 'DEBUG',
+            'LOG_FILE': '/should/be/ignored.log',
+            'TRACE_MODE': 'true',
+        }
+        with patch.dict(os.environ, env):
+            config = get_logging_config(args, config_obj)
+
+        assert config['level'] == 'INFO'          # default, NOT 'DEBUG'
+        assert config['trace_mode'] is False       # default, NOT True
+        assert config['file'] == tmp_path / 'logs' / 'qbittorrent.log'  # default, NOT the ignored path
 
 
 class TestGetQbittorrentConfig:
@@ -430,8 +558,7 @@ class TestRunServerMode:
                 'username': 'admin',
                 'password': 'password',
             }
-        }, schedule=[])
-        config_obj.get.return_value = False  # logging.http_access defaults to False
+        }, schedule=[], config_dir=Path('/config'))
 
         run_server_mode(args, config_obj)
 
@@ -550,7 +677,7 @@ class TestRunServerMode:
             queue_sqlite_path='/tmp/test.db',
             queue_redis_url=None
         )
-        config_obj = Mock(config={}, schedule=[])
+        config_obj = Mock(config={}, schedule=[], config_dir=Path('/config'))
 
         run_server_mode(args, config_obj)
 
@@ -1395,8 +1522,7 @@ class TestMain:
         """Should run in server mode when --serve flag provided"""
         mock_process_args.return_value = '/config'
 
-        mock_config = Mock()
-        mock_config.get_trace_mode.return_value = False
+        mock_config = Mock(config={}, config_dir=Path('/config'))
         mock_load_config.return_value = mock_config
 
         mock_logger = Mock()
@@ -1424,8 +1550,7 @@ class TestMain:
         """Should run list_jobs command"""
         mock_process_args.return_value = '/config'
 
-        mock_config = Mock()
-        mock_config.get_trace_mode.return_value = False
+        mock_config = Mock(config={}, config_dir=Path('/config'))
         mock_load_config.return_value = mock_config
 
         mock_logger = Mock()
@@ -1453,8 +1578,7 @@ class TestMain:
         """Should run job_status command"""
         mock_process_args.return_value = '/config'
 
-        mock_config = Mock()
-        mock_config.get_trace_mode.return_value = False
+        mock_config = Mock(config={}, config_dir=Path('/config'))
         mock_load_config.return_value = mock_config
 
         mock_logger = Mock()
@@ -1482,8 +1606,7 @@ class TestMain:
         """Should run cancel_job command"""
         mock_process_args.return_value = '/config'
 
-        mock_config = Mock()
-        mock_config.get_trace_mode.return_value = False
+        mock_config = Mock(config={}, config_dir=Path('/config'))
         mock_load_config.return_value = mock_config
 
         mock_logger = Mock()
@@ -1511,8 +1634,7 @@ class TestMain:
         """Should run stats command"""
         mock_process_args.return_value = '/config'
 
-        mock_config = Mock()
-        mock_config.get_trace_mode.return_value = False
+        mock_config = Mock(config={}, config_dir=Path('/config'))
         mock_load_config.return_value = mock_config
 
         mock_logger = Mock()
@@ -1540,8 +1662,7 @@ class TestMain:
         """Should run in client mode by default"""
         mock_process_args.return_value = '/config'
 
-        mock_config = Mock()
-        mock_config.get_trace_mode.return_value = False
+        mock_config = Mock(config={}, config_dir=Path('/config'))
         mock_load_config.return_value = mock_config
 
         mock_logger = Mock()
@@ -1568,8 +1689,7 @@ class TestMain:
         """Should handle utility arguments like --validate"""
         mock_process_args.return_value = '/config'
 
-        mock_config = Mock()
-        mock_config.get_trace_mode.return_value = False
+        mock_config = Mock(config={}, config_dir=Path('/config'))
         mock_load_config.return_value = mock_config
 
         mock_logger = Mock()

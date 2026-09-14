@@ -10,17 +10,19 @@ import pytest
 from qbt_rules.logging import setup_logging, get_logger, LOG_FORMAT_SIMPLE, LOG_FORMAT_DETAILED
 
 
+def _logging_config(level="INFO", file=None, trace_mode=False, http_access=False):
+    """Build a resolved logging_config dict, matching cli.py's get_logging_config() shape."""
+    return {'level': level, 'file': file, 'trace_mode': trace_mode, 'http_access': http_access}
+
+
 class TestSetupLogging:
     """Test logging setup functionality."""
 
     def test_basic_setup_with_file_logging(self, tmp_path, caplog):
         """Setup logging with file handler."""
         log_file = tmp_path / "test.log"
-        mock_config = Mock()
-        mock_config.get_log_level.return_value = "INFO"
-        mock_config.get_log_file.return_value = log_file
 
-        setup_logging(mock_config, trace_mode=False)
+        setup_logging(_logging_config(level="INFO", file=log_file))
 
         # Verify file was created
         assert log_file.exists()
@@ -35,11 +37,8 @@ class TestSetupLogging:
     def test_trace_mode_uses_detailed_format(self, tmp_path):
         """Trace mode uses detailed log format."""
         log_file = tmp_path / "test.log"
-        mock_config = Mock()
-        mock_config.get_log_level.return_value = "DEBUG"
-        mock_config.get_log_file.return_value = log_file
 
-        setup_logging(mock_config, trace_mode=True)
+        setup_logging(_logging_config(level="DEBUG", file=log_file, trace_mode=True))
 
         # Check that file handler uses detailed format
         root_logger = logging.getLogger()
@@ -55,11 +54,8 @@ class TestSetupLogging:
     def test_simple_mode_uses_simple_format(self, tmp_path):
         """Simple mode uses simple log format."""
         log_file = tmp_path / "test.log"
-        mock_config = Mock()
-        mock_config.get_log_level.return_value = "INFO"
-        mock_config.get_log_file.return_value = log_file
 
-        setup_logging(mock_config, trace_mode=False)
+        setup_logging(_logging_config(level="INFO", file=log_file))
 
         # Check that file handler uses simple format
         root_logger = logging.getLogger()
@@ -74,12 +70,8 @@ class TestSetupLogging:
 
     def test_file_permission_error_fallback(self, capsys):
         """File permission error falls back to console only."""
-        mock_config = Mock()
-        mock_config.get_log_level.return_value = "INFO"
-        mock_config.get_log_file.return_value = Path("/root/forbidden/test.log")
-
         # Should not raise, just print to stderr
-        setup_logging(mock_config, trace_mode=False)
+        setup_logging(_logging_config(level="INFO", file=Path("/root/forbidden/test.log")))
 
         # Verify error message to stderr
         captured = capsys.readouterr()
@@ -92,11 +84,8 @@ class TestSetupLogging:
     def test_file_handler_with_nonexistent_directory(self, tmp_path):
         """File handler creates parent directories."""
         log_file = tmp_path / "nested" / "dir" / "test.log"
-        mock_config = Mock()
-        mock_config.get_log_level.return_value = "INFO"
-        mock_config.get_log_file.return_value = log_file
 
-        setup_logging(mock_config, trace_mode=False)
+        setup_logging(_logging_config(level="INFO", file=log_file))
 
         # Directory should be created
         assert log_file.parent.exists()
@@ -105,11 +94,8 @@ class TestSetupLogging:
     def test_console_handler_always_created(self, tmp_path):
         """Console handler is always created."""
         log_file = tmp_path / "test.log"
-        mock_config = Mock()
-        mock_config.get_log_level.return_value = "WARNING"
-        mock_config.get_log_file.return_value = log_file
 
-        setup_logging(mock_config, trace_mode=False)
+        setup_logging(_logging_config(level="WARNING", file=log_file))
 
         root_logger = logging.getLogger()
         console_handlers = [h for h in root_logger.handlers if isinstance(h, logging.StreamHandler) and h.stream == sys.stdout]
@@ -118,9 +104,6 @@ class TestSetupLogging:
     def test_clears_existing_handlers(self, tmp_path):
         """Setup clears existing handlers to avoid duplicates."""
         log_file = tmp_path / "test.log"
-        mock_config = Mock()
-        mock_config.get_log_level.return_value = "INFO"
-        mock_config.get_log_file.return_value = log_file
 
         # Add a dummy handler
         root_logger = logging.getLogger()
@@ -128,7 +111,7 @@ class TestSetupLogging:
         root_logger.addHandler(dummy_handler)
         initial_count = len(root_logger.handlers)
 
-        setup_logging(mock_config, trace_mode=False)
+        setup_logging(_logging_config(level="INFO", file=log_file))
 
         # Handlers should be cleared and new ones added
         # Should have exactly 2 handlers (file + console)
@@ -137,11 +120,8 @@ class TestSetupLogging:
     def test_log_level_debug(self, tmp_path):
         """DEBUG log level is set correctly on console handler."""
         log_file = tmp_path / "test.log"
-        mock_config = Mock()
-        mock_config.get_log_level.return_value = "DEBUG"
-        mock_config.get_log_file.return_value = log_file
 
-        setup_logging(mock_config, trace_mode=False)
+        setup_logging(_logging_config(level="DEBUG", file=log_file))
 
         root_logger = logging.getLogger()
         # Root logger is always DEBUG
@@ -156,11 +136,8 @@ class TestSetupLogging:
     def test_log_level_error(self, tmp_path):
         """ERROR log level is set correctly on console handler."""
         log_file = tmp_path / "test.log"
-        mock_config = Mock()
-        mock_config.get_log_level.return_value = "ERROR"
-        mock_config.get_log_file.return_value = log_file
 
-        setup_logging(mock_config, trace_mode=False)
+        setup_logging(_logging_config(level="ERROR", file=log_file))
 
         root_logger = logging.getLogger()
         # Root logger is always DEBUG
@@ -175,11 +152,8 @@ class TestSetupLogging:
     def test_logging_actually_works(self, tmp_path):
         """Verify logging actually writes to file."""
         log_file = tmp_path / "test.log"
-        mock_config = Mock()
-        mock_config.get_log_level.return_value = "INFO"
-        mock_config.get_log_file.return_value = log_file
 
-        setup_logging(mock_config, trace_mode=False)
+        setup_logging(_logging_config(level="INFO", file=log_file))
 
         # Write a test message
         logger = logging.getLogger("test")

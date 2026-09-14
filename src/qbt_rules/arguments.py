@@ -336,14 +336,10 @@ def process_args(args: argparse.Namespace) -> Path:
         Path to configuration directory
     """
     # Set environment variables from command-line arguments
+    # (--log-level/--trace are handled directly by cli.py's
+    # get_logging_config(), not via this env-var-setting indirection)
     if args.dry_run:
         os.environ['DRY_RUN'] = 'true'
-
-    if args.log_level:
-        os.environ['LOG_LEVEL'] = args.log_level
-
-    if args.trace:
-        os.environ['TRACE_MODE'] = 'true'
 
     # Determine config directory
     if args.config_dir:

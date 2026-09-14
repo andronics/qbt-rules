@@ -5,11 +5,7 @@ Provides consistent logging setup across all modules and triggers
 
 import sys
 import logging
-from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from lib.config import Config
+from typing import Dict, Any
 
 # Standard log formats
 LOG_FORMAT_SIMPLE = '%(asctime)s | %(levelname)-8s | %(message)s'
@@ -17,7 +13,7 @@ LOG_FORMAT_DETAILED = '%(asctime)s | %(levelname)-8s | %(name)s:%(funcName)s:%(l
 DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 
-def setup_logging(config: 'Config', trace_mode: bool = False):
+def setup_logging(logging_config: Dict[str, Any]):
     """
     Setup logging configuration with fallback to console-only
 
@@ -25,18 +21,18 @@ def setup_logging(config: 'Config', trace_mode: bool = False):
     Falls back gracefully to console-only logging if file logging fails.
 
     Args:
-        config: Configuration object with logging settings
-        trace_mode: If True, use detailed format with module/function/line context
+        logging_config: Pre-resolved dict from cli.py's get_logging_config()
+            -- {'level': str, 'file': Path, 'trace_mode': bool, 'http_access': bool}
     """
-    log_level = config.get_log_level()
+    log_level = logging_config['level']
 
     # Select format based on trace mode
-    log_format = LOG_FORMAT_DETAILED if trace_mode else LOG_FORMAT_SIMPLE
+    log_format = LOG_FORMAT_DETAILED if logging_config['trace_mode'] else LOG_FORMAT_SIMPLE
 
     # Try to setup file logging
     file_handler = None
     try:
-        log_file = config.get_log_file()
+        log_file = logging_config['file']
         log_file.parent.mkdir(parents=True, exist_ok=True)
 
         file_handler = logging.FileHandler(log_file)

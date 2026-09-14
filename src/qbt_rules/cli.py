@@ -66,6 +66,52 @@ def resolve_section_config(args, config_obj, section: str, fields: dict, parsers
     return result
 
 
+def get_logging_config(args, config_obj) -> dict:
+    """
+    Get logging configuration from CLI args, env vars, or config file
+
+    Doesn't use resolve_section_config()'s mechanical CLI-arg-name
+    convention -- the established flag names are --log-level/--trace,
+    not --logging-level/--logging-trace-mode, so each field is resolved
+    by hand rather than via the generic helper. Every field still gets
+    full CLI > _FILE env var > env var > config.yml > default resolution
+    via resolve_config(), matching every other section.
+
+    Returns:
+        Dictionary with 'level' (str, uppercased), 'file' (Path, resolved
+        relative to config_dir when given as a relative path), 'trace_mode'
+        (bool), 'http_access' (bool)
+    """
+    level = resolve_config(
+        getattr(args, 'log_level', None),
+        'QBT_RULES_LOGGING_LEVEL', config_obj.config, 'logging.level', default='INFO'
+    )
+
+    file_str = resolve_config(
+        None, 'QBT_RULES_LOGGING_FILE', config_obj.config, 'logging.file',
+        default='logs/qbittorrent.log'
+    )
+    file_path = Path(file_str)
+    if not file_path.is_absolute():
+        file_path = config_obj.config_dir / file_path
+
+    trace_mode = parse_bool(resolve_config(
+        True if getattr(args, 'trace', False) else None,
+        'QBT_RULES_LOGGING_TRACE_MODE', config_obj.config, 'logging.trace_mode', default=False
+    ))
+
+    http_access = parse_bool(resolve_config(
+        None, 'QBT_RULES_LOGGING_HTTP_ACCESS', config_obj.config, 'logging.http_access', default=False
+    ))
+
+    return {
+        'level': level.upper(),
+        'file': file_path,
+        'trace_mode': trace_mode,
+        'http_access': http_access,
+    }
+
+
 def get_qbittorrent_config(args, config_obj) -> dict:
     """
     Get qBittorrent connection configuration from CLI args, env vars, or
@@ -296,7 +342,7 @@ def run_server_mode(args, config_obj):
     logger.info("=" * 60)
 
     # Get HTTP access logging preference
-    log_http_access = config_obj.get('logging.http_access', False)
+    log_http_access = get_logging_config(args, config_obj)['http_access']
 
     try:
         run_server(
@@ -633,8 +679,8 @@ def main():
     config = load_config(config_dir)
 
     # Setup logging
-    trace_mode = config.get_trace_mode()
-    setup_logging(config, trace_mode)
+    logging_config = get_logging_config(args, config)
+    setup_logging(logging_config)
     logger = get_logger(__name__)
 
     # Handle utility arguments (--validate, --list-rules)
