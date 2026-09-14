@@ -1516,7 +1516,7 @@ GET  /api/cross-seed/status/{job_id}
 
 ## v0.6.0 Planning
 
-**Status**: In progress. Five initiatives, all confirmed in scope for a single v0.6.0 release (not staged across multiple minors).
+**Status**: In progress. Six initiatives, all confirmed in scope for a single v0.6.0 release (not staged across multiple minors). Initiative 6 (Prometheus metrics) was originally scoped for v0.7.0 and moved here since nothing had been tagged/released yet — no reason to split it into a separate cycle.
 
 ### 1. `delete_torrent`: `keep_files` → `delete_files` rename
 
@@ -1597,29 +1597,13 @@ Templates: `base.html` (nav + shared styling, light/dark via `prefers-color-sche
 
 Tested against a real running server (not just unit-mocked): submitted a real job through `/api/execute`, confirmed it appeared correctly in `/dashboard/jobs` and rendered its result in `/dashboard/jobs/<id>`; confirmed 401 without a key and the rules page rendering real `rules.yml` content.
 
-### Sequencing
-
-Initiatives 3 and 4 share the same `ActionExecutor`/`RulesEngine` signature change (adding `config`) — land once, rebase the other. Initiative 5's `create_app()` signature change (adding `config`, for the rules view) is independent. Initiatives 1 and 2 have no shared surface with anything else.
-
-Once everything above is merged to `main`: `scripts/bump-version.sh minor` (0.5.x → 0.6.0).
-
----
-
-## v0.7.0 Planning
-
-**Status**: In progress — Prometheus metrics implemented; `keep_files` removal still planned.
-
-### Remove deprecated `keep_files` parameter
-
-`delete_torrent`'s `keep_files` parameter (deprecated in v0.6.0, see above) is removed entirely in v0.7.0. Any rule still using it after the v0.6.0 deprecation window will need to migrate to `delete_files` — remembering the **polarity is inverted**, not just the name (`keep_files: true` → `delete_files: false`, and vice versa). This isn't a silent removal: rules using the old key will start erroring (or being ignored, defaulting to delete) rather than warning, so the CHANGELOG entry and release notes should call this out prominently as the second half of a two-release migration, not a fresh breaking change.
-
-### Prometheus metrics support
+### 6. Prometheus metrics support
 
 **Status**: Implemented.
 
 New optional `GET /metrics` endpoint (`server.py`), off by default (`metrics.enabled: false`), `prometheus_client` as a new `metrics` optional extra (`pip install qbt-rules[metrics]`) rather than a core dependency — mirrors the existing `redis` extra precedent. `/metrics` requires the API key like every route except `/api/health`/`/api/version`.
 
-**Fork-safety** was the central design problem, directly parallel to how `scheduler.py` (v0.6) already solved the same category of issue: Gunicorn's `preload_app` + fork model forks a naive in-process counter into `server.workers` independent, unsynchronized copies. Solved via `prometheus_client`'s multiprocess mode — `PROMETHEUS_MULTIPROC_DIR` (the library-mandated env var name) set in `cli.py` from the resolved `metrics.multiproc_dir` config, right before the deferred `import qbt_rules.metrics` (must happen before prometheus_client's own first import anywhere in the process, since it resolves its value-storage strategy exactly once at that point); stale files cleared at master startup, before Gunicorn forks; a new `child_exit` Gunicorn hook alongside the existing `post_fork`. **Verified empirically** with a real 2-worker server (not just reasoned about): HTTP request and job counts correctly summed across the master process and both forked workers; killing a worker mid-run and letting Gunicorn respawn a replacement didn't lose or double-count anything.
+**Fork-safety** was the central design problem, directly parallel to how `scheduler.py` (Initiative 2, above) already solved the same category of issue: Gunicorn's `preload_app` + fork model forks a naive in-process counter into `server.workers` independent, unsynchronized copies. Solved via `prometheus_client`'s multiprocess mode — `PROMETHEUS_MULTIPROC_DIR` (the library-mandated env var name) set in `cli.py` from the resolved `metrics.multiproc_dir` config, right before the deferred `import qbt_rules.metrics` (must happen before prometheus_client's own first import anywhere in the process, since it resolves its value-storage strategy exactly once at that point); stale files cleared at master startup, before Gunicorn forks; a new `child_exit` Gunicorn hook alongside the existing `post_fork`. **Verified empirically** with a real 2-worker server (not just reasoned about): HTTP request and job counts correctly summed across the master process and both forked workers; killing a worker mid-run and letting Gunicorn respawn a replacement didn't lose or double-count anything.
 
 **Hybrid metric design** — new `src/qbt_rules/metrics.py`:
 - Real Counters/Histograms (need multiprocess mode, since nothing else durably tracks these): `qbt_rules_http_requests_total`/`_duration_seconds`, `qbt_rules_actions_executed_total` (wraps `ActionExecutor.execute()`, labeled by `action_type` only — no rule-name label, to avoid unbounded cardinality from free-form rule names), `qbt_rules_job_duration_seconds`, `qbt_rules_scheduler_fires_total`.
@@ -1630,6 +1614,22 @@ New optional `GET /metrics` endpoint (`server.py`), off by default (`metrics.ena
 **Corrected during verification**: the `child_exit` hook's `multiprocess.mark_process_dead()` call only cleans up `gauge_{live-mode}_*.db` files (for `prometheus_client`'s native multiprocess "live" Gauge modes) — it does **not** clean up Counter/Histogram files, which correctly persist and keep contributing to aggregated totals forever, since a dead process's historical counts remain valid regardless of whether the process still exists. This module doesn't use live-mode Gauges at all (the on-demand collector pattern above sidesteps needing them), so the hook is currently a no-op — kept as forward-compatible hygiene, not because it's fixing an active leak. Confirmed via the same 2-worker smoke test: a killed worker's counter contributions remained correctly counted after it was gone.
 
 **Files:** `src/qbt_rules/metrics.py` (new), `src/qbt_rules/cli.py`, `src/qbt_rules/server.py`, `src/qbt_rules/engine.py`, `src/qbt_rules/worker.py`, `src/qbt_rules/scheduler.py`, `pyproject.toml` (new `metrics` extra + pytest marker), `config/config.default.yml`. Tests: new `tests/unit/test_metrics.py`, `TestMetricsRoutes` in `test_server.py`; `tests/conftest.py` gained a session-wide `PROMETHEUS_MULTIPROC_DIR` setup (must be set before prometheus_client's first import anywhere in the pytest session, which a per-test fixture can't achieve) and a shared `reset_metrics_module_state` autouse fixture. Wiki: new `Metrics.md`, cross-linked from `Home.md`/`_Sidebar.md`/`HTTP-API-Reference.md`/`Architecture-Internals.md`/`Security.md`/`Scheduling.md`.
+
+### Sequencing
+
+Initiatives 3 and 4 share the same `ActionExecutor`/`RulesEngine` signature change (adding `config`) — land once, rebase the other. Initiative 5's `create_app()` signature change (adding `config`, for the rules view) is independent. Initiative 6's fork-safety design directly reuses Initiative 2's established pre-fork/no-post_fork-restart pattern, but has no code-level shared surface with any other initiative. Initiatives 1 and 2 have no shared surface with anything else.
+
+Once everything above is merged to `main`: `scripts/bump-version.sh minor` (0.5.x → 0.6.0).
+
+---
+
+## v0.7.0 Planning
+
+**Status**: Planned (single confirmed item — Prometheus metrics moved into v0.6.0 instead, see below, since nothing had been tagged/released yet and it made sense to bundle it with the other five initiatives into one release).
+
+### Remove deprecated `keep_files` parameter
+
+`delete_torrent`'s `keep_files` parameter (deprecated in v0.6.0, see above) is removed entirely in v0.7.0. Any rule still using it after the v0.6.0 deprecation window will need to migrate to `delete_files` — remembering the **polarity is inverted**, not just the name (`keep_files: true` → `delete_files: false`, and vice versa). This isn't a silent removal: rules using the old key will start erroring (or being ignored, defaulting to delete) rather than warning, so the CHANGELOG entry and release notes should call this out prominently as the second half of a two-release migration, not a fresh breaking change.
 
 ---
 
