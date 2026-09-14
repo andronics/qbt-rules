@@ -33,6 +33,7 @@ dependencies = [
     "qbittorrent-api>=2024.12.0",
     "Flask>=3.0.0",
     "gunicorn>=21.2.0",
+    "croniter>=2.0.0",
 ]
 
 [project.optional-dependencies]

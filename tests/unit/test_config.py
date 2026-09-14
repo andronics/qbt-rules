@@ -696,6 +696,100 @@ class TestConfig:
             Config(config_dir)
         assert "must be a list" in str(exc_info.value)
 
+    def test_schedule_defaults_to_empty_list(self, tmp_config_dir):
+        """schedule defaults to an empty list when config.yml has no schedule: section."""
+        config = Config(tmp_config_dir)
+        assert config.schedule == []
+
+    def test_schedule_loads_valid_entries(self, tmp_path):
+        """Successfully load a valid schedule: section."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        (config_dir / "config.yml").write_text(
+            "qbittorrent:\n  host: localhost\n"
+            "schedule:\n"
+            "  - cron: '*/30 * * * *'\n"
+            "    context: cron\n"
+            "  - cron: '0 3 * * *'\n"
+            "    context: nightly\n"
+        )
+        (config_dir / "rules.yml").write_text("rules: []")
+
+        config = Config(config_dir)
+        assert len(config.schedule) == 2
+        assert config.schedule[0] == {'cron': '*/30 * * * *', 'context': 'cron'}
+        assert config.schedule[1] == {'cron': '0 3 * * *', 'context': 'nightly'}
+
+    def test_schedule_not_a_list_raises(self, tmp_path):
+        """Raise error when schedule is not a list."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        (config_dir / "config.yml").write_text("qbittorrent:\n  host: localhost\nschedule: not_a_list")
+        (config_dir / "rules.yml").write_text("rules: []")
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            Config(config_dir)
+        assert "'schedule' must be a list" in str(exc_info.value)
+
+    def test_schedule_entry_not_a_dict_raises(self, tmp_path):
+        """Raise error when a schedule entry isn't a dictionary."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        (config_dir / "config.yml").write_text(
+            "qbittorrent:\n  host: localhost\nschedule:\n  - 'just a string'\n"
+        )
+        (config_dir / "rules.yml").write_text("rules: []")
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            Config(config_dir)
+        assert "Schedule entry #1 must be a dictionary" in str(exc_info.value)
+
+    def test_schedule_entry_missing_cron_raises(self, tmp_path):
+        """Raise error when a schedule entry is missing 'cron'."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        (config_dir / "config.yml").write_text(
+            "qbittorrent:\n  host: localhost\nschedule:\n  - context: cron\n"
+        )
+        (config_dir / "rules.yml").write_text("rules: []")
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            Config(config_dir)
+        assert "Schedule entry #1 missing required field: 'cron'" in str(exc_info.value)
+
+    def test_schedule_entry_missing_context_raises(self, tmp_path):
+        """Raise error when a schedule entry is missing 'context'."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        (config_dir / "config.yml").write_text(
+            "qbittorrent:\n  host: localhost\nschedule:\n  - cron: '* * * * *'\n"
+        )
+        (config_dir / "rules.yml").write_text("rules: []")
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            Config(config_dir)
+        assert "Schedule entry #1 missing required field: 'context'" in str(exc_info.value)
+
+    def test_schedule_entry_invalid_cron_raises(self, tmp_path):
+        """Raise error when a schedule entry's cron expression is invalid."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        (config_dir / "config.yml").write_text(
+            "qbittorrent:\n  host: localhost\n"
+            "schedule:\n  - cron: 'not a cron expression'\n    context: cron\n"
+        )
+        (config_dir / "rules.yml").write_text("rules: []")
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            Config(config_dir)
+        assert "invalid cron expression" in str(exc_info.value)
+
     def test_get_simple_key(self, tmp_config_dir):
         """Get simple configuration key."""
         config = Config(tmp_config_dir)

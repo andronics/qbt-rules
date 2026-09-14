@@ -18,6 +18,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, Union
 
+from croniter import croniter
+
 from qbt_rules.errors import ConfigurationError
 from qbt_rules.resolver import RuleResolver
 
@@ -430,6 +432,7 @@ class Config:
         # Load configurations
         self._load_config()
         self._load_rules()
+        self._load_schedule()
 
         # Track rules file modification time for hot-reload
         self._rules_mtime = None
@@ -503,6 +506,50 @@ class Config:
             logging.debug(f"Initialized resolver with refs: vars={len(refs.get('vars', {}))}, "
                          f"conditions={len(refs.get('conditions', {}))}, "
                          f"actions={len(refs.get('actions', {}))}")
+
+    def _load_schedule(self):
+        """
+        Load and validate the optional 'schedule' section of config.yml
+
+        Each entry is a dict with 'cron' (a standard 5-field cron expression)
+        and 'context' (the context string to enqueue when the cron fires).
+        Not hot-reloaded -- config.yml is read once at startup, same as every
+        other top-level config.yml section.
+        """
+        self.schedule = self.config.get('schedule') or []
+
+        if not isinstance(self.schedule, list):
+            raise ConfigurationError(
+                str(self.config_file),
+                "'schedule' must be a list"
+            )
+
+        for i, entry in enumerate(self.schedule):
+            if not isinstance(entry, dict):
+                raise ConfigurationError(
+                    str(self.config_file),
+                    f"Schedule entry #{i+1} must be a dictionary"
+                )
+
+            if 'cron' not in entry:
+                raise ConfigurationError(
+                    str(self.config_file),
+                    f"Schedule entry #{i+1} missing required field: 'cron'"
+                )
+
+            if 'context' not in entry:
+                raise ConfigurationError(
+                    str(self.config_file),
+                    f"Schedule entry #{i+1} missing required field: 'context'"
+                )
+
+            if not croniter.is_valid(entry['cron']):
+                raise ConfigurationError(
+                    str(self.config_file),
+                    f"Schedule entry #{i+1} has an invalid cron expression: '{entry['cron']}'"
+                )
+
+        logging.debug(f"Loaded {len(self.schedule)} schedule entries")
 
     def get(self, key: str, default: Any = None) -> Any:
         """

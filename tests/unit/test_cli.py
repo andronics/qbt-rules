@@ -136,12 +136,13 @@ class TestRunServerMode:
     @patch('qbt_rules.cli.logger')
     @patch('qbt_rules.server.run_server')
     @patch('qbt_rules.server.create_app')
+    @patch('qbt_rules.scheduler.Scheduler')
     @patch('qbt_rules.worker.Worker')
     @patch('qbt_rules.queue_manager.create_queue')
     @patch('qbt_rules.cli.QBittorrentAPI')
     def test_creates_and_runs_server(self, mock_api_class, mock_create_queue,
-                                     mock_worker_class, mock_create_app,
-                                     mock_run_server, mock_logger):
+                                     mock_worker_class, mock_scheduler_class,
+                                     mock_create_app, mock_run_server, mock_logger):
         """Should create Flask app and run server"""
         # Setup mocks
         mock_queue = Mock()
@@ -153,6 +154,9 @@ class TestRunServerMode:
 
         mock_worker = Mock()
         mock_worker_class.return_value = mock_worker
+
+        mock_scheduler = Mock()
+        mock_scheduler_class.return_value = mock_scheduler
 
         mock_app = Mock()
         mock_create_app.return_value = mock_app
@@ -167,7 +171,7 @@ class TestRunServerMode:
             queue_sqlite_path='/tmp/test.db',
             queue_redis_url=None
         )
-        config_obj = Mock(config={})
+        config_obj = Mock(config={}, schedule=[])
         config_obj.get_qbittorrent_config.return_value = {
             'host': 'http://localhost:8080',
             'user': 'admin',
@@ -199,6 +203,13 @@ class TestRunServerMode:
             config=config_obj
         )
         mock_worker.start.assert_called_once()
+
+        # Verify scheduler initialization
+        mock_scheduler_class.assert_called_once_with(
+            queue=mock_queue,
+            entries=[]
+        )
+        mock_scheduler.start.assert_called_once()
 
         # Verify Flask app creation
         mock_create_app.assert_called_once_with(
@@ -241,13 +252,14 @@ class TestRunServerMode:
     @patch('qbt_rules.cli.logger')
     @patch('qbt_rules.server.run_server')
     @patch('qbt_rules.server.create_app')
+    @patch('qbt_rules.scheduler.Scheduler')
     @patch('qbt_rules.worker.Worker')
     @patch('qbt_rules.queue_manager.create_queue')
     @patch('qbt_rules.cli.QBittorrentAPI')
     def test_stops_worker_on_keyboard_interrupt(self, mock_api_class, mock_create_queue,
-                                                 mock_worker_class, mock_create_app,
-                                                 mock_run_server, mock_logger):
-        """Should stop worker when KeyboardInterrupt is raised"""
+                                                 mock_worker_class, mock_scheduler_class,
+                                                 mock_create_app, mock_run_server, mock_logger):
+        """Should stop worker and scheduler when KeyboardInterrupt is raised"""
         mock_queue = Mock()
         mock_queue.__class__.__name__ = 'SQLiteQueue'
         mock_create_queue.return_value = mock_queue
@@ -257,6 +269,9 @@ class TestRunServerMode:
 
         mock_worker = Mock()
         mock_worker_class.return_value = mock_worker
+
+        mock_scheduler = Mock()
+        mock_scheduler_class.return_value = mock_scheduler
 
         mock_app = Mock()
         mock_create_app.return_value = mock_app
@@ -273,7 +288,7 @@ class TestRunServerMode:
             queue_sqlite_path='/tmp/test.db',
             queue_redis_url=None
         )
-        config_obj = Mock(config={})
+        config_obj = Mock(config={}, schedule=[])
         config_obj.get_qbittorrent_config.return_value = {
             'host': 'http://localhost:8080',
             'user': 'admin',
@@ -282,8 +297,9 @@ class TestRunServerMode:
 
         run_server_mode(args, config_obj)
 
-        # Verify worker was stopped
+        # Verify worker and scheduler were stopped
         mock_worker.stop.assert_called_once()
+        mock_scheduler.stop.assert_called_once()
 
 
 class TestRunClientMode:

@@ -106,6 +106,25 @@ rules:
   file: /config/rules.yml
 
 # ============================================================================
+# SCHEDULE CONFIGURATION (optional)
+# ============================================================================
+# Internal cron scheduler -- enqueues a job for each entry when its cron
+# expression fires, so you don't need an external cron job, systemd timer,
+# or sidecar container hitting the HTTP API on a schedule.
+#
+# No environment variable overrides -- this is a list, not a single value,
+# so it can only be set here in config.yml. Not hot-reloaded (like the rest
+# of config.yml); restart the server to pick up changes.
+#
+# Uncomment and customize:
+#
+# schedule:
+#   - cron: "*/30 * * * *"   # Every 30 minutes
+#     context: cron
+#   - cron: "0 3 * * *"      # Daily at 3 AM
+#     context: nightly
+
+# ============================================================================
 # LOGGING CONFIGURATION
 # ============================================================================
 

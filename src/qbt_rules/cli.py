@@ -121,6 +121,22 @@ def get_queue_config(args, config_obj) -> dict:
     }
 
 
+def get_schedule_config(args, config_obj) -> list:
+    """
+    Get the schedule configuration (list of {cron, context} entries)
+
+    Unlike the other get_*_config functions, this has no CLI-arg or
+    per-field env-var override -- a list of recurring jobs doesn't map to
+    a single flag/variable the way scalar config does. It's config.yml's
+    'schedule' section as-is, already validated at load time by
+    Config._load_schedule().
+
+    Returns:
+        List of schedule entry dicts (possibly empty)
+    """
+    return config_obj.schedule
+
+
 def run_server_mode(args, config_obj):
     """
     Run server mode - Start HTTP API server with worker
@@ -170,6 +186,14 @@ def run_server_mode(args, config_obj):
     worker.start()
     logger.info("Worker started")
 
+    # Initialize scheduler (internal cron -- must start here, before
+    # run_server()/Gunicorn forks, and must NOT be restarted per-fork the
+    # way the worker thread is; see Scheduler's docstring)
+    from qbt_rules.scheduler import Scheduler
+    schedule_entries = get_schedule_config(args, config_obj)
+    scheduler = Scheduler(queue=queue, entries=schedule_entries)
+    scheduler.start()
+
     # Create Flask app
     from qbt_rules.server import create_app, run_server
     app = create_app(
@@ -196,6 +220,7 @@ def run_server_mode(args, config_obj):
         )
     except KeyboardInterrupt:
         logger.info("\nShutting down...")
+        scheduler.stop()
         worker.stop()
         logger.info("Server stopped")
 
