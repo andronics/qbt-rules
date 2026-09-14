@@ -1535,7 +1535,7 @@ actions:
 
 ### 2. Internal cron scheduler
 
-**Status**: Planned.
+**Status**: Implemented. Multi-worker fork safety verified empirically (real 2-worker server, 2 minute boundaries crossed, exactly 2 jobs enqueued).
 
 Replaces reliance on an external cron/systemd timer/sidecar container hitting `/api/execute?context=X` on a schedule. New `Scheduler` class (`src/qbt_rules/scheduler.py`), structurally parallel to `Worker` — own thread, `start()`/`stop()` lifecycle — reading a new `schedule:` list from `config.yml` and calling `queue.enqueue(context=...)` directly on each cron fire (`queue_manager.enqueue()` has no Flask coupling, confirmed safe to call from a non-request context).
 
