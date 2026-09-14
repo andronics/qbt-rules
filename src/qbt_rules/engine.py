@@ -437,10 +437,45 @@ class ActionExecutor:
     def _log_dry_run(self, torrent: Dict, action_type: str, params: Dict):
         """Log what would happen in dry run"""
         if action_type == 'delete_torrent':
-            keep_files = params.get('keep_files', False)
-            logger.info(f"  Would delete {torrent['name']} (keep_files={keep_files})")
+            delete_files = self._resolve_delete_files(params)
+            logger.info(f"  Would delete {torrent['name']} (delete_files={delete_files})")
         else:
             logger.info(f"  Would {action_type} {torrent['name']} (params={params})")
+
+    def _resolve_delete_files(self, params: Dict) -> bool:
+        """
+        Resolve delete_torrent's delete_files parameter, supporting the
+        deprecated keep_files alias (inverted boolean, removed in v0.7.0).
+
+        Args:
+            params: Action params dict, possibly containing 'delete_files'
+                    and/or the deprecated 'keep_files'
+
+        Returns:
+            True if the underlying files should be deleted, False to keep them
+        """
+        has_delete_files = 'delete_files' in params
+        has_keep_files = 'keep_files' in params
+
+        if has_delete_files and has_keep_files:
+            logger.warning(
+                "delete_torrent: both 'delete_files' and 'keep_files' were specified; "
+                "'delete_files' takes precedence and 'keep_files' is ignored"
+            )
+            return bool(params['delete_files'])
+
+        if has_delete_files:
+            return bool(params['delete_files'])
+
+        if has_keep_files:
+            logger.warning(
+                "delete_torrent: 'keep_files' is deprecated and will be removed in v0.7.0 -- "
+                "use 'delete_files' instead (note the inverted meaning: delete_files=true "
+                "deletes the files, keep_files=true keeps them)"
+            )
+            return not bool(params['keep_files'])
+
+        return True
 
     def _execute_action(self, torrent: Dict, action_type: str, params: Dict) -> bool:
         """Execute the actual action"""
@@ -477,10 +512,10 @@ class ActionExecutor:
             return success
 
         elif action_type == 'delete_torrent':
-            keep_files = params.get('keep_files', False)
-            success = self.api.delete_torrents([torrent_hash], delete_files=not keep_files)
+            delete_files = self._resolve_delete_files(params)
+            success = self.api.delete_torrents([torrent_hash], delete_files=delete_files)
             if success:
-                logger.info(f"  Deleted {torrent['name']} (keep_files={keep_files})")
+                logger.info(f"  Deleted {torrent['name']} (delete_files={delete_files})")
             return success
 
         elif action_type == 'set_category':

@@ -1,5 +1,7 @@
 """Comprehensive tests for ActionExecutor class in engine.py."""
 
+import logging
+
 import pytest
 from unittest.mock import Mock, patch, call
 from qbt_rules.engine import ActionExecutor
@@ -158,32 +160,32 @@ class TestControlActions:
 class TestDeleteAction:
     """Test delete_torrent action."""
 
-    def test_delete_keep_files(self, mock_api, sample_torrent):
-        """Delete torrent but keep files."""
+    def test_delete_files_true(self, mock_api, sample_torrent):
+        """delete_files=True deletes the underlying files."""
         mock_api.delete_torrents = Mock(return_value=True)
         executor = ActionExecutor(mock_api, dry_run=False)
 
-        action = {'type': 'delete_torrent', 'params': {'keep_files': True}}
-        success, skipped = executor.execute(sample_torrent, action)
-
-        assert success is True
-        mock_api.delete_torrents.assert_called_once_with(
-            [sample_torrent['hash']],
-            delete_files=False
-        )
-
-    def test_delete_with_files(self, mock_api, sample_torrent):
-        """Delete torrent and files."""
-        mock_api.delete_torrents = Mock(return_value=True)
-        executor = ActionExecutor(mock_api, dry_run=False)
-
-        action = {'type': 'delete_torrent', 'params': {'keep_files': False}}
+        action = {'type': 'delete_torrent', 'params': {'delete_files': True}}
         success, skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.delete_torrents.assert_called_once_with(
             [sample_torrent['hash']],
             delete_files=True
+        )
+
+    def test_delete_files_false(self, mock_api, sample_torrent):
+        """delete_files=False keeps the underlying files."""
+        mock_api.delete_torrents = Mock(return_value=True)
+        executor = ActionExecutor(mock_api, dry_run=False)
+
+        action = {'type': 'delete_torrent', 'params': {'delete_files': False}}
+        success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        mock_api.delete_torrents.assert_called_once_with(
+            [sample_torrent['hash']],
+            delete_files=False
         )
 
     def test_delete_default_behavior(self, mock_api, sample_torrent):
@@ -194,11 +196,63 @@ class TestDeleteAction:
         action = {'type': 'delete_torrent', 'params': {}}
         success, skipped = executor.execute(sample_torrent, action)
 
-        # Default keep_files=False means delete_files=True
+        # Default (no params at all) deletes files, same as before the rename
         mock_api.delete_torrents.assert_called_once_with(
             [sample_torrent['hash']],
             delete_files=True
         )
+
+    def test_delete_keep_files_true_deprecated(self, mock_api, sample_torrent, caplog):
+        """Deprecated keep_files=True still works and keeps files, with a warning."""
+        mock_api.delete_torrents = Mock(return_value=True)
+        executor = ActionExecutor(mock_api, dry_run=False)
+
+        action = {'type': 'delete_torrent', 'params': {'keep_files': True}}
+        with caplog.at_level(logging.WARNING):
+            success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        mock_api.delete_torrents.assert_called_once_with(
+            [sample_torrent['hash']],
+            delete_files=False
+        )
+        assert "keep_files' is deprecated" in caplog.text
+
+    def test_delete_keep_files_false_deprecated(self, mock_api, sample_torrent, caplog):
+        """Deprecated keep_files=False still works and deletes files, with a warning."""
+        mock_api.delete_torrents = Mock(return_value=True)
+        executor = ActionExecutor(mock_api, dry_run=False)
+
+        action = {'type': 'delete_torrent', 'params': {'keep_files': False}}
+        with caplog.at_level(logging.WARNING):
+            success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        mock_api.delete_torrents.assert_called_once_with(
+            [sample_torrent['hash']],
+            delete_files=True
+        )
+        assert "keep_files' is deprecated" in caplog.text
+
+    def test_delete_files_and_keep_files_both_specified(self, mock_api, sample_torrent, caplog):
+        """When both are specified, delete_files wins and a warning is logged."""
+        mock_api.delete_torrents = Mock(return_value=True)
+        executor = ActionExecutor(mock_api, dry_run=False)
+
+        action = {
+            'type': 'delete_torrent',
+            'params': {'delete_files': False, 'keep_files': False},
+        }
+        with caplog.at_level(logging.WARNING):
+            success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        # delete_files=False wins even though keep_files=False would imply deletion
+        mock_api.delete_torrents.assert_called_once_with(
+            [sample_torrent['hash']],
+            delete_files=False
+        )
+        assert "'keep_files' is ignored" in caplog.text
 
 
 # ============================================================================
@@ -391,11 +445,24 @@ class TestDryRunMode:
         mock_api.delete_torrents = Mock(return_value=True)
         executor = ActionExecutor(mock_api, dry_run=True)
 
-        action = {'type': 'delete_torrent', 'params': {'keep_files': True}}
+        action = {'type': 'delete_torrent', 'params': {'delete_files': False}}
         success, skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.delete_torrents.assert_not_called()
+
+    def test_dry_run_delete_with_deprecated_keep_files(self, mock_api, sample_torrent, caplog):
+        """Dry run mode still resolves the deprecated keep_files alias and warns."""
+        mock_api.delete_torrents = Mock(return_value=True)
+        executor = ActionExecutor(mock_api, dry_run=True)
+
+        action = {'type': 'delete_torrent', 'params': {'keep_files': True}}
+        with caplog.at_level(logging.WARNING):
+            success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        mock_api.delete_torrents.assert_not_called()
+        assert "keep_files' is deprecated" in caplog.text
 
     def test_dry_run_set_category(self, mock_api, sample_torrent):
         """Dry run mode doesn't execute set_category."""

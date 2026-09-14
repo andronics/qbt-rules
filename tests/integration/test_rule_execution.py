@@ -101,6 +101,34 @@ class TestCleanupRules:
         assert len(mock_api.calls['delete']) == 1
         assert mock_api.calls['delete'][0]['delete_files'] is True
 
+    def test_delete_old_seeded_torrents_canonical_param(self, mock_api, mock_config, old_seeded_torrent):
+        """Same as above, using the canonical delete_files param instead of deprecated keep_files."""
+        rule = {
+            'name': 'Delete old seeded torrents',
+            'enabled': True,
+            'context': 'weekly-cleanup',
+            'conditions': {
+                'all': [
+                    {'field': 'info.state', 'operator': 'in', 'value': ['uploading', 'pausedUP', 'stalledUP']},
+                    {'field': 'info.completion_on', 'operator': 'older_than', 'value': '30 days'},
+                    {'field': 'info.ratio', 'operator': '>=', 'value': 2.0},
+                ]
+            },
+            'actions': [
+                {'type': 'delete_torrent', 'params': {'delete_files': True}},
+            ]
+        }
+
+        mock_config.get_rules = Mock(return_value=[rule])
+        mock_api.torrents_data = {old_seeded_torrent['hash']: old_seeded_torrent}
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='weekly-cleanup')
+
+        assert engine.stats.rules_matched == 1
+        assert len(mock_api.calls['delete']) == 1
+        assert mock_api.calls['delete'][0]['delete_files'] is True
+
     def test_tag_ready_to_delete(self, mock_api, mock_config, old_seeded_torrent):
         """Tag torrents ready for deletion."""
         rule = {

@@ -17,6 +17,8 @@
 6. [Implementation Phases](#implementation-phases)
 7. [Testing Strategy](#testing-strategy)
 8. [Success Criteria](#success-criteria)
+9. [v0.6.0 Planning](#v060-planning)
+10. [v0.7.0 Planning](#v070-planning)
 
 ---
 
@@ -1509,6 +1511,101 @@ GET  /api/cross-seed/status/{job_id}
 ```
 
 **Phase 1 Deliverable**: Documentation only
+
+---
+
+## v0.6.0 Planning
+
+**Status**: In progress. Five initiatives, all confirmed in scope for a single v0.6.0 release (not staged across multiple minors).
+
+### 1. `delete_torrent`: `keep_files` → `delete_files` rename
+
+**Status**: Implemented.
+
+`delete_torrent` was the only action with inverted-boolean semantics (`keep_files: true` meant *don't* delete) — every other parameterized action (`category`, `tags`, `limit`) is named directly. `delete_files` is now the canonical parameter, matching `api.py`'s own `delete_torrents(hashes, delete_files: bool)` vocabulary and removing the inversion rather than adding one.
+
+```yaml
+actions:
+  - type: delete_torrent
+    params:
+      delete_files: true   # canonical; also the default if params are omitted
+```
+
+`keep_files` still works during a deprecation window (emits a `logger.warning`; if both are specified, `delete_files` wins with a warning). **Removal target: v0.7.0** — see below.
+
+### 2. Internal cron scheduler
+
+**Status**: Planned.
+
+Replaces reliance on an external cron/systemd timer/sidecar container hitting `/api/execute?context=X` on a schedule. New `Scheduler` class (`src/qbt_rules/scheduler.py`), structurally parallel to `Worker` — own thread, `start()`/`stop()` lifecycle — reading a new `schedule:` list from `config.yml` and calling `queue.enqueue(context=...)` directly on each cron fire (`queue_manager.enqueue()` has no Flask coupling, confirmed safe to call from a non-request context).
+
+```yaml
+schedule:
+  - cron: "*/30 * * * *"
+    context: cron
+  - cron: "0 3 * * *"
+    context: nightly
+```
+
+Dependency: `croniter` (new core dependency — chosen over APScheduler, which brings a competing concurrency model into a codebase that already has exactly one thread-per-component pattern, and doesn't solve the multi-worker duplication problem below for free anyway).
+
+**Gunicorn multi-worker safety**: `run_server()` uses `preload_app: True` with a `post_fork` hook that restarts `Worker`'s thread in each forked child (threads don't survive `fork()`). The scheduler is started *before* Gunicorn forks (in `run_server_mode()`, same place `worker.start()` is called) and is deliberately **not** added to `post_fork` — so it runs exactly once, in the master/arbiter process, regardless of `server.workers` count. Must be confirmed with a real `workers=2` smoke test before merge, not just unit-mocked.
+
+Regression test case: the malware-incident fix (see BUGS.md) relies on an external 30-minute cron hitting `context=cron` — the internal scheduler must be able to fully replace that external job.
+
+### 3. Generic outbound notification action
+
+**Status**: Planned.
+
+New `notify` action, single type with a `service` selector (`discord`/`slack`/`ntfy`/`generic`) rather than three near-duplicate actions, since each service wants a different payload shape:
+
+```yaml
+- type: notify
+  params:
+    service: discord
+    url: "https://discord.com/api/webhooks/..."   # optional if notifications.default_webhook_url is set
+    message: "Torrent {name} matched rule {rule_name}"
+```
+
+New `notifications:` config section (`default_webhook_url` with `_FILE` secret support, `default_service`). Requires `ActionExecutor` to gain a `config` reference (currently only `api`/`dry_run`) — shared plumbing change with the Sonarr/Radarr action below, land once. Always-fire, no idempotency tracking (matches `reannounce`/`recheck`); accepted risk that a rule re-evaluated across multiple contexts will re-notify — document the `add_tag` + condition-exclusion workaround.
+
+### 4. Sonarr/Radarr blocklist-and-research action
+
+**Status**: Planned. Overseerr explicitly deferred (it's a request-management frontend over Sonarr/Radarr, not an independent download queue with its own retry primitive — the underlying need is already covered once this action exists).
+
+New `arr_blocklist_and_search` action (`params.service: sonarr|radarr`) — for the concrete case of a torrent qbt-rules just deleted for being bad/stalled, correlate it to the Sonarr/Radarr queue via `GET /api/v3/queue` (matching `downloadId` to the torrent hash), then `DELETE /api/v3/queue/{id}?removeFromClient=false&blocklist=true` followed by `POST /api/v3/command` (`EpisodeSearch`/`MoviesSearch`) to trigger a replacement search. `removeFromClient` defaults `false` since a preceding `delete_torrent` action in the same rule already removed it from qBittorrent — document prominently that standalone use needs the override.
+
+New `integrations:` config section (`integrations.sonarr.url`/`.api_key`, `integrations.radarr.*`, `_FILE` secret support identical to `qbittorrent.password`).
+
+### 5. Read-only web dashboard
+
+**Status**: Planned.
+
+First web UI — 100% greenfield (no existing templates/static serving/Jinja2 usage anywhere in `server.py`). Server-rendered via Flask + Jinja2 (no new frontend framework/build pipeline), reusing data the JSON API already exposes:
+
+- `GET /dashboard` — health + stats overview
+- `GET /dashboard/jobs`, `GET /dashboard/jobs/<job_id>` — job list/detail
+- `GET /dashboard/rules` — read-only, sourced from the already hot-reload-aware `config_obj.get_rules()`
+
+Auth: reuses the existing `require_api_key` decorator (same `?key=` query param the JSON API already supports) rather than building a login form — accepted trade-off for a read-only, home-lab-scale v0.6 dashboard.
+
+**Packaging risk requiring pre-merge verification**: `pyproject.toml`'s `package-data` currently only declares `py.typed` — templates must be added (`"templates/*.html"`) or the built wheel silently omits them, surfacing only at runtime as `TemplateNotFound`. Verify by building the wheel and installing it in a clean venv before relying on the Docker build to catch it.
+
+### Sequencing
+
+Initiatives 3 and 4 share the same `ActionExecutor`/`RulesEngine` signature change (adding `config`) — land once, rebase the other. Initiative 5's `create_app()` signature change (adding `config`, for the rules view) is independent. Initiatives 1 and 2 have no shared surface with anything else.
+
+Once everything above is merged to `main`: `scripts/bump-version.sh minor` (0.5.x → 0.6.0).
+
+---
+
+## v0.7.0 Planning
+
+**Status**: Planned (single confirmed item so far — add more as they come up).
+
+### Remove deprecated `keep_files` parameter
+
+`delete_torrent`'s `keep_files` parameter (deprecated in v0.6.0, see above) is removed entirely in v0.7.0. Any rule still using it after the v0.6.0 deprecation window will need to migrate to `delete_files` — remembering the **polarity is inverted**, not just the name (`keep_files: true` → `delete_files: false`, and vice versa). This isn't a silent removal: rules using the old key will start erroring (or being ignored, defaulting to delete) rather than warning, so the CHANGELOG entry and release notes should call this out prominently as the second half of a two-release migration, not a fresh breaking change.
 
 ---
 

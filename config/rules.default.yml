@@ -117,7 +117,7 @@ rules:
       # Uncomment to auto-delete instead of stop:
       # - type: delete_torrent
       #   params:
-      #     keep_files: false
+      #     delete_files: true
 
   - name: Tag private tracker torrents
     enabled: true
@@ -186,7 +186,7 @@ rules:
     actions:
       - type: delete_torrent
         params:
-          keep_files: true
+          delete_files: false
 
   - name: Remove stalled magnet links
     enabled: true
@@ -202,7 +202,7 @@ rules:
     actions:
       - type: delete_torrent
         params:
-          keep_files: false
+          delete_files: true
 
   - name: Pause well-seeded torrents
     enabled: true
@@ -275,7 +275,7 @@ rules:
     actions:
       - type: delete_torrent
         params:
-          keep_files: false
+          delete_files: true
 
   - name: Emergency space cleanup
     enabled: false
@@ -291,7 +291,7 @@ rules:
     actions:
       - type: delete_torrent
         params:
-          keep_files: false
+          delete_files: true
 
   - name: Remove errored torrents
     enabled: true
@@ -304,7 +304,7 @@ rules:
     actions:
       - type: delete_torrent
         params:
-          keep_files: true
+          delete_files: false
 
   - name: Remove missing files torrents
     enabled: true
@@ -320,7 +320,7 @@ rules:
     actions:
       - type: delete_torrent
         params:
-          keep_files: false
+          delete_files: true
 
   - name: Tag torrents from specific tracker
     enabled: false
