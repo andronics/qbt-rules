@@ -19,16 +19,12 @@ from qbt_rules.arguments import (
 def clean_env(monkeypatch):
     """Clean up environment variables before and after each test."""
     # Clean up before test
-    monkeypatch.delenv('DRY_RUN', raising=False)
-    monkeypatch.delenv('LOG_LEVEL', raising=False)
-    monkeypatch.delenv('TRACE_MODE', raising=False)
+    monkeypatch.delenv('QBT_RULES_DRY_RUN', raising=False)
 
     yield
 
     # Clean up after test
-    monkeypatch.delenv('DRY_RUN', raising=False)
-    monkeypatch.delenv('LOG_LEVEL', raising=False)
-    monkeypatch.delenv('TRACE_MODE', raising=False)
+    monkeypatch.delenv('QBT_RULES_DRY_RUN', raising=False)
 
 
 class TestSmartConfigDefault:
@@ -214,9 +210,9 @@ class TestProcessArgs:
     """Test argument processing."""
 
     def test_sets_dry_run_env_var_when_true(self, monkeypatch):
-        """Sets DRY_RUN environment variable when args.dry_run=True."""
+        """Sets QBT_RULES_DRY_RUN environment variable when args.dry_run=True."""
         # Clean env
-        monkeypatch.delenv('DRY_RUN', raising=False)
+        monkeypatch.delenv('QBT_RULES_DRY_RUN', raising=False)
 
         args = Mock()
         args.dry_run = True
@@ -226,12 +222,12 @@ class TestProcessArgs:
 
         process_args(args)
 
-        assert os.environ.get('DRY_RUN') == 'true'
+        assert os.environ.get('QBT_RULES_DRY_RUN') == 'true'
 
     def test_does_not_set_dry_run_when_false(self, monkeypatch):
-        """Doesn't set DRY_RUN environment variable when args.dry_run=False."""
+        """Doesn't set QBT_RULES_DRY_RUN environment variable when args.dry_run=False."""
         # Clean env
-        monkeypatch.delenv('DRY_RUN', raising=False)
+        monkeypatch.delenv('QBT_RULES_DRY_RUN', raising=False)
 
         args = Mock()
         args.dry_run = False
@@ -241,7 +237,7 @@ class TestProcessArgs:
 
         process_args(args)
 
-        assert 'DRY_RUN' not in os.environ
+        assert 'QBT_RULES_DRY_RUN' not in os.environ
 
     def test_does_not_set_bare_log_env_vars(self, monkeypatch):
         """--log-level/--trace are resolved directly by cli.py's

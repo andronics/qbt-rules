@@ -51,30 +51,20 @@ def reset_metrics_module_state():
 @pytest.fixture(autouse=True)
 def clean_environment_variables():
     """Clean up environment variables before and after each test."""
-    # Store original values
-    original_dry_run = os.environ.get('DRY_RUN')
-    original_log_level = os.environ.get('LOG_LEVEL')
-    original_trace_mode = os.environ.get('TRACE_MODE')
+    # Store original value
+    original_dry_run = os.environ.get('QBT_RULES_DRY_RUN')
 
     # Clean before test
-    os.environ.pop('DRY_RUN', None)
-    os.environ.pop('LOG_LEVEL', None)
-    os.environ.pop('TRACE_MODE', None)
+    os.environ.pop('QBT_RULES_DRY_RUN', None)
 
     yield
 
     # Clean after test
-    os.environ.pop('DRY_RUN', None)
-    os.environ.pop('LOG_LEVEL', None)
-    os.environ.pop('TRACE_MODE', None)
+    os.environ.pop('QBT_RULES_DRY_RUN', None)
 
-    # Restore original values if they existed
+    # Restore original value if it existed
     if original_dry_run is not None:
-        os.environ['DRY_RUN'] = original_dry_run
-    if original_log_level is not None:
-        os.environ['LOG_LEVEL'] = original_log_level
-    if original_trace_mode is not None:
-        os.environ['TRACE_MODE'] = original_trace_mode
+        os.environ['QBT_RULES_DRY_RUN'] = original_dry_run
 
 
 # ============================================================================

@@ -339,7 +339,7 @@ def process_args(args: argparse.Namespace) -> Path:
     # (--log-level/--trace are handled directly by cli.py's
     # get_logging_config(), not via this env-var-setting indirection)
     if args.dry_run:
-        os.environ['DRY_RUN'] = 'true'
+        os.environ['QBT_RULES_DRY_RUN'] = 'true'
 
     # Determine config directory
     if args.config_dir:

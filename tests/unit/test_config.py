@@ -918,19 +918,19 @@ engine:
 
     def test_is_dry_run_from_env_var(self, tmp_config_dir):
         """Environment variable overrides config file."""
-        with patch.dict(os.environ, {'DRY_RUN': 'true'}):
+        with patch.dict(os.environ, {'QBT_RULES_DRY_RUN': 'true'}):
             config = Config(tmp_config_dir)
             assert config.is_dry_run() is True
 
     def test_is_dry_run_env_var_variations(self, tmp_config_dir):
         """Test various env var values for dry run."""
         for value in ['true', '1', 'yes', 'on', 'TRUE', 'YES']:
-            with patch.dict(os.environ, {'DRY_RUN': value}):
+            with patch.dict(os.environ, {'QBT_RULES_DRY_RUN': value}):
                 config = Config(tmp_config_dir)
                 assert config.is_dry_run() is True, f"Failed for value: {value}"
 
         for value in ['false', '0', 'no', 'off', 'FALSE', 'NO']:
-            with patch.dict(os.environ, {'DRY_RUN': value}):
+            with patch.dict(os.environ, {'QBT_RULES_DRY_RUN': value}):
                 config = Config(tmp_config_dir)
                 assert config.is_dry_run() is False, f"Failed for value: {value}"
 

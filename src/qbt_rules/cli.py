@@ -244,13 +244,16 @@ def get_schedule_config(args, config_obj) -> list:
     return config_obj.schedule
 
 
-def run_server_mode(args, config_obj):
+def run_server_mode(args, config_obj, logging_config):
     """
     Run server mode - Start HTTP API server with worker
 
     Args:
         args: Parsed CLI arguments
         config_obj: Loaded configuration object
+        logging_config: Pre-resolved dict from get_logging_config(), already
+            computed once by main() for setup_logging() -- threaded through
+            rather than re-resolved here
     """
     logger.info("=" * 60)
     logger.info("Starting qbt-rules server")
@@ -342,7 +345,7 @@ def run_server_mode(args, config_obj):
     logger.info("=" * 60)
 
     # Get HTTP access logging preference
-    log_http_access = get_logging_config(args, config_obj)['http_access']
+    log_http_access = logging_config['http_access']
 
     try:
         run_server(
@@ -691,7 +694,7 @@ def main():
     # Determine mode
     if args.serve:
         # Server mode
-        run_server_mode(args, config)
+        run_server_mode(args, config, logging_config)
     elif args.list_jobs:
         # List jobs command
         list_jobs_command(args, config)

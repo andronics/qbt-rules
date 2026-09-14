@@ -84,16 +84,17 @@ def copy_default_if_missing(target_path: Path, default_filename: str) -> bool:
         return False
 
 
-def get_nested_config(config: Dict[str, Any], key: str) -> Optional[Any]:
+def get_nested_config(config: Dict[str, Any], key: str, default: Any = None) -> Optional[Any]:
     """
     Get nested configuration value using dot notation
 
     Args:
         config: Configuration dictionary
         key: Dot-notation key (e.g., 'server.host')
+        default: Value to return if the key path isn't found
 
     Returns:
-        Configuration value or None if not found
+        Configuration value or default if not found
 
     Examples:
         >>> config = {'server': {'host': 'localhost', 'port': 5000}}
@@ -109,7 +110,7 @@ def get_nested_config(config: Dict[str, Any], key: str) -> Optional[Any]:
         if isinstance(value, dict) and k in value:
             value = value[k]
         else:
-            return None
+            return default
 
     return value
 
@@ -583,34 +584,11 @@ class Config:
         Returns:
             Configuration value
         """
-        keys = key.split('.')
-        value = self.config
-
-        for k in keys:
-            if isinstance(value, dict) and k in value:
-                value = value[k]
-            else:
-                return default
-
-        return value
+        return get_nested_config(self.config, key, default)
 
     def is_dry_run(self) -> bool:
         """Check if dry-run mode is enabled"""
-        # ENV var takes precedence
-        env_dry_run = os.environ.get('DRY_RUN', '').lower()
-        if env_dry_run in ('true', '1', 'yes', 'on'):
-            return True
-        elif env_dry_run in ('false', '0', 'no', 'off'):
-            return False
-
-        # Fall back to config file
-        config_value = self.get('engine.dry_run', False)
-
-        # Handle string values from YAML
-        if isinstance(config_value, str):
-            return config_value.lower() in ('true', '1', 'yes', 'on')
-
-        return bool(config_value)
+        return parse_bool(resolve_config(None, 'QBT_RULES_DRY_RUN', self.config, 'engine.dry_run', default=False))
 
     def get_rules(self, resolved: bool = True) -> list:
         """

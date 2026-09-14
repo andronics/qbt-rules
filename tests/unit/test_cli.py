@@ -560,7 +560,7 @@ class TestRunServerMode:
             }
         }, schedule=[], config_dir=Path('/config'))
 
-        run_server_mode(args, config_obj)
+        run_server_mode(args, config_obj, {'http_access': False})
 
         # Verify queue creation
         mock_create_queue.assert_called_once_with(
@@ -632,7 +632,7 @@ class TestRunServerMode:
         config_obj = Mock(config={})
 
         with pytest.raises(SystemExit):
-            run_server_mode(args, config_obj)
+            run_server_mode(args, config_obj, {'http_access': False})
 
         mock_exit.assert_called_once_with(1)
         # Verify error was logged
@@ -679,7 +679,7 @@ class TestRunServerMode:
         )
         config_obj = Mock(config={}, schedule=[], config_dir=Path('/config'))
 
-        run_server_mode(args, config_obj)
+        run_server_mode(args, config_obj, {'http_access': False})
 
         # Verify worker and scheduler were stopped
         mock_worker.stop.assert_called_once()
