@@ -51,7 +51,7 @@ class Worker:
                 has no access to CLI args to resolve _FILE secrets itself
             integrations_config: Pre-resolved Sonarr/Radarr config
                 ({'sonarr': {'url', 'api_key'}, 'radarr': {...}}, already
-                _FILE-resolved) for the arr_blocklist_and_search action --
+                _FILE-resolved) for the arr_blocklist action --
                 same rationale as notifications_config
         """
         self.queue = queue

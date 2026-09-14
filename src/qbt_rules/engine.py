@@ -390,7 +390,7 @@ class ActionExecutor:
                 action, already _FILE-resolved at server startup
             integrations_config: Pre-resolved Sonarr/Radarr config
                 ({'sonarr': {'url', 'api_key'}, 'radarr': {...}}) for the
-                arr_blocklist_and_search action, already _FILE-resolved
+                arr_blocklist action, already _FILE-resolved
                 at server startup
         """
         self.api = api
@@ -460,9 +460,11 @@ class ActionExecutor:
             service = params.get('service', self.notifications_config.get('service', 'generic'))
             message = self._render_notify_message(torrent, params.get('message'))
             logger.info(f"  Would notify via {service}: {message}")
-        elif action_type == 'arr_blocklist_and_search':
+        elif action_type == 'arr_blocklist':
             service = params.get('service')
-            logger.info(f"  Would blocklist and search for {torrent['name']} via {service}")
+            search = bool(params.get('search', True))
+            action_desc = "blocklist and search" if search else "blocklist (no search)"
+            logger.info(f"  Would {action_desc} for {torrent['name']} via {service}")
         else:
             logger.info(f"  Would {action_type} {torrent['name']} (params={params})")
 
@@ -615,8 +617,8 @@ class ActionExecutor:
         elif action_type == 'notify':
             return self._execute_notify(torrent, params)
 
-        elif action_type == 'arr_blocklist_and_search':
-            return self._execute_arr_blocklist_and_search(torrent, params)
+        elif action_type == 'arr_blocklist':
+            return self._execute_arr_blocklist(torrent, params)
 
         else:
             logger.error(f"  Unknown action type: {action_type}")
@@ -733,12 +735,12 @@ class ActionExecutor:
                 return matches
             page += 1
 
-    def _execute_arr_blocklist_and_search(self, torrent: Dict, params: Dict) -> bool:
+    def _execute_arr_blocklist(self, torrent: Dict, params: Dict) -> bool:
         """
-        Blocklist a torrent's Sonarr/Radarr queue entry and trigger a
-        re-search, correlating via GET /api/v3/queue's downloadId (not
-        category matching -- that's a separate concept, auto-tagging on
-        import, see Advanced-Topics)
+        Blocklist a torrent's Sonarr/Radarr queue entry, and optionally
+        trigger a re-search, correlating via GET /api/v3/queue's
+        downloadId (not category matching -- that's a separate concept,
+        auto-tagging on import, see Advanced-Topics)
 
         Non-fatal if the torrent isn't found in the arr's queue -- most
         torrents aren't arr-managed, so this logs a warning and returns
@@ -749,11 +751,15 @@ class ActionExecutor:
             remove_from_client: bool, default False -- False assumes a
                 preceding delete_torrent action already removed it from
                 qBittorrent; override to True if this action runs without one
+            search: bool, default True -- whether to also trigger a
+                replacement search after blocklisting. Set False for a
+                blocklist-only action (e.g. reviewing candidates manually
+                before letting the arr re-grab anything)
         """
         service = params.get('service')
         if service not in ('sonarr', 'radarr'):
             logger.error(
-                f"  arr_blocklist_and_search: params.service must be 'sonarr' or 'radarr', got {service!r}"
+                f"  arr_blocklist: params.service must be 'sonarr' or 'radarr', got {service!r}"
             )
             return False
 
@@ -762,7 +768,7 @@ class ActionExecutor:
         api_key = integration.get('api_key')
         if not base_url or not api_key:
             logger.error(
-                f"  arr_blocklist_and_search: {service} is not configured "
+                f"  arr_blocklist: {service} is not configured "
                 f"(set integrations.{service}.url and integrations.{service}.api_key)"
             )
             return False
@@ -773,12 +779,12 @@ class ActionExecutor:
         try:
             records = self._find_arr_queue_records(base_url, api_key, torrent_hash)
         except requests.exceptions.RequestException as e:
-            logger.error(f"  arr_blocklist_and_search: failed to query {service}'s queue: {e}")
+            logger.error(f"  arr_blocklist: failed to query {service}'s queue: {e}")
             return False
 
         if not records:
             logger.warning(
-                f"  arr_blocklist_and_search: {torrent['name']} not found in {service}'s queue, skipping"
+                f"  arr_blocklist: {torrent['name']} not found in {service}'s queue, skipping"
             )
             return True
 
@@ -798,10 +804,14 @@ class ActionExecutor:
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
                 logger.error(
-                    f"  arr_blocklist_and_search: failed to blocklist queue entry "
+                    f"  arr_blocklist: failed to blocklist queue entry "
                     f"{record.get('id')} in {service}: {e}"
                 )
                 return False
+
+        if not bool(params.get('search', True)):
+            logger.info(f"  Blocklisted {torrent['name']} in {service} (search=false, no search triggered)")
+            return True
 
         if service == 'sonarr':
             episode_ids = [r['episodeId'] for r in records if 'episodeId' in r]
@@ -819,7 +829,7 @@ class ActionExecutor:
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
-            logger.error(f"  arr_blocklist_and_search: failed to trigger {service} search: {e}")
+            logger.error(f"  arr_blocklist: failed to trigger {service} search: {e}")
             return False
 
         logger.info(f"  Blocklisted and triggered {service} search for {torrent['name']}")
@@ -847,7 +857,7 @@ class RulesEngine:
             notifications_config: Pre-resolved notifications config for the
                 notify action -- see ActionExecutor.__init__
             integrations_config: Pre-resolved Sonarr/Radarr config for the
-                arr_blocklist_and_search action -- see ActionExecutor.__init__
+                arr_blocklist action -- see ActionExecutor.__init__
         """
         self.api = api
         self.config = config

@@ -132,7 +132,7 @@ def get_integrations_config(args, config_obj) -> dict:
     or config file
 
     Resolved once at server startup, same as notifications_config -- the
-    arr_blocklist_and_search action has no access to CLI args, so its
+    arr_blocklist action has no access to CLI args, so its
     config (including _FILE-resolved API keys) is threaded down as an
     already-resolved dict. 'integrations' is a two-level nested section
     (integrations.sonarr.*, integrations.radarr.*), so resolve_section_config

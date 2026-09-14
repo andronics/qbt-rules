@@ -1,5 +1,5 @@
-"""Tests for the arr_blocklist_and_search action in engine.py
-(ActionExecutor._execute_arr_blocklist_and_search)."""
+"""Tests for the arr_blocklist action in engine.py
+(ActionExecutor._execute_arr_blocklist)."""
 
 import logging
 from unittest.mock import Mock, patch
@@ -50,7 +50,7 @@ class TestArrBlocklistAndSearchSonarr:
         mock_post.return_value = _mock_response()
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
-        action = {'type': 'arr_blocklist_and_search', 'params': {'service': 'sonarr'}}
+        action = {'type': 'arr_blocklist', 'params': {'service': 'sonarr'}}
         success, skipped = executor.execute(sample_torrent, action)
 
         assert success is True
@@ -90,7 +90,7 @@ class TestArrBlocklistAndSearchSonarr:
         mock_post.return_value = _mock_response()
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
-        action = {'type': 'arr_blocklist_and_search', 'params': {'service': 'sonarr'}}
+        action = {'type': 'arr_blocklist', 'params': {'service': 'sonarr'}}
         success, skipped = executor.execute(sample_torrent, action)
 
         assert success is True
@@ -118,7 +118,7 @@ class TestArrBlocklistAndSearchSonarr:
         with patch('qbt_rules.engine.requests.delete', return_value=_mock_response()), \
              patch('qbt_rules.engine.requests.post', return_value=_mock_response()):
             executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
-            action = {'type': 'arr_blocklist_and_search', 'params': {'service': 'sonarr'}}
+            action = {'type': 'arr_blocklist', 'params': {'service': 'sonarr'}}
             success, skipped = executor.execute(sample_torrent, action)
 
         assert success is True
@@ -143,7 +143,7 @@ class TestArrBlocklistAndSearchRadarr:
         mock_post.return_value = _mock_response()
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
-        action = {'type': 'arr_blocklist_and_search', 'params': {'service': 'radarr'}}
+        action = {'type': 'arr_blocklist', 'params': {'service': 'radarr'}}
         success, skipped = executor.execute(sample_torrent, action)
 
         assert success is True
@@ -172,7 +172,7 @@ class TestArrBlocklistAndSearchNoMatch:
         mock_get.return_value = _queue_page([{'id': 1, 'downloadId': 'UNRELATED', 'episodeId': 1}])
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
-        action = {'type': 'arr_blocklist_and_search', 'params': {'service': 'sonarr'}}
+        action = {'type': 'arr_blocklist', 'params': {'service': 'sonarr'}}
         with caplog.at_level(logging.WARNING):
             success, skipped = executor.execute(sample_torrent, action)
 
@@ -186,7 +186,7 @@ class TestArrBlocklistAndSearchNoMatch:
         mock_get.return_value = _queue_page([])
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
-        action = {'type': 'arr_blocklist_and_search', 'params': {'service': 'sonarr'}}
+        action = {'type': 'arr_blocklist', 'params': {'service': 'sonarr'}}
         success, skipped = executor.execute(sample_torrent, action)
 
         assert success is True
@@ -209,12 +209,85 @@ class TestArrBlocklistAndSearchRemoveFromClient:
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
         action = {
-            'type': 'arr_blocklist_and_search',
+            'type': 'arr_blocklist',
             'params': {'service': 'sonarr', 'remove_from_client': True},
         }
         executor.execute(sample_torrent, action)
 
         assert mock_delete.call_args.kwargs['params']['removeFromClient'] == 'true'
+
+
+class TestArrBlocklistSearchParam:
+    """search defaults to True (blocklist + search); search: false blocklists only."""
+
+    @patch('qbt_rules.engine.requests.post')
+    @patch('qbt_rules.engine.requests.delete')
+    @patch('qbt_rules.engine.requests.get')
+    def test_search_defaults_to_true(self, mock_get, mock_delete, mock_post, mock_api, sample_torrent):
+        mock_get.return_value = _queue_page([
+            {'id': 42, 'downloadId': sample_torrent['hash'].upper(), 'episodeId': 100},
+        ])
+        mock_delete.return_value = _mock_response()
+        mock_post.return_value = _mock_response()
+        executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
+
+        action = {'type': 'arr_blocklist', 'params': {'service': 'sonarr'}}
+        success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        mock_post.assert_called_once()
+
+    @patch('qbt_rules.engine.requests.post')
+    @patch('qbt_rules.engine.requests.delete')
+    @patch('qbt_rules.engine.requests.get')
+    def test_search_false_blocklists_without_triggering_search(
+        self, mock_get, mock_delete, mock_post, mock_api, sample_torrent
+    ):
+        mock_get.return_value = _queue_page([
+            {'id': 42, 'downloadId': sample_torrent['hash'].upper(), 'episodeId': 100},
+        ])
+        mock_delete.return_value = _mock_response()
+        executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
+
+        action = {'type': 'arr_blocklist', 'params': {'service': 'sonarr', 'search': False}}
+        success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        mock_delete.assert_called_once()
+        mock_post.assert_not_called()
+
+    @patch('qbt_rules.engine.requests.post')
+    @patch('qbt_rules.engine.requests.delete')
+    @patch('qbt_rules.engine.requests.get')
+    def test_search_false_still_blocklists_multiple_records(
+        self, mock_get, mock_delete, mock_post, mock_api, sample_torrent
+    ):
+        """search: false skips the search step but every matched queue
+        record is still blocklisted (season packs included)."""
+        h = sample_torrent['hash'].upper()
+        mock_get.return_value = _queue_page([
+            {'id': 1, 'downloadId': h, 'episodeId': 100},
+            {'id': 2, 'downloadId': h, 'episodeId': 101},
+        ])
+        mock_delete.return_value = _mock_response()
+        executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
+
+        action = {'type': 'arr_blocklist', 'params': {'service': 'sonarr', 'search': False}}
+        success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        assert mock_delete.call_count == 2
+        mock_post.assert_not_called()
+
+    @patch('qbt_rules.engine.requests.get')
+    def test_search_false_no_match_still_a_non_fatal_skip(self, mock_get, mock_api, sample_torrent):
+        mock_get.return_value = _queue_page([{'id': 1, 'downloadId': 'UNRELATED', 'episodeId': 1}])
+        executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
+
+        action = {'type': 'arr_blocklist', 'params': {'service': 'sonarr', 'search': False}}
+        success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
 
 
 class TestArrBlocklistAndSearchConfigErrors:
@@ -223,7 +296,7 @@ class TestArrBlocklistAndSearchConfigErrors:
     @patch('qbt_rules.engine.requests.get')
     def test_missing_service_param_fails(self, mock_get, mock_api, sample_torrent):
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
-        action = {'type': 'arr_blocklist_and_search', 'params': {}}
+        action = {'type': 'arr_blocklist', 'params': {}}
 
         success, skipped = executor.execute(sample_torrent, action)
 
@@ -233,7 +306,7 @@ class TestArrBlocklistAndSearchConfigErrors:
     @patch('qbt_rules.engine.requests.get')
     def test_unknown_service_param_fails(self, mock_get, mock_api, sample_torrent):
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
-        action = {'type': 'arr_blocklist_and_search', 'params': {'service': 'overseerr'}}
+        action = {'type': 'arr_blocklist', 'params': {'service': 'overseerr'}}
 
         success, skipped = executor.execute(sample_torrent, action)
 
@@ -244,7 +317,7 @@ class TestArrBlocklistAndSearchConfigErrors:
     def test_no_integrations_config_at_all_fails(self, mock_get, mock_api, sample_torrent):
         executor = ActionExecutor(mock_api, dry_run=False)  # no integrations_config
 
-        action = {'type': 'arr_blocklist_and_search', 'params': {'service': 'sonarr'}}
+        action = {'type': 'arr_blocklist', 'params': {'service': 'sonarr'}}
         success, skipped = executor.execute(sample_torrent, action)
 
         assert success is False
@@ -257,7 +330,7 @@ class TestArrBlocklistAndSearchConfigErrors:
             integrations_config={'sonarr': {'url': 'http://sonarr:8989', 'api_key': None}}
         )
 
-        action = {'type': 'arr_blocklist_and_search', 'params': {'service': 'sonarr'}}
+        action = {'type': 'arr_blocklist', 'params': {'service': 'sonarr'}}
         success, skipped = executor.execute(sample_torrent, action)
 
         assert success is False
@@ -272,7 +345,7 @@ class TestArrBlocklistAndSearchHttpFailure:
         mock_get.side_effect = requests.exceptions.ConnectionError("refused")
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
-        action = {'type': 'arr_blocklist_and_search', 'params': {'service': 'sonarr'}}
+        action = {'type': 'arr_blocklist', 'params': {'service': 'sonarr'}}
         success, skipped = executor.execute(sample_torrent, action)
 
         assert success is False
@@ -286,7 +359,7 @@ class TestArrBlocklistAndSearchHttpFailure:
         mock_delete.return_value = _mock_response(status_code=500)
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
-        action = {'type': 'arr_blocklist_and_search', 'params': {'service': 'sonarr'}}
+        action = {'type': 'arr_blocklist', 'params': {'service': 'sonarr'}}
         success, skipped = executor.execute(sample_torrent, action)
 
         assert success is False
@@ -304,7 +377,7 @@ class TestArrBlocklistAndSearchHttpFailure:
         mock_post.return_value = _mock_response(status_code=500)
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
-        action = {'type': 'arr_blocklist_and_search', 'params': {'service': 'sonarr'}}
+        action = {'type': 'arr_blocklist', 'params': {'service': 'sonarr'}}
         success, skipped = executor.execute(sample_torrent, action)
 
         assert success is False
@@ -317,7 +390,7 @@ class TestArrBlocklistAndSearchDryRun:
     def test_dry_run_does_not_call_requests(self, mock_get, mock_api, sample_torrent):
         executor = ActionExecutor(mock_api, dry_run=True, integrations_config=SONARR_CONFIG)
 
-        action = {'type': 'arr_blocklist_and_search', 'params': {'service': 'sonarr'}}
+        action = {'type': 'arr_blocklist', 'params': {'service': 'sonarr'}}
         success, skipped = executor.execute(sample_torrent, action)
 
         assert success is True

@@ -158,9 +158,10 @@ notifications:
 # ============================================================================
 # INTEGRATIONS CONFIGURATION (optional)
 # ============================================================================
-# Sonarr/Radarr connection details for the "arr_blocklist_and_search"
-# action -- blocklists a bad download in the arr and triggers a re-search,
-# correlated via the arr's own download queue (not category matching,
+# Sonarr/Radarr connection details for the "arr_blocklist" action --
+# blocklists a bad download in the arr and, by default, triggers a
+# re-search (params.search: false to skip that part), correlated via the
+# arr's own download queue (not category matching,
 # which is a separate concept -- see Advanced-Topics in the wiki).
 #
 # Uncomment and customize the service(s) you use:
