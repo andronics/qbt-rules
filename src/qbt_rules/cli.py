@@ -126,6 +126,34 @@ def get_notifications_config(args, config_obj) -> dict:
     })
 
 
+def get_integrations_config(args, config_obj) -> dict:
+    """
+    Get integrations configuration (Sonarr/Radarr) from CLI args, env vars,
+    or config file
+
+    Resolved once at server startup, same as notifications_config -- the
+    arr_blocklist_and_search action has no access to CLI args, so its
+    config (including _FILE-resolved API keys) is threaded down as an
+    already-resolved dict. 'integrations' is a two-level nested section
+    (integrations.sonarr.*, integrations.radarr.*), so resolve_section_config
+    is called once per service with a dotted section name -- it derives
+    QBT_RULES_INTEGRATIONS_SONARR_URL/_API_KEY and
+    QBT_RULES_INTEGRATIONS_RADARR_URL/_API_KEY automatically, no ENV_VAR_MAP
+    entries needed.
+
+    Returns:
+        Dictionary with 'sonarr' and 'radarr' keys, each {'url', 'api_key'}
+    """
+    return {
+        'sonarr': resolve_section_config(args, config_obj, 'integrations.sonarr', {
+            'url': None, 'api_key': None,
+        }),
+        'radarr': resolve_section_config(args, config_obj, 'integrations.radarr', {
+            'url': None, 'api_key': None,
+        }),
+    }
+
+
 def get_schedule_config(args, config_obj) -> list:
     """
     Get the schedule configuration (list of {cron, context} entries)
@@ -158,6 +186,7 @@ def run_server_mode(args, config_obj):
     server_config = get_server_config(args, config_obj)
     queue_config = get_queue_config(args, config_obj)
     notifications_config = get_notifications_config(args, config_obj)
+    integrations_config = get_integrations_config(args, config_obj)
 
     # Validate API key
     if not server_config['api_key']:
@@ -188,7 +217,13 @@ def run_server_mode(args, config_obj):
 
     # Initialize worker
     from qbt_rules.worker import Worker
-    worker = Worker(queue=queue, api=api, config=config_obj, notifications_config=notifications_config)
+    worker = Worker(
+        queue=queue,
+        api=api,
+        config=config_obj,
+        notifications_config=notifications_config,
+        integrations_config=integrations_config
+    )
     worker.start()
     logger.info("Worker started")
 

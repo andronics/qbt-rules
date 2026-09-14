@@ -156,6 +156,29 @@ notifications:
   service: generic
 
 # ============================================================================
+# INTEGRATIONS CONFIGURATION (optional)
+# ============================================================================
+# Sonarr/Radarr connection details for the "arr_blocklist_and_search"
+# action -- blocklists a bad download in the arr and triggers a re-search,
+# correlated via the arr's own download queue (not category matching,
+# which is a separate concept -- see Advanced-Topics in the wiki).
+#
+# Uncomment and customize the service(s) you use:
+#
+# integrations:
+#   sonarr:
+#     url: http://sonarr:8989
+#     # Env: QBT_RULES_INTEGRATIONS_SONARR_URL or QBT_RULES_INTEGRATIONS_SONARR_URL_FILE
+#     api_key: your-sonarr-api-key-here
+#     # Env: QBT_RULES_INTEGRATIONS_SONARR_API_KEY or QBT_RULES_INTEGRATIONS_SONARR_API_KEY_FILE
+#     # IMPORTANT: Use the _FILE variant in production, same as any other credential.
+#   radarr:
+#     url: http://radarr:7878
+#     # Env: QBT_RULES_INTEGRATIONS_RADARR_URL or QBT_RULES_INTEGRATIONS_RADARR_URL_FILE
+#     api_key: your-radarr-api-key-here
+#     # Env: QBT_RULES_INTEGRATIONS_RADARR_API_KEY or QBT_RULES_INTEGRATIONS_RADARR_API_KEY_FILE
+
+# ============================================================================
 # LOGGING CONFIGURATION
 # ============================================================================
 

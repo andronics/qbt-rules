@@ -347,7 +347,11 @@ class TestRunServerMode:
             queue=mock_queue,
             api=mock_api,
             config=config_obj,
-            notifications_config={'webhook_url': None, 'service': 'generic'}
+            notifications_config={'webhook_url': None, 'service': 'generic'},
+            integrations_config={
+                'sonarr': {'url': None, 'api_key': None},
+                'radarr': {'url': None, 'api_key': None},
+            }
         )
         mock_worker.start.assert_called_once()
 

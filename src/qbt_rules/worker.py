@@ -34,7 +34,8 @@ class Worker:
         api: QBittorrentAPI,
         config: Config,
         poll_interval: float = 1.0,
-        notifications_config: Optional[Dict[str, str]] = None
+        notifications_config: Optional[Dict[str, str]] = None,
+        integrations_config: Optional[Dict[str, Dict[str, str]]] = None
     ):
         """
         Initialize worker
@@ -48,12 +49,17 @@ class Worker:
                 webhook URL/service, already _FILE-resolved) for the notify
                 action -- resolved once at server startup, since ActionExecutor
                 has no access to CLI args to resolve _FILE secrets itself
+            integrations_config: Pre-resolved Sonarr/Radarr config
+                ({'sonarr': {'url', 'api_key'}, 'radarr': {...}}, already
+                _FILE-resolved) for the arr_blocklist_and_search action --
+                same rationale as notifications_config
         """
         self.queue = queue
         self.api = api
         self.config = config
         self.poll_interval = poll_interval
         self.notifications_config = notifications_config
+        self.integrations_config = integrations_config
 
         self.running = False
         self.thread: Optional[threading.Thread] = None
@@ -213,7 +219,8 @@ class Worker:
             api=self.api,
             config=self.config,
             dry_run=dry_run,
-            notifications_config=self.notifications_config
+            notifications_config=self.notifications_config,
+            integrations_config=self.integrations_config
         )
 
         # Execute rules

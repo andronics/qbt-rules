@@ -376,7 +376,8 @@ class ActionExecutor:
         self,
         api: QBittorrentAPI,
         dry_run: bool,
-        notifications_config: Optional[Dict[str, str]] = None
+        notifications_config: Optional[Dict[str, str]] = None,
+        integrations_config: Optional[Dict[str, Dict[str, str]]] = None
     ):
         """
         Initialize action executor
@@ -387,10 +388,15 @@ class ActionExecutor:
             notifications_config: Pre-resolved notifications config
                 ({'webhook_url': ..., 'service': ...}) for the notify
                 action, already _FILE-resolved at server startup
+            integrations_config: Pre-resolved Sonarr/Radarr config
+                ({'sonarr': {'url', 'api_key'}, 'radarr': {...}}) for the
+                arr_blocklist_and_search action, already _FILE-resolved
+                at server startup
         """
         self.api = api
         self.dry_run = dry_run
         self.notifications_config = notifications_config or {}
+        self.integrations_config = integrations_config or {}
 
     def execute(self, torrent: Dict, action: Dict) -> Tuple[bool, bool]:
         """
@@ -454,6 +460,9 @@ class ActionExecutor:
             service = params.get('service', self.notifications_config.get('service', 'generic'))
             message = self._render_notify_message(torrent, params.get('message'))
             logger.info(f"  Would notify via {service}: {message}")
+        elif action_type == 'arr_blocklist_and_search':
+            service = params.get('service')
+            logger.info(f"  Would blocklist and search for {torrent['name']} via {service}")
         else:
             logger.info(f"  Would {action_type} {torrent['name']} (params={params})")
 
@@ -606,6 +615,9 @@ class ActionExecutor:
         elif action_type == 'notify':
             return self._execute_notify(torrent, params)
 
+        elif action_type == 'arr_blocklist_and_search':
+            return self._execute_arr_blocklist_and_search(torrent, params)
+
         else:
             logger.error(f"  Unknown action type: {action_type}")
             return False
@@ -688,6 +700,131 @@ class ActionExecutor:
             logger.error(f"  notify: failed to send {service} notification for {torrent['name']}: {e}")
             return False
 
+    def _find_arr_queue_records(self, base_url: str, api_key: str, torrent_hash: str) -> List[Dict]:
+        """
+        Page through GET /api/v3/queue collecting every record whose
+        downloadId matches torrent_hash (already uppercased)
+
+        A season-pack/multi-episode download can produce multiple queue
+        records sharing the same downloadId (one per episode in Sonarr) --
+        all matches are collected so the caller can blocklist and search
+        for every one of them, not just the first.
+        """
+        matches = []
+        page = 1
+        page_size = 250
+
+        while True:
+            response = requests.get(
+                f"{base_url}/api/v3/queue",
+                params={'apikey': api_key, 'page': page, 'pageSize': page_size},
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+            records = data.get('records', [])
+
+            for record in records:
+                if record.get('downloadId', '').upper() == torrent_hash:
+                    matches.append(record)
+
+            total_records = data.get('totalRecords', len(records))
+            if not records or page * page_size >= total_records:
+                return matches
+            page += 1
+
+    def _execute_arr_blocklist_and_search(self, torrent: Dict, params: Dict) -> bool:
+        """
+        Blocklist a torrent's Sonarr/Radarr queue entry and trigger a
+        re-search, correlating via GET /api/v3/queue's downloadId (not
+        category matching -- that's a separate concept, auto-tagging on
+        import, see Advanced-Topics)
+
+        Non-fatal if the torrent isn't found in the arr's queue -- most
+        torrents aren't arr-managed, so this logs a warning and returns
+        True (not an error) rather than failing the rule.
+
+        params:
+            service: 'sonarr' or 'radarr' (required)
+            remove_from_client: bool, default False -- False assumes a
+                preceding delete_torrent action already removed it from
+                qBittorrent; override to True if this action runs without one
+        """
+        service = params.get('service')
+        if service not in ('sonarr', 'radarr'):
+            logger.error(
+                f"  arr_blocklist_and_search: params.service must be 'sonarr' or 'radarr', got {service!r}"
+            )
+            return False
+
+        integration = self.integrations_config.get(service, {})
+        base_url = integration.get('url')
+        api_key = integration.get('api_key')
+        if not base_url or not api_key:
+            logger.error(
+                f"  arr_blocklist_and_search: {service} is not configured "
+                f"(set integrations.{service}.url and integrations.{service}.api_key)"
+            )
+            return False
+
+        base_url = base_url.rstrip('/')
+        torrent_hash = torrent['hash'].upper()
+
+        try:
+            records = self._find_arr_queue_records(base_url, api_key, torrent_hash)
+        except requests.exceptions.RequestException as e:
+            logger.error(f"  arr_blocklist_and_search: failed to query {service}'s queue: {e}")
+            return False
+
+        if not records:
+            logger.warning(
+                f"  arr_blocklist_and_search: {torrent['name']} not found in {service}'s queue, skipping"
+            )
+            return True
+
+        remove_from_client = bool(params.get('remove_from_client', False))
+
+        for record in records:
+            try:
+                response = requests.delete(
+                    f"{base_url}/api/v3/queue/{record['id']}",
+                    params={
+                        'apikey': api_key,
+                        'removeFromClient': str(remove_from_client).lower(),
+                        'blocklist': 'true',
+                    },
+                    timeout=10
+                )
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                logger.error(
+                    f"  arr_blocklist_and_search: failed to blocklist queue entry "
+                    f"{record.get('id')} in {service}: {e}"
+                )
+                return False
+
+        if service == 'sonarr':
+            episode_ids = [r['episodeId'] for r in records if 'episodeId' in r]
+            command = {'name': 'EpisodeSearch', 'episodeIds': episode_ids}
+        else:
+            movie_ids = sorted({r['movieId'] for r in records if 'movieId' in r})
+            command = {'name': 'MoviesSearch', 'movieIds': movie_ids}
+
+        try:
+            response = requests.post(
+                f"{base_url}/api/v3/command",
+                params={'apikey': api_key},
+                json=command,
+                timeout=10
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"  arr_blocklist_and_search: failed to trigger {service} search: {e}")
+            return False
+
+        logger.info(f"  Blocklisted and triggered {service} search for {torrent['name']}")
+        return True
+
 
 class RulesEngine:
     """Main qBittorrent automation engine"""
@@ -697,7 +834,8 @@ class RulesEngine:
         api: QBittorrentAPI,
         config: 'Config',
         dry_run: bool = False,
-        notifications_config: Optional[Dict[str, str]] = None
+        notifications_config: Optional[Dict[str, str]] = None,
+        integrations_config: Optional[Dict[str, Dict[str, str]]] = None
     ):
         """
         Initialize engine
@@ -708,12 +846,18 @@ class RulesEngine:
             dry_run: If True, only log actions without executing
             notifications_config: Pre-resolved notifications config for the
                 notify action -- see ActionExecutor.__init__
+            integrations_config: Pre-resolved Sonarr/Radarr config for the
+                arr_blocklist_and_search action -- see ActionExecutor.__init__
         """
         self.api = api
         self.config = config
         self.dry_run = dry_run
         self.evaluator = ConditionEvaluator(api)
-        self.executor = ActionExecutor(api, dry_run, notifications_config=notifications_config)
+        self.executor = ActionExecutor(
+            api, dry_run,
+            notifications_config=notifications_config,
+            integrations_config=integrations_config
+        )
         self.stats = RuleStats()
 
     def run(self, context: Optional[str] = None, torrent_hash: Optional[str] = None):

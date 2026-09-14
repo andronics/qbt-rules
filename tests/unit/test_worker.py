@@ -596,7 +596,8 @@ class TestWorkerExecuteJob:
             api=mock_api,
             config=mock_config,
             dry_run=False,
-            notifications_config=None
+            notifications_config=None,
+            integrations_config=None
         )
 
     def test_execute_job_uses_dry_run_from_config(self, worker, mocker):
