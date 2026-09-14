@@ -16,6 +16,7 @@ from qbt_rules.queue_manager import QueueManager, JobStatus
 from qbt_rules.api import QBittorrentAPI
 from qbt_rules.engine import RulesEngine
 from qbt_rules.config import Config
+from qbt_rules import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +174,7 @@ class Worker:
             self.last_job_completed = completed_at
 
             execution_time = (completed_at - started_at).total_seconds()
+            metrics.record_job_duration(execution_time)
             logger.info(
                 f"Job {job_id} completed successfully in {execution_time:.2f}s "
                 f"(torrents: {result.get('torrents_processed', 0)}, "
@@ -193,6 +195,7 @@ class Worker:
                 completed_at=completed_at,
                 error=error_trace
             )
+            metrics.record_job_duration((completed_at - started_at).total_seconds())
 
             logger.error(f"Job {job_id} failed: {error_msg}")
             logger.debug(f"Job {job_id} traceback:\n{error_trace}")

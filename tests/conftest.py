@@ -1,11 +1,51 @@
 """Pytest configuration and comprehensive fixtures for qbt-rules test suite."""
 
+import atexit
+import shutil
 import pytest
 import tempfile
 import os
 from typing import Dict, Any, List, Optional
 from unittest.mock import Mock, MagicMock
 from pathlib import Path
+
+# prometheus_client resolves its multiprocess-vs-single-process value
+# storage exactly once, at its own first import anywhere in the process --
+# changing PROMETHEUS_MULTIPROC_DIR afterward has no effect, since the
+# resolved ValueClass is cached module-level state for the rest of the
+# process's life. This must therefore be set here, at the very top of the
+# first file pytest loads (before any test module's own `from qbt_rules
+# import metrics`/engine.py/worker.py/etc. imports can trigger prometheus_client's
+# actual first import), not inside a per-test fixture in test_metrics.py.
+_metrics_test_dir = tempfile.mkdtemp(prefix='qbtr-test-metrics-')
+os.environ.setdefault('PROMETHEUS_MULTIPROC_DIR', _metrics_test_dir)
+atexit.register(shutil.rmtree, _metrics_test_dir, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def reset_metrics_module_state():
+    """
+    Reset qbt_rules.metrics's module-level enabled flag and Counter/Histogram
+    references before and after every test in the whole suite
+
+    Applies across every test file (not just test_metrics.py) since
+    test_server.py's /metrics tests also call metrics.init(enabled=True),
+    and without this reset that would otherwise leak "enabled" state into
+    every test that runs afterward in the same pytest session.
+    """
+    from qbt_rules import metrics
+
+    def _reset():
+        metrics._enabled = False
+        metrics._actions_executed = None
+        metrics._job_duration = None
+        metrics._scheduler_fires = None
+        metrics._http_requests = None
+        metrics._http_duration = None
+
+    _reset()
+    yield
+    _reset()
 
 
 @pytest.fixture(autouse=True)

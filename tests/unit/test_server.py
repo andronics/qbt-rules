@@ -12,6 +12,7 @@ Test coverage for:
 
 import pytest
 import json
+import os
 from datetime import datetime
 from unittest.mock import MagicMock, patch, PropertyMock
 
@@ -1474,3 +1475,112 @@ class TestDashboardRoutes:
         source = inspect.getsource(run_server)
 
         assert "PATH_INFO', '').startswith('/dashboard')" in source
+
+
+class TestMetricsRoutes:
+    """Test the Prometheus /metrics endpoint and its HTTP request hooks"""
+
+    @pytest.fixture
+    def app_with_metrics(self, mock_queue, mock_worker):
+        """Flask app created WITH metrics enabled -- mirrors cli.py's real
+        startup order: metrics.init(enabled=True) before create_app()"""
+        from qbt_rules import metrics
+        metrics.init(enabled=True)
+
+        app = create_app(
+            mock_queue, mock_worker, 'test-api-key-12345',
+            metrics_config={'enabled': True, 'multiproc_dir': os.environ['PROMETHEUS_MULTIPROC_DIR']}
+        )
+        app.config['TESTING'] = True
+        return app
+
+    @pytest.fixture
+    def client_with_metrics(self, app_with_metrics):
+        return app_with_metrics.test_client()
+
+    def test_metrics_route_not_registered_when_disabled(self, client):
+        """The shared `client` fixture's app was created without
+        metrics_config -- /metrics shouldn't exist at all, not just 401"""
+        response = client.get('/metrics?key=test-api-key-12345')
+        assert response.status_code == 404
+
+    def test_metrics_requires_api_key(self, client_with_metrics):
+        response = client_with_metrics.get('/metrics')
+        assert response.status_code == 401
+
+    def test_metrics_accepts_query_param_key(self, client_with_metrics):
+        response = client_with_metrics.get('/metrics?key=test-api-key-12345')
+        assert response.status_code == 200
+
+    def test_metrics_content_type_is_prometheus_exposition_format(self, client_with_metrics):
+        response = client_with_metrics.get('/metrics?key=test-api-key-12345')
+        assert response.content_type.startswith('text/plain')
+
+    def test_metrics_includes_queue_and_worker_state_gauges(self, client_with_metrics, mock_queue, mock_worker):
+        mock_queue.get_queue_depth.return_value = 5
+        mock_worker.get_status.return_value = {'running': True, 'last_job_completed': None}
+
+        response = client_with_metrics.get('/metrics?key=test-api-key-12345')
+        body = response.data.decode()
+
+        assert 'qbt_rules_queue_depth{backend="SQLiteQueue"} 5.0' in body
+        assert 'qbt_rules_worker_running 1.0' in body
+
+    def test_metrics_scheduler_entries_from_dashboard_config(self, mock_queue, mock_worker, mocker):
+        """schedule_entry_count is read from the same dashboard_config
+        global the /dashboard/rules route already uses, not a separate
+        param -- confirm it reflects config.schedule's length"""
+        from qbt_rules import metrics
+        metrics.init(enabled=True)
+
+        mock_config = mocker.MagicMock()
+        mock_config.schedule = [{'cron': '*/30 * * * *', 'context': 'cron'}, {'cron': '0 3 * * *', 'context': 'nightly'}]
+
+        app = create_app(
+            mock_queue, mock_worker, 'test-api-key-12345',
+            config=mock_config,
+            metrics_config={'enabled': True, 'multiproc_dir': os.environ['PROMETHEUS_MULTIPROC_DIR']}
+        )
+        app.config['TESTING'] = True
+        client = app.test_client()
+
+        response = client.get('/metrics?key=test-api-key-12345')
+        assert 'qbt_rules_scheduler_entries 2.0' in response.data.decode()
+
+    def test_http_requests_recorded_for_other_routes(self, client_with_metrics):
+        client_with_metrics.get('/api/health')
+        response = client_with_metrics.get('/metrics?key=test-api-key-12345')
+        body = response.data.decode()
+
+        assert 'qbt_rules_http_requests_total{endpoint="health",method="GET",status="200"}' in body
+
+    def test_metrics_endpoint_itself_excluded_from_http_request_metrics(self, client_with_metrics):
+        """Scraping /metrics shouldn't create a self-referential
+        'metrics_endpoint'-labeled entry in its own output"""
+        client_with_metrics.get('/metrics?key=test-api-key-12345')
+        response = client_with_metrics.get('/metrics?key=test-api-key-12345')
+        body = response.data.decode()
+
+        assert 'endpoint="metrics_endpoint"' not in body
+
+    # -- Gunicorn wiring (source inspection, matching this file's existing
+    # convention for run_server()'s Gunicorn-specific internals) ----------
+
+    def test_run_server_source_filters_metrics_path(self):
+        from qbt_rules.server import run_server
+        import inspect
+
+        source = inspect.getsource(run_server)
+
+        assert "PATH_INFO') == '/metrics'" in source
+
+    def test_run_server_source_has_conditional_child_exit_hook(self):
+        from qbt_rules.server import run_server
+        import inspect
+
+        source = inspect.getsource(run_server)
+
+        assert "def child_exit(" in source
+        assert "mark_process_dead" in source
+        assert "if metrics_enabled:" in source
+        assert "options['child_exit'] = child_exit" in source

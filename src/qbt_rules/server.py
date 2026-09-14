@@ -11,17 +11,19 @@ Provides REST API for:
 import os
 import re
 import secrets
+import time
 import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from functools import wraps
 
-from flask import Flask, request, jsonify, Response, render_template
+from flask import Flask, request, jsonify, Response, render_template, g
 
 from qbt_rules.queue_manager import QueueManager, JobStatus
 from qbt_rules.worker import Worker
 from qbt_rules.config import Config
 from qbt_rules.__version__ import __version__
+from qbt_rules import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +32,15 @@ queue: QueueManager = None
 worker: Worker = None
 api_key_config: str = None
 dashboard_config: Optional[Config] = None
+metrics_enabled: bool = False
 
 
 def create_app(
     queue_manager: QueueManager,
     worker_instance: Worker,
     api_key: str,
-    config: Optional[Config] = None
+    config: Optional[Config] = None,
+    metrics_config: Optional[Dict[str, Any]] = None
 ) -> Flask:
     """
     Create and configure Flask application
@@ -49,16 +53,23 @@ def create_app(
             view. Optional (defaults to None) so existing callers that don't
             need the dashboard's rules view are unaffected; that one route
             reports itself unavailable if config wasn't provided
+        metrics_config: Resolved {'enabled': bool, 'multiproc_dir': str}
+            from cli.py's get_metrics_config(). Optional (defaults to None,
+            treated as disabled) -- metrics.init() must already have been
+            called by the caller before this, since that's what actually
+            makes prometheus_client importable/configured; this just
+            controls whether /metrics and the HTTP request hooks are wired up
 
     Returns:
         Configured Flask app
     """
-    global queue, worker, api_key_config, dashboard_config
+    global queue, worker, api_key_config, dashboard_config, metrics_enabled
 
     queue = queue_manager
     worker = worker_instance
     api_key_config = api_key
     dashboard_config = config
+    metrics_enabled = bool(metrics_config and metrics_config.get('enabled'))
 
     app = Flask(__name__)
     app.config['JSON_SORT_KEYS'] = False
@@ -70,6 +81,9 @@ def create_app(
     # Register blueprints/routes
     register_routes(app)
     register_dashboard_routes(app)
+    if metrics_enabled:
+        register_metrics_routes(app)
+        _register_http_metrics_hooks(app)
 
     logger.info("Flask application created")
     return app
@@ -510,12 +524,73 @@ def register_dashboard_routes(app: Flask):
         )
 
 
+def register_metrics_routes(app: Flask):
+    """
+    Register the Prometheus /metrics endpoint
+
+    Only called from create_app() when metrics are enabled -- by that
+    point metrics.init(enabled=True) has already run (in cli.py, before
+    Gunicorn forks), so prometheus_client is guaranteed importable here.
+    """
+
+    @app.route('/metrics', methods=['GET'])
+    @require_api_key
+    def metrics_endpoint():
+        """
+        Prometheus scrape endpoint
+
+        Combines multiprocess-aggregated event counters/histograms (HTTP
+        requests, actions executed, job duration, scheduler fires) with
+        on-demand state gauges computed fresh from the same data /api/stats
+        and /api/health already expose (queue depth/job counts, worker
+        status, schedule entry count) -- see metrics.py's module docstring
+        for why these are split into two different collection strategies.
+        """
+        worker_status = worker.get_status()
+        schedule_entry_count = len(dashboard_config.schedule) if dashboard_config is not None else 0
+
+        output = metrics.generate_metrics_output(
+            queue_backend=queue.__class__.__name__,
+            queue_depth=queue.get_queue_depth(),
+            job_counts=queue.get_stats(),
+            worker_running=worker_status['running'],
+            worker_last_job_completed=worker_status['last_job_completed'],
+            schedule_entry_count=schedule_entry_count,
+        )
+        return Response(output, mimetype=metrics.content_type())
+
+
+def _register_http_metrics_hooks(app: Flask):
+    """
+    Register before_request/after_request hooks recording HTTP request
+    count/duration metrics for every route except /metrics itself (avoids a
+    self-referential scrape-of-scrape metric, standard practice)
+    """
+
+    @app.before_request
+    def _metrics_start_timer():
+        g._metrics_start_time = time.time()
+
+    @app.after_request
+    def _metrics_record_request(response):
+        if request.endpoint != 'metrics_endpoint' and hasattr(g, '_metrics_start_time'):
+            duration = time.time() - g._metrics_start_time
+            metrics.record_http_request(
+                method=request.method,
+                endpoint=request.endpoint or 'unknown',
+                status=response.status_code,
+                duration=duration,
+            )
+        return response
+
+
 def run_server(
     app: Flask,
     host: str = '0.0.0.0',
     port: int = 5000,
     workers: int = 1,
-    log_http_access: bool = False
+    log_http_access: bool = False,
+    metrics_enabled: bool = False
 ):
     """
     Run Flask app with Gunicorn in production mode
@@ -526,6 +601,10 @@ def run_server(
         port: Bind port
         workers: Number of Gunicorn workers
         log_http_access: Enable HTTP access logging (default: False to suppress health checks)
+        metrics_enabled: Whether to register the child_exit Gunicorn hook
+            (Prometheus multiprocess bookkeeping when a worker exits --
+            see child_exit()'s own docstring for what it actually does
+            today) -- only meaningful when metrics are enabled
     """
     from gunicorn.app.base import BaseApplication
     from gunicorn.glogging import Logger
@@ -546,6 +625,10 @@ def run_server(
                 # typically would, so logging every one repeats the key
                 # in cleartext far more than the JSON API does
                 if environ.get('PATH_INFO', '').startswith('/dashboard'):
+                    return
+                # Skip logging for the Prometheus scrape endpoint -- polled
+                # every 15-30s by a scraper, same volume rationale as health
+                if environ.get('PATH_INFO') == '/metrics':
                     return
 
             # Log all other requests (or all requests if log_http_access is True)
@@ -585,6 +668,31 @@ def run_server(
         worker_instance.start()
         logger.info(f"Worker thread restarted in Gunicorn worker {worker_process.pid}")
 
+    def child_exit(server, worker_process):
+        """
+        Gunicorn child_exit hook - Prometheus multiprocess bookkeeping
+        when a worker exits
+
+        Verified empirically (real 2-worker server, one worker killed
+        mid-run): a dead worker's Counter/Histogram .db files in
+        PROMETHEUS_MULTIPROC_DIR correctly keep contributing to aggregated
+        /metrics totals after it's gone -- and that's the *correct*
+        behavior, not a leak to clean up. Those values are cumulative
+        historical fact ("this many requests really happened") and stay
+        valid regardless of whether the process that recorded them still
+        exists; MultiProcessCollector already sums every .db file in the
+        directory unconditionally. mark_process_dead() only ever removes
+        gauge_{live-mode}_{pid}.db files, for prometheus_client's
+        multiprocess "live" Gauge modes (livesum/liveall/livemax/livemin)
+        specifically -- this module doesn't use those today (the on-demand
+        state Collector in metrics.py computes gauges fresh on every
+        scrape instead, deliberately sidestepping the need for them), so
+        this call is currently a no-op. Kept as forward-compatible hygiene
+        in case a future metric genuinely needs a live-mode Gauge.
+        """
+        from prometheus_client import multiprocess
+        multiprocess.mark_process_dead(worker_process.pid)
+
     options = {
         'bind': f'{host}:{port}',
         'workers': workers,
@@ -597,6 +705,8 @@ def run_server(
         'preload_app': True,  # Load app before forking workers
         'post_fork': post_fork,  # Restart worker thread after fork
     }
+    if metrics_enabled:
+        options['child_exit'] = child_exit
 
     logger.info(f"Starting Gunicorn server on {host}:{port} with {workers} worker(s)")
 

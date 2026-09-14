@@ -180,6 +180,31 @@ notifications:
 #     # Env: QBT_RULES_INTEGRATIONS_RADARR_API_KEY or QBT_RULES_INTEGRATIONS_RADARR_API_KEY_FILE
 
 # ============================================================================
+# METRICS CONFIGURATION (optional)
+# ============================================================================
+# Prometheus metrics via a /metrics endpoint (requires the 'metrics' extra:
+# pip install qbt-rules[metrics]). Off by default -- no new dependency or
+# directory requirement unless you turn this on. See the wiki's Metrics page
+# for the full list of exposed metrics and a sample Prometheus scrape config.
+#
+# /metrics requires the API key, same as every other endpoint except
+# /api/health and /api/version.
+
+metrics:
+  # Enable the /metrics endpoint and internal instrumentation
+  # Env: QBT_RULES_METRICS_ENABLED or QBT_RULES_METRICS_ENABLED_FILE
+  enabled: false
+
+  # Directory used by prometheus_client's multiprocess mode -- required for
+  # correct metrics under Gunicorn's multi-worker fork model (server.workers
+  # > 1); each worker process writes its own file here, aggregated on every
+  # scrape. Cleared automatically on server startup. Defaults to somewhere
+  # under /tmp, which is always writable in the standard Docker image with
+  # no extra volume needed.
+  # Env: QBT_RULES_METRICS_MULTIPROC_DIR or QBT_RULES_METRICS_MULTIPROC_DIR_FILE
+  multiproc_dir: /tmp/qbt-rules-metrics
+
+# ============================================================================
 # LOGGING CONFIGURATION
 # ============================================================================
 

@@ -40,6 +40,9 @@ dependencies = [
 redis = [
     "redis>=5.0.0",
 ]
+metrics = [
+    "prometheus_client>=0.20.0",
+]
 dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
@@ -47,6 +50,7 @@ dev = [
     "pytest-mock>=3.12.0",
     "fakeredis[lua]>=2.20.0",
     "requests-mock>=1.11.0",
+    "prometheus_client>=0.20.0",
     "mypy>=1.5.0",
     "black>=23.7.0",
     "ruff>=0.0.287",
@@ -89,6 +93,7 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "redis: marks tests that require Redis (deselect with '-m \"not redis\"')",
+    "metrics: marks tests that require prometheus_client (deselect with '-m \"not metrics\"')",
 ]
 
 # coverage configuration

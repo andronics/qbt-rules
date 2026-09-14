@@ -154,6 +154,19 @@ def get_integrations_config(args, config_obj) -> dict:
     }
 
 
+def get_metrics_config(args, config_obj) -> dict:
+    """
+    Get Prometheus metrics configuration from CLI args, env vars, or config file
+
+    Returns:
+        Dictionary with 'enabled' (bool) and 'multiproc_dir' (str)
+    """
+    return resolve_section_config(args, config_obj, 'metrics', {
+        'enabled': False,
+        'multiproc_dir': '/tmp/qbt-rules-metrics',
+    }, parsers={'enabled': parse_bool})
+
+
 def get_schedule_config(args, config_obj) -> list:
     """
     Get the schedule configuration (list of {cron, context} entries)
@@ -187,6 +200,23 @@ def run_server_mode(args, config_obj):
     queue_config = get_queue_config(args, config_obj)
     notifications_config = get_notifications_config(args, config_obj)
     integrations_config = get_integrations_config(args, config_obj)
+    metrics_config = get_metrics_config(args, config_obj)
+
+    # Initialize metrics (must happen before worker/engine/scheduler/server
+    # are imported below, so PROMETHEUS_MULTIPROC_DIR is set in os.environ
+    # before prometheus_client is first imported anywhere in this process --
+    # see metrics.py's module docstring for why this ordering matters)
+    if metrics_config['enabled']:
+        multiproc_dir = Path(metrics_config['multiproc_dir'])
+        multiproc_dir.mkdir(parents=True, exist_ok=True)
+        for stale_file in multiproc_dir.glob('*.db'):
+            stale_file.unlink()
+        os.environ['PROMETHEUS_MULTIPROC_DIR'] = str(multiproc_dir)
+
+    from qbt_rules import metrics
+    metrics.init(enabled=metrics_config['enabled'])
+    if metrics_config['enabled']:
+        logger.info(f"Metrics enabled (multiproc dir: {metrics_config['multiproc_dir']})")
 
     # Validate API key
     if not server_config['api_key']:
@@ -241,7 +271,8 @@ def run_server_mode(args, config_obj):
         queue_manager=queue,
         worker_instance=worker,
         api_key=server_config['api_key'],
-        config=config_obj
+        config=config_obj,
+        metrics_config=metrics_config
     )
 
     # Run server
@@ -258,7 +289,8 @@ def run_server_mode(args, config_obj):
             host=server_config['host'],
             port=server_config['port'],
             workers=server_config['workers'],
-            log_http_access=log_http_access
+            log_http_access=log_http_access,
+            metrics_enabled=metrics_config['enabled']
         )
     except KeyboardInterrupt:
         logger.info("\nShutting down...")

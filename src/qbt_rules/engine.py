@@ -13,6 +13,7 @@ from qbt_rules.api import QBittorrentAPI
 from qbt_rules.utils import parse_tags, is_older_than, is_newer_than, is_larger_than, is_smaller_than
 from qbt_rules.errors import FieldError, OperatorError
 from qbt_rules.logging import get_logger
+from qbt_rules import metrics
 
 logger = get_logger(__name__)
 
@@ -421,10 +422,13 @@ class ActionExecutor:
                 self._log_dry_run(torrent, action_type, params)
                 return True, True  # Dry run actions count as "skipped" (not actually executed)
             # Execute action
-            return self._execute_action(torrent, action_type, params), False
+            success = self._execute_action(torrent, action_type, params)
+            metrics.record_action_executed(action_type, success)
+            return success, False
 
         except Exception as e:
             logger.error(f"Action {action_type} failed for {torrent['name']}: {e}")
+            metrics.record_action_executed(action_type, False)
             return False, False
 
     def _should_skip_idempotent(self, torrent: Dict, action_type: str, params: Dict) -> bool:

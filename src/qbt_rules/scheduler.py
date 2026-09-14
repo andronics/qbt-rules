@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 from croniter import croniter
 
 from qbt_rules.queue_manager import QueueManager
+from qbt_rules import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -163,8 +164,10 @@ class Scheduler:
             job_id = self.queue.enqueue(context=entry['context'])
             logger.info(f"Scheduled job enqueued: {job_id} (context={entry['context']}, cron={entry['cron']})")
             self.last_fire = {'context': entry['context'], 'job_id': job_id, 'at': time.time()}
+            metrics.record_scheduler_fire(True)
         except Exception as e:
             logger.error(f"Failed to enqueue scheduled job (context={entry['context']}): {e}", exc_info=True)
+            metrics.record_scheduler_fire(False)
 
     def __repr__(self) -> str:
         return f"<Scheduler running={self.running} entries={len(self._entries)}>"

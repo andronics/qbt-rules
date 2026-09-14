@@ -367,7 +367,8 @@ class TestRunServerMode:
             queue_manager=mock_queue,
             worker_instance=mock_worker,
             api_key='test-key',
-            config=config_obj
+            config=config_obj,
+            metrics_config={'enabled': False, 'multiproc_dir': '/tmp/qbt-rules-metrics'}
         )
 
         # Verify server run
@@ -376,7 +377,8 @@ class TestRunServerMode:
             host='0.0.0.0',
             port=5000,
             workers=1,
-            log_http_access=False
+            log_http_access=False,
+            metrics_enabled=False
         )
 
     @patch('qbt_rules.cli.logger')
