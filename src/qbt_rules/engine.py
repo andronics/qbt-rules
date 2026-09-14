@@ -7,6 +7,8 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Any, Optional, Tuple
 
+import requests
+
 from qbt_rules.api import QBittorrentAPI
 from qbt_rules.utils import parse_tags, is_older_than, is_newer_than, is_larger_than, is_smaller_than
 from qbt_rules.errors import FieldError, OperatorError
@@ -370,16 +372,25 @@ class ConditionEvaluator:
 class ActionExecutor:
     """Executes actions on torrents with idempotency checks"""
 
-    def __init__(self, api: QBittorrentAPI, dry_run: bool):
+    def __init__(
+        self,
+        api: QBittorrentAPI,
+        dry_run: bool,
+        notifications_config: Optional[Dict[str, str]] = None
+    ):
         """
         Initialize action executor
 
         Args:
             api: qBittorrent API client
             dry_run: If True, only log actions without executing
+            notifications_config: Pre-resolved notifications config
+                ({'default_webhook_url': ..., 'default_service': ...}) for
+                the notify action, already _FILE-resolved at server startup
         """
         self.api = api
         self.dry_run = dry_run
+        self.notifications_config = notifications_config or {}
 
     def execute(self, torrent: Dict, action: Dict) -> Tuple[bool, bool]:
         """
@@ -439,6 +450,10 @@ class ActionExecutor:
         if action_type == 'delete_torrent':
             delete_files = self._resolve_delete_files(params)
             logger.info(f"  Would delete {torrent['name']} (delete_files={delete_files})")
+        elif action_type == 'notify':
+            service = params.get('service', self.notifications_config.get('default_service', 'generic'))
+            message = self._render_notify_message(torrent, params.get('message'))
+            logger.info(f"  Would notify via {service}: {message}")
         else:
             logger.info(f"  Would {action_type} {torrent['name']} (params={params})")
 
@@ -588,15 +603,102 @@ class ActionExecutor:
                 logger.info(f"  Set bottom priority for {torrent['name']}")
             return success
 
+        elif action_type == 'notify':
+            return self._execute_notify(torrent, params)
+
         else:
             logger.error(f"  Unknown action type: {action_type}")
+            return False
+
+    def _render_notify_message(self, torrent: Dict, message: Optional[str]) -> Optional[str]:
+        """
+        Render a notify action's message template against torrent fields
+
+        Uses str.format(**template_vars), where template_vars is the torrent
+        dict with 'tags' replaced by a clean, comma-joined list (the raw
+        info.tags field is qBittorrent's unparsed comma-separated string,
+        e.g. "hd,new" with no space -- not what a human-readable
+        notification should show).
+
+        Args:
+            torrent: Torrent dictionary
+            message: Message template, e.g. "Torrent {name} matched"
+
+        Returns:
+            Rendered message, or None if message was None or templating failed
+        """
+        if message is None:
+            return None
+
+        template_vars = dict(torrent)
+        template_vars['tags'] = ', '.join(parse_tags(torrent))
+
+        try:
+            return message.format(**template_vars)
+        except (KeyError, IndexError) as e:
+            logger.warning(f"  notify: message template references an unknown field ({e}), skipping")
+            return None
+
+    def _execute_notify(self, torrent: Dict, params: Dict) -> bool:
+        """
+        Send an outbound webhook notification (Discord/Slack/ntfy/generic)
+
+        Always fires -- no idempotency tracking, since there's no existing
+        mechanism to record "already notified" state. A rule re-evaluated
+        across multiple contexts will re-fire this every time it still
+        matches; pair with add_tag + a condition excluding already-tagged
+        torrents if that's not desired.
+        """
+        service = params.get('service', self.notifications_config.get('default_service', 'generic'))
+        url = params.get('url') or self.notifications_config.get('default_webhook_url')
+
+        if not url:
+            logger.error("  notify: no webhook URL configured (set params.url or notifications.default_webhook_url)")
+            return False
+
+        message = self._render_notify_message(torrent, params.get('message'))
+        if params.get('message') is not None and message is None:
+            # Template rendering failed (already logged a warning) -- don't fire
+            return False
+        if message is None and not (service == 'generic' and 'body' in params):
+            logger.error("  notify: no message provided (set params.message, or params.body for generic)")
+            return False
+
+        if service == 'discord':
+            kwargs = {'json': {'content': message}}
+        elif service == 'slack':
+            kwargs = {'json': {'text': message}}
+        elif service == 'ntfy':
+            kwargs = {'data': message.encode('utf-8')}
+        elif service == 'generic':
+            if 'body' in params:
+                kwargs = {'json': params['body']}
+            else:
+                kwargs = {'json': {'message': message}}
+        else:
+            logger.error(f"  notify: unknown service '{service}' (expected discord, slack, ntfy, or generic)")
+            return False
+
+        try:
+            response = requests.post(url, timeout=10, **kwargs)
+            response.raise_for_status()
+            logger.info(f"  Sent {service} notification for {torrent['name']}")
+            return True
+        except requests.exceptions.RequestException as e:
+            logger.error(f"  notify: failed to send {service} notification for {torrent['name']}: {e}")
             return False
 
 
 class RulesEngine:
     """Main qBittorrent automation engine"""
 
-    def __init__(self, api: QBittorrentAPI, config: 'Config', dry_run: bool = False):
+    def __init__(
+        self,
+        api: QBittorrentAPI,
+        config: 'Config',
+        dry_run: bool = False,
+        notifications_config: Optional[Dict[str, str]] = None
+    ):
         """
         Initialize engine
 
@@ -604,12 +706,14 @@ class RulesEngine:
             api: qBittorrent API client
             config: Configuration object
             dry_run: If True, only log actions without executing
+            notifications_config: Pre-resolved notifications config for the
+                notify action -- see ActionExecutor.__init__
         """
         self.api = api
         self.config = config
         self.dry_run = dry_run
         self.evaluator = ConditionEvaluator(api)
-        self.executor = ActionExecutor(api, dry_run)
+        self.executor = ActionExecutor(api, dry_run, notifications_config=notifications_config)
         self.stats = RuleStats()
 
     def run(self, context: Optional[str] = None, torrent_hash: Optional[str] = None):

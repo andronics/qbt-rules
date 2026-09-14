@@ -81,6 +81,10 @@ class MockQBittorrentAPI:
             'set_bottom_priority': [],
         }
 
+    def get_torrent(self, torrent_hash):
+        """Get a single torrent by hash, or None if it doesn't exist (e.g. deleted)."""
+        return self.torrents_data.get(torrent_hash)
+
     def get_torrents(self, category=None, tag=None, hashes=None):
         """Get torrents list with optional filters."""
         torrents = list(self.torrents_data.values())

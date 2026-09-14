@@ -33,7 +33,8 @@ class Worker:
         queue: QueueManager,
         api: QBittorrentAPI,
         config: Config,
-        poll_interval: float = 1.0
+        poll_interval: float = 1.0,
+        notifications_config: Optional[Dict[str, str]] = None
     ):
         """
         Initialize worker
@@ -43,11 +44,16 @@ class Worker:
             api: qBittorrent API client
             config: Configuration object
             poll_interval: Seconds to wait between queue polls (default: 1.0)
+            notifications_config: Pre-resolved notifications config (default
+                webhook URL/service, already _FILE-resolved) for the notify
+                action -- resolved once at server startup, since ActionExecutor
+                has no access to CLI args to resolve _FILE secrets itself
         """
         self.queue = queue
         self.api = api
         self.config = config
         self.poll_interval = poll_interval
+        self.notifications_config = notifications_config
 
         self.running = False
         self.thread: Optional[threading.Thread] = None
@@ -206,7 +212,8 @@ class Worker:
         engine = RulesEngine(
             api=self.api,
             config=self.config,
-            dry_run=dry_run
+            dry_run=dry_run,
+            notifications_config=self.notifications_config
         )
 
         # Execute rules

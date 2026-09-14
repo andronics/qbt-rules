@@ -125,6 +125,26 @@ rules:
 #     context: nightly
 
 # ============================================================================
+# NOTIFICATIONS CONFIGURATION (optional)
+# ============================================================================
+# Defaults for the "notify" action (Discord/Slack/ntfy/generic webhooks).
+# Both values can be overridden per-rule via the action's own params, so
+# this section is only needed if you want a shared default without
+# repeating the URL/service in every rule.
+
+notifications:
+  # Default webhook URL used when a notify action omits params.url
+  # Env: QBT_RULES_NOTIFICATIONS_WEBHOOK_URL or QBT_RULES_NOTIFICATIONS_WEBHOOK_URL_FILE
+  # IMPORTANT: Use the _FILE variant in production -- webhook URLs often
+  # embed a secret token, same as any other credential.
+  # default_webhook_url: https://discord.com/api/webhooks/your-webhook-here
+
+  # Default service used when a notify action omits params.service
+  # One of: discord, slack, ntfy, generic
+  # Env: QBT_RULES_NOTIFICATIONS_SERVICE or QBT_RULES_NOTIFICATIONS_SERVICE_FILE
+  default_service: generic
+
+# ============================================================================
 # LOGGING CONFIGURATION
 # ============================================================================
 

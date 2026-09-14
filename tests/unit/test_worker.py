@@ -595,7 +595,8 @@ class TestWorkerExecuteJob:
         engine_spy.assert_called_once_with(
             api=mock_api,
             config=mock_config,
-            dry_run=False
+            dry_run=False,
+            notifications_config=None
         )
 
     def test_execute_job_uses_dry_run_from_config(self, worker, mocker):

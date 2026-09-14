@@ -1,7 +1,7 @@
 """Integration tests for complete rule execution scenarios."""
 
 import pytest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from qbt_rules.engine import RulesEngine
 
 
@@ -100,6 +100,57 @@ class TestCleanupRules:
         assert engine.stats.rules_matched == 1
         assert len(mock_api.calls['delete']) == 1
         assert mock_api.calls['delete'][0]['delete_files'] is True
+
+    @patch('qbt_rules.engine.requests.post')
+    def test_notify_after_delete_uses_correct_torrent_via_real_engine_loop(
+        self, mock_post, mock_api, mock_config, old_seeded_torrent
+    ):
+        """
+        Chaining regression test through the REAL RulesEngine.run() action
+        loop (not a mocked shortcut): after delete_torrent removes the
+        torrent, get_torrent(hash) genuinely returns None (MockQBittorrentAPI
+        now implements it), so the engine sets torrent['_deleted']=True and
+        leaves every other key untouched -- the following notify action in
+        the same rule must still render the correct torrent name.
+        """
+        mock_response = Mock(status_code=200)
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        rule = {
+            'name': 'Delete and notify',
+            'enabled': True,
+            'context': 'weekly-cleanup',
+            'conditions': {
+                'all': [
+                    {'field': 'info.ratio', 'operator': '>=', 'value': 2.0},
+                ]
+            },
+            'actions': [
+                {'type': 'delete_torrent', 'params': {'delete_files': True}},
+                {'type': 'notify', 'params': {
+                    'service': 'generic',
+                    'url': 'https://example.com/webhook',
+                    'message': 'Deleted {name}',
+                }},
+            ]
+        }
+
+        mock_config.get_rules = Mock(return_value=[rule])
+        mock_api.torrents_data = {old_seeded_torrent['hash']: old_seeded_torrent}
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='weekly-cleanup')
+
+        assert engine.stats.rules_matched == 1
+        assert len(mock_api.calls['delete']) == 1
+        assert old_seeded_torrent['hash'] not in mock_api.torrents_data  # really deleted
+
+        mock_post.assert_called_once_with(
+            'https://example.com/webhook',
+            timeout=10,
+            json={'message': f"Deleted {old_seeded_torrent['name']}"},
+        )
 
     def test_delete_old_seeded_torrents_canonical_param(self, mock_api, mock_config, old_seeded_torrent):
         """Same as above, using the canonical delete_files param instead of deprecated keep_files."""

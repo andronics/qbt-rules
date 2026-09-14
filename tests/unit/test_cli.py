@@ -11,6 +11,7 @@ from qbt_rules.cli import (
     get_server_config,
     get_client_config,
     get_queue_config,
+    get_notifications_config,
     run_server_mode,
     run_client_mode,
     wait_for_job,
@@ -71,6 +72,35 @@ class TestGetServerConfig:
         assert config['port'] == 9000
         assert config['api_key'] == 'config-key'
         assert config['workers'] == 4
+
+
+class TestGetNotificationsConfig:
+    """Test get_notifications_config() function"""
+
+    def test_returns_default_config(self):
+        """Should return defaults when nothing is set"""
+        args = Namespace()
+        config_obj = Mock(config={})
+
+        config = get_notifications_config(args, config_obj)
+
+        assert config['default_webhook_url'] is None
+        assert config['default_service'] == 'generic'
+
+    def test_uses_config_file_values(self):
+        """Should use config file values when present"""
+        args = Namespace()
+        config_obj = Mock(config={
+            'notifications': {
+                'default_webhook_url': 'https://example.com/webhook',
+                'default_service': 'discord',
+            }
+        })
+
+        config = get_notifications_config(args, config_obj)
+
+        assert config['default_webhook_url'] == 'https://example.com/webhook'
+        assert config['default_service'] == 'discord'
 
 
 class TestGetClientConfig:
@@ -200,7 +230,8 @@ class TestRunServerMode:
         mock_worker_class.assert_called_once_with(
             queue=mock_queue,
             api=mock_api,
-            config=config_obj
+            config=config_obj,
+            notifications_config={'default_webhook_url': None, 'default_service': 'generic'}
         )
         mock_worker.start.assert_called_once()
 

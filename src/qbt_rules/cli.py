@@ -121,6 +121,36 @@ def get_queue_config(args, config_obj) -> dict:
     }
 
 
+def get_notifications_config(args, config_obj) -> dict:
+    """
+    Get notifications configuration from CLI args, env vars, or config file
+
+    Resolved once at server startup (same as server_config/queue_config)
+    so the notify action's default webhook URL supports _FILE secrets --
+    ActionExecutor never has access to CLI args, so it can't do this
+    resolution itself; it's threaded down as an already-resolved dict.
+
+    Returns:
+        Dictionary with notifications configuration
+    """
+    return {
+        'default_webhook_url': resolve_config(
+            getattr(args, 'notifications_default_webhook_url', None),
+            ENV_VAR_MAP.get('notifications.default_webhook_url', 'QBT_RULES_NOTIFICATIONS_WEBHOOK_URL'),
+            config_obj.config,
+            'notifications.default_webhook_url',
+            default=None
+        ),
+        'default_service': resolve_config(
+            getattr(args, 'notifications_default_service', None),
+            ENV_VAR_MAP.get('notifications.default_service', 'QBT_RULES_NOTIFICATIONS_SERVICE'),
+            config_obj.config,
+            'notifications.default_service',
+            default='generic'
+        ),
+    }
+
+
 def get_schedule_config(args, config_obj) -> list:
     """
     Get the schedule configuration (list of {cron, context} entries)
@@ -152,6 +182,7 @@ def run_server_mode(args, config_obj):
     # Get configurations
     server_config = get_server_config(args, config_obj)
     queue_config = get_queue_config(args, config_obj)
+    notifications_config = get_notifications_config(args, config_obj)
 
     # Validate API key
     if not server_config['api_key']:
@@ -182,7 +213,7 @@ def run_server_mode(args, config_obj):
 
     # Initialize worker
     from qbt_rules.worker import Worker
-    worker = Worker(queue=queue, api=api, config=config_obj)
+    worker = Worker(queue=queue, api=api, config=config_obj, notifications_config=notifications_config)
     worker.start()
     logger.info("Worker started")
 

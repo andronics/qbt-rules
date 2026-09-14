@@ -55,6 +55,10 @@ ENV_VAR_MAP = {
     # Rules & logging
     'rules.file': 'QBT_RULES_RULES_FILE',
     'config.dir': 'QBT_RULES_CONFIG_DIR',
+
+    # Notifications
+    'notifications.default_webhook_url': 'QBT_RULES_NOTIFICATIONS_WEBHOOK_URL',
+    'notifications.default_service': 'QBT_RULES_NOTIFICATIONS_SERVICE',
     'logging.level': 'QBT_RULES_LOG_LEVEL',
     'logging.file': 'QBT_RULES_LOG_FILE',
     'logging.trace_mode': 'QBT_RULES_LOG_TRACE_MODE',

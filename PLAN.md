@@ -1555,7 +1555,7 @@ Regression test case: the malware-incident fix (see BUGS.md) relies on an extern
 
 ### 3. Generic outbound notification action
 
-**Status**: Planned.
+**Status**: Implemented.
 
 New `notify` action, single type with a `service` selector (`discord`/`slack`/`ntfy`/`generic`) rather than three near-duplicate actions, since each service wants a different payload shape:
 
@@ -1564,10 +1564,10 @@ New `notify` action, single type with a `service` selector (`discord`/`slack`/`n
   params:
     service: discord
     url: "https://discord.com/api/webhooks/..."   # optional if notifications.default_webhook_url is set
-    message: "Torrent {name} matched rule {rule_name}"
+    message: "Torrent {name} matched rule, ratio {ratio}, tags: {tags}"
 ```
 
-New `notifications:` config section (`default_webhook_url` with `_FILE` secret support, `default_service`). Requires `ActionExecutor` to gain a `config` reference (currently only `api`/`dry_run`) — shared plumbing change with the Sonarr/Radarr action below, land once. Always-fire, no idempotency tracking (matches `reannounce`/`recheck`); accepted risk that a rule re-evaluated across multiple contexts will re-notify — document the `add_tag` + condition-exclusion workaround.
+New `notifications:` config section (`default_webhook_url` with `_FILE` secret support, `default_service`). `ActionExecutor` does **not** hold a `Config` reference — `_FILE` resolution only happens via `cli.py`'s `resolve_config()`, which needs CLI `args` that `ActionExecutor` never has. Instead, `get_notifications_config(args, config_obj)` resolves the webhook URL/service once at server startup (same place `server_config`/`schedule_entries` already are) and threads the plain resolved dict down through `Worker` → `RulesEngine` → `ActionExecutor` as an optional `notifications_config` param. Always-fire, no idempotency tracking (matches `reannounce`/`recheck`); accepted risk that a rule re-evaluated across multiple contexts will re-notify — documented, with the `add_tag` + condition-exclusion workaround. `{tags}` in message templates is cleaned up via `parse_tags()` rather than exposing the raw comma-separated API string. Confirmed via a real end-to-end test (not mocked) that `notify` placed after `delete_torrent` in the same rule still renders the correct torrent name.
 
 ### 4. Sonarr/Radarr blocklist-and-research action
 
@@ -1575,7 +1575,7 @@ New `notifications:` config section (`default_webhook_url` with `_FILE` secret s
 
 New `arr_blocklist_and_search` action (`params.service: sonarr|radarr`) — for the concrete case of a torrent qbt-rules just deleted for being bad/stalled, correlate it to the Sonarr/Radarr queue via `GET /api/v3/queue` (matching `downloadId` to the torrent hash), then `DELETE /api/v3/queue/{id}?removeFromClient=false&blocklist=true` followed by `POST /api/v3/command` (`EpisodeSearch`/`MoviesSearch`) to trigger a replacement search. `removeFromClient` defaults `false` since a preceding `delete_torrent` action in the same rule already removed it from qBittorrent — document prominently that standalone use needs the override.
 
-New `integrations:` config section (`integrations.sonarr.url`/`.api_key`, `integrations.radarr.*`, `_FILE` secret support identical to `qbittorrent.password`).
+New `integrations:` config section (`integrations.sonarr.url`/`.api_key`, `integrations.radarr.*`, `_FILE` secret support identical to `qbittorrent.password`). Threading follows the same corrected pattern `notify` already uses (see Initiative 3): a new `get_integrations_config(args, config_obj)` in `cli.py`, resolved once at startup, threaded down through `Worker` → `RulesEngine` → `ActionExecutor` as its own optional param — not a shared `Config` object, since `ActionExecutor` can't do `_FILE` resolution itself.
 
 ### 5. Read-only web dashboard
 
