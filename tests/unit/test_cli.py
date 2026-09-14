@@ -3,11 +3,13 @@ Tests for qbt_rules.cli module (v0.4.0 client-server architecture)
 """
 
 import pytest
+import os
 from unittest.mock import Mock, patch, MagicMock, call
 from argparse import Namespace
 import json
 
 from qbt_rules.cli import (
+    resolve_section_config,
     get_server_config,
     get_client_config,
     get_queue_config,
@@ -20,6 +22,120 @@ from qbt_rules.cli import (
     cancel_job_command,
     stats_command
 )
+
+
+class TestResolveSectionConfig:
+    """Test resolve_section_config() -- the generic per-section resolver
+    the get_*_config accessors above are all built on."""
+
+    def test_uses_field_defaults(self):
+        """No args/env/config -- each field falls back to its own default."""
+        args = Namespace()
+        config_obj = Mock(config={})
+
+        result = resolve_section_config(args, config_obj, 'server', {
+            'host': '0.0.0.0', 'port': 5000,
+        })
+
+        assert result == {'host': '0.0.0.0', 'port': 5000}
+
+    def test_cli_arg_name_auto_derives_from_section_and_field(self):
+        """section='server', field='port' -> getattr(args, 'server_port')."""
+        args = Namespace(server_port=9000)
+        config_obj = Mock(config={})
+
+        result = resolve_section_config(args, config_obj, 'server', {'port': 5000})
+
+        assert result['port'] == 9000
+
+    def test_env_var_name_auto_derives_from_convention(self):
+        """section='widgets', field='color' -> QBT_RULES_WIDGETS_COLOR, with
+        no ENV_VAR_MAP entry needed."""
+        args = Namespace()
+        config_obj = Mock(config={})
+
+        with patch.dict(os.environ, {'QBT_RULES_WIDGETS_COLOR': 'blue'}):
+            result = resolve_section_config(args, config_obj, 'widgets', {'color': 'red'})
+
+        assert result['color'] == 'blue'
+
+    def test_config_file_value_used_when_no_cli_or_env(self):
+        args = Namespace()
+        config_obj = Mock(config={'widgets': {'color': 'green'}})
+
+        result = resolve_section_config(args, config_obj, 'widgets', {'color': 'red'})
+
+        assert result['color'] == 'green'
+
+    def test_parser_applied_to_resolved_value(self):
+        """parsers={'port': int} coerces a string CLI value to an int."""
+        args = Namespace(server_port='8080')
+        config_obj = Mock(config={})
+
+        result = resolve_section_config(
+            args, config_obj, 'server', {'port': 5000}, parsers={'port': int}
+        )
+
+        assert result['port'] == 8080
+        assert isinstance(result['port'], int)
+
+    def test_parser_not_applied_when_value_is_none(self):
+        """A None default (e.g. an optional field) is never handed to the parser."""
+        args = Namespace()
+        config_obj = Mock(config={})
+
+        result = resolve_section_config(
+            args, config_obj, 'server', {'api_key': None}, parsers={'api_key': int}
+        )
+
+        assert result['api_key'] is None
+
+    def test_dotted_section_name_for_nested_config(self):
+        """section='integrations.sonarr' -> config key 'integrations.sonarr.url'
+        and env var QBT_RULES_INTEGRATIONS_SONARR_URL -- the shape a future
+        nested section (e.g. Sonarr/Radarr) would use."""
+        args = Namespace()
+        config_obj = Mock(config={'integrations': {'sonarr': {'url': 'http://sonarr.local'}}})
+
+        result = resolve_section_config(args, config_obj, 'integrations.sonarr', {
+            'url': None, 'api_key': None,
+        })
+
+        assert result == {'url': 'http://sonarr.local', 'api_key': None}
+
+    def test_dotted_section_env_var_derivation(self):
+        args = Namespace()
+        config_obj = Mock(config={})
+
+        with patch.dict(os.environ, {'QBT_RULES_INTEGRATIONS_SONARR_API_KEY': 'secret'}):
+            result = resolve_section_config(args, config_obj, 'integrations.sonarr', {
+                'api_key': None,
+            })
+
+        assert result['api_key'] == 'secret'
+
+    def test_env_var_map_override_takes_precedence_over_convention(self):
+        """A config_key present in ENV_VAR_MAP wins over the mechanical
+        QBT_RULES_<SECTION>_<FIELD> guess -- this is how the legacy
+        qbittorrent.user/.pass aliases stay working."""
+        args = Namespace()
+        config_obj = Mock(config={})
+
+        # qbittorrent.user is mapped to QBT_RULES_QBITTORRENT_USERNAME in
+        # ENV_VAR_MAP, not the mechanically-derived QBT_RULES_QBITTORRENT_USER
+        with patch.dict(os.environ, {'QBT_RULES_QBITTORRENT_USERNAME': 'admin2'}):
+            result = resolve_section_config(args, config_obj, 'qbittorrent', {'user': 'admin'})
+
+        assert result['user'] == 'admin2'
+
+    def test_cli_value_takes_precedence_over_env(self):
+        args = Namespace(server_port=1111)
+        config_obj = Mock(config={})
+
+        with patch.dict(os.environ, {'QBT_RULES_SERVER_PORT': '2222'}):
+            result = resolve_section_config(args, config_obj, 'server', {'port': 5000})
+
+        assert result['port'] == 1111
 
 
 class TestGetServerConfig:

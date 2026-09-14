@@ -25,6 +25,47 @@ from qbt_rules.logging import setup_logging, get_logger
 logger = None  # Set after logging is configured
 
 
+def resolve_section_config(args, config_obj, section: str, fields: dict, parsers: Optional[dict] = None) -> dict:
+    """
+    Generic resolver for a config.yml section's scalar fields
+
+    Env var names auto-derive as QBT_RULES_<SECTION>_<FIELD> (dots in
+    `section` become underscores, e.g. section='integrations.sonarr' ->
+    QBT_RULES_INTEGRATIONS_SONARR_<FIELD>) unless ENV_VAR_MAP has an
+    explicit override for "<section>.<field>" -- needed for the handful
+    of legacy-named variables (qbittorrent.user/.pass aliases, logging.*'s
+    QBT_RULES_LOG_* prefix, engine.dry_run's bare QBT_RULES_DRY_RUN). CLI
+    arg names auto-derive as <section>_<field> (dots become underscores),
+    matching this codebase's existing --server-port style flag naming.
+
+    Args:
+        args: Parsed CLI arguments
+        config_obj: Loaded Config instance
+        section: Config section name, e.g. 'server' (dotted for nested
+                 sections, e.g. 'integrations.sonarr')
+        fields: {field_name: default_value}
+        parsers: Optional {field_name: callable} for fields needing type
+                 coercion (e.g. {'port': parse_int})
+
+    Returns:
+        Dictionary with the section's resolved configuration
+    """
+    parsers = parsers or {}
+    result = {}
+    for field, default in fields.items():
+        config_key = f'{section}.{field}'
+        env_var = ENV_VAR_MAP.get(
+            config_key,
+            f"QBT_RULES_{section.upper().replace('.', '_')}_{field.upper()}"
+        )
+        cli_value = getattr(args, f"{section.replace('.', '_')}_{field}", None)
+        value = resolve_config(cli_value, env_var, config_obj.config, config_key, default=default)
+        if field in parsers and value is not None:
+            value = parsers[field](value)
+        result[field] = value
+    return result
+
+
 def get_server_config(args, config_obj) -> dict:
     """
     Get server configuration from CLI args, env vars, or config file
@@ -32,36 +73,12 @@ def get_server_config(args, config_obj) -> dict:
     Returns:
         Dictionary with server configuration
     """
-    return {
-        'host': resolve_config(
-            getattr(args, 'server_host', None),
-            ENV_VAR_MAP.get('server.host', 'QBT_RULES_SERVER_HOST'),
-            config_obj.config,
-            'server.host',
-            default='0.0.0.0'
-        ),
-        'port': parse_int(resolve_config(
-            getattr(args, 'server_port', None),
-            ENV_VAR_MAP.get('server.port', 'QBT_RULES_SERVER_PORT'),
-            config_obj.config,
-            'server.port',
-            default=5000
-        )),
-        'api_key': resolve_config(
-            getattr(args, 'server_api_key', None),
-            ENV_VAR_MAP.get('server.api_key', 'QBT_RULES_SERVER_API_KEY'),
-            config_obj.config,
-            'server.api_key',
-            default=None
-        ),
-        'workers': parse_int(resolve_config(
-            getattr(args, 'server_workers', None),
-            ENV_VAR_MAP.get('server.workers', 'QBT_RULES_SERVER_WORKERS'),
-            config_obj.config,
-            'server.workers',
-            default=1
-        ))
-    }
+    return resolve_section_config(args, config_obj, 'server', {
+        'host': '0.0.0.0',
+        'port': 5000,
+        'api_key': None,
+        'workers': 1,
+    }, parsers={'port': parse_int, 'workers': parse_int})
 
 
 def get_client_config(args, config_obj) -> dict:
@@ -71,22 +88,10 @@ def get_client_config(args, config_obj) -> dict:
     Returns:
         Dictionary with client configuration
     """
-    return {
-        'server_url': resolve_config(
-            getattr(args, 'client_server_url', None),
-            ENV_VAR_MAP.get('client.server_url', 'QBT_RULES_CLIENT_SERVER_URL'),
-            config_obj.config,
-            'client.server_url',
-            default='http://localhost:5000'
-        ),
-        'api_key': resolve_config(
-            getattr(args, 'client_api_key', None),
-            ENV_VAR_MAP.get('client.api_key', 'QBT_RULES_CLIENT_API_KEY'),
-            config_obj.config,
-            'client.api_key',
-            default=None
-        )
-    }
+    return resolve_section_config(args, config_obj, 'client', {
+        'server_url': 'http://localhost:5000',
+        'api_key': None,
+    })
 
 
 def get_queue_config(args, config_obj) -> dict:
@@ -96,29 +101,11 @@ def get_queue_config(args, config_obj) -> dict:
     Returns:
         Dictionary with queue configuration
     """
-    return {
-        'backend': resolve_config(
-            getattr(args, 'queue_backend', None),
-            ENV_VAR_MAP.get('queue.backend', 'QBT_RULES_QUEUE_BACKEND'),
-            config_obj.config,
-            'queue.backend',
-            default='sqlite'
-        ),
-        'sqlite_path': resolve_config(
-            getattr(args, 'queue_sqlite_path', None),
-            ENV_VAR_MAP.get('queue.sqlite_path', 'QBT_RULES_QUEUE_SQLITE_PATH'),
-            config_obj.config,
-            'queue.sqlite_path',
-            default='/config/qbt-rules.db'
-        ),
-        'redis_url': resolve_config(
-            getattr(args, 'queue_redis_url', None),
-            ENV_VAR_MAP.get('queue.redis_url', 'QBT_RULES_QUEUE_REDIS_URL'),
-            config_obj.config,
-            'queue.redis_url',
-            default='redis://localhost:6379/0'
-        )
-    }
+    return resolve_section_config(args, config_obj, 'queue', {
+        'backend': 'sqlite',
+        'sqlite_path': '/config/qbt-rules.db',
+        'redis_url': 'redis://localhost:6379/0',
+    })
 
 
 def get_notifications_config(args, config_obj) -> dict:
@@ -133,22 +120,10 @@ def get_notifications_config(args, config_obj) -> dict:
     Returns:
         Dictionary with notifications configuration
     """
-    return {
-        'webhook_url': resolve_config(
-            getattr(args, 'notifications_webhook_url', None),
-            ENV_VAR_MAP.get('notifications.webhook_url', 'QBT_RULES_NOTIFICATIONS_WEBHOOK_URL'),
-            config_obj.config,
-            'notifications.webhook_url',
-            default=None
-        ),
-        'service': resolve_config(
-            getattr(args, 'notifications_service', None),
-            ENV_VAR_MAP.get('notifications.service', 'QBT_RULES_NOTIFICATIONS_SERVICE'),
-            config_obj.config,
-            'notifications.service',
-            default='generic'
-        ),
-    }
+    return resolve_section_config(args, config_obj, 'notifications', {
+        'webhook_url': None,
+        'service': 'generic',
+    })
 
 
 def get_schedule_config(args, config_obj) -> list:

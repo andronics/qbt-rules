@@ -790,6 +790,90 @@ class TestConfig:
             Config(config_dir)
         assert "invalid cron expression" in str(exc_info.value)
 
+    def test_schedule_env_vars_not_set_falls_back_to_config_yml(self, tmp_path):
+        """No QBT_RULES_SCHEDULE_* env vars set -- config.yml's schedule: list is used as-is."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        (config_dir / "config.yml").write_text(
+            "qbittorrent:\n  host: localhost\n"
+            "schedule:\n  - cron: '*/30 * * * *'\n    context: cron\n"
+        )
+        (config_dir / "rules.yml").write_text("rules: []")
+
+        config = Config(config_dir)
+        assert config.schedule == [{'cron': '*/30 * * * *', 'context': 'cron'}]
+
+    def test_schedule_env_vars_contiguous_entries_loaded(self, tmp_config_dir):
+        """QBT_RULES_SCHEDULE_0_*/_1_* both set -- both entries are loaded, in order."""
+        env = {
+            'QBT_RULES_SCHEDULE_0_CRON': '*/30 * * * *',
+            'QBT_RULES_SCHEDULE_0_CONTEXT': 'cron',
+            'QBT_RULES_SCHEDULE_1_CRON': '0 3 * * *',
+            'QBT_RULES_SCHEDULE_1_CONTEXT': 'nightly',
+        }
+        with patch.dict(os.environ, env):
+            config = Config(tmp_config_dir)
+
+        assert config.schedule == [
+            {'cron': '*/30 * * * *', 'context': 'cron'},
+            {'cron': '0 3 * * *', 'context': 'nightly'},
+        ]
+
+    def test_schedule_env_vars_gap_stops_enumeration(self, tmp_config_dir):
+        """A missing index (here, index 1) stops enumeration -- index 2 is never read."""
+        env = {
+            'QBT_RULES_SCHEDULE_0_CRON': '*/30 * * * *',
+            'QBT_RULES_SCHEDULE_0_CONTEXT': 'cron',
+            'QBT_RULES_SCHEDULE_2_CRON': '0 3 * * *',
+            'QBT_RULES_SCHEDULE_2_CONTEXT': 'nightly',
+        }
+        with patch.dict(os.environ, env):
+            config = Config(tmp_config_dir)
+
+        assert config.schedule == [{'cron': '*/30 * * * *', 'context': 'cron'}]
+
+    def test_schedule_env_var_cron_without_context_raises(self, tmp_config_dir):
+        """QBT_RULES_SCHEDULE_0_CRON set without the matching _0_CONTEXT is a config error."""
+        with patch.dict(os.environ, {'QBT_RULES_SCHEDULE_0_CRON': '*/30 * * * *'}):
+            with pytest.raises(ConfigurationError) as exc_info:
+                Config(tmp_config_dir)
+        assert "QBT_RULES_SCHEDULE_0_CRON is set but QBT_RULES_SCHEDULE_0_CONTEXT is missing" in str(exc_info.value)
+
+    def test_schedule_env_vars_replace_config_yml_entirely(self, tmp_path):
+        """Env-defined schedule entries win outright over config.yml's list, not merged."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        (config_dir / "config.yml").write_text(
+            "qbittorrent:\n  host: localhost\n"
+            "schedule:\n  - cron: '0 0 * * *'\n    context: from-config-yml\n"
+        )
+        (config_dir / "rules.yml").write_text("rules: []")
+
+        env = {
+            'QBT_RULES_SCHEDULE_0_CRON': '*/30 * * * *',
+            'QBT_RULES_SCHEDULE_0_CONTEXT': 'from-env',
+        }
+        with patch.dict(os.environ, env):
+            config = Config(config_dir)
+
+        assert config.schedule == [{'cron': '*/30 * * * *', 'context': 'from-env'}]
+
+    def test_schedule_env_var_supports_file_variant(self, tmp_config_dir, tmp_path):
+        """QBT_RULES_SCHEDULE_0_CRON_FILE reads the cron expression from a file."""
+        cron_file = tmp_path / "cron_secret"
+        cron_file.write_text('*/15 * * * *\n')
+
+        env = {
+            'QBT_RULES_SCHEDULE_0_CRON_FILE': str(cron_file),
+            'QBT_RULES_SCHEDULE_0_CONTEXT': 'cron',
+        }
+        with patch.dict(os.environ, env):
+            config = Config(tmp_config_dir)
+
+        assert config.schedule == [{'cron': '*/15 * * * *', 'context': 'cron'}]
+
     def test_get_simple_key(self, tmp_config_dir):
         """Get simple configuration key."""
         config = Config(tmp_config_dir)

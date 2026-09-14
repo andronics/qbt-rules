@@ -112,9 +112,8 @@ rules:
 # expression fires, so you don't need an external cron job, systemd timer,
 # or sidecar container hitting the HTTP API on a schedule.
 #
-# No environment variable overrides -- this is a list, not a single value,
-# so it can only be set here in config.yml. Not hot-reloaded (like the rest
-# of config.yml); restart the server to pick up changes.
+# Not hot-reloaded (like the rest of config.yml); restart the server to
+# pick up changes.
 #
 # Uncomment and customize:
 #
@@ -123,6 +122,18 @@ rules:
 #     context: cron
 #   - cron: "0 3 * * *"      # Daily at 3 AM
 #     context: nightly
+#
+# Env: since this is a list, not a single scalar value, it doesn't use the
+# QBT_RULES_SCHEDULE_* name a single-value section would -- instead, each
+# entry is set via a pair of indexed variables, QBT_RULES_SCHEDULE_<N>_CRON
+# and QBT_RULES_SCHEDULE_<N>_CONTEXT (or the _FILE variant of either),
+# starting at N=0 and counting up contiguously until the first missing
+# index. If ANY QBT_RULES_SCHEDULE_0_CRON is set, the environment-defined
+# schedule entirely replaces this section (not merged with it). Example:
+#   QBT_RULES_SCHEDULE_0_CRON=*/30 * * * *
+#   QBT_RULES_SCHEDULE_0_CONTEXT=cron
+#   QBT_RULES_SCHEDULE_1_CRON=0 3 * * *
+#   QBT_RULES_SCHEDULE_1_CONTEXT=nightly
 
 # ============================================================================
 # NOTIFICATIONS CONFIGURATION (optional)

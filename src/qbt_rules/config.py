@@ -16,7 +16,7 @@ import shutil
 import yaml
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, List, Optional, Union
 
 from croniter import croniter
 
@@ -25,45 +25,34 @@ from qbt_rules.resolver import RuleResolver
 
 
 # Environment variable mapping
-# Maps config keys to environment variable names
+#
+# Only genuine exceptions live here now. Every section resolved through
+# cli.py's resolve_section_config() (server, client, queue, notifications,
+# and any future section) derives its env var name mechanically as
+# QBT_RULES_<SECTION>_<FIELD> and never needs an entry here -- this map
+# exists only for the handful of variables that don't follow that
+# convention.
 ENV_VAR_MAP = {
-    # Server configuration
-    'server.host': 'QBT_RULES_SERVER_HOST',
-    'server.port': 'QBT_RULES_SERVER_PORT',
-    'server.api_key': 'QBT_RULES_SERVER_API_KEY',
-    'server.workers': 'QBT_RULES_SERVER_WORKERS',
-
-    # Queue configuration
-    'queue.backend': 'QBT_RULES_QUEUE_BACKEND',
-    'queue.sqlite_path': 'QBT_RULES_QUEUE_SQLITE_PATH',
-    'queue.redis_url': 'QBT_RULES_QUEUE_REDIS_URL',
-    'queue.cleanup_after': 'QBT_RULES_QUEUE_CLEANUP_AFTER',
-
-    # Client configuration
-    'client.server_url': 'QBT_RULES_CLIENT_SERVER_URL',
-    'client.api_key': 'QBT_RULES_CLIENT_API_KEY',
-
-    # qBittorrent configuration
+    # qBittorrent configuration (legacy 'user'/'pass' aliases don't follow
+    # the QBT_RULES_QBITTORRENT_USER/PASS convention -- they map to the
+    # same env vars as the canonical 'username'/'password' keys)
     'qbittorrent.host': 'QBT_RULES_QBITTORRENT_HOST',
     'qbittorrent.username': 'QBT_RULES_QBITTORRENT_USERNAME',
     'qbittorrent.password': 'QBT_RULES_QBITTORRENT_PASSWORD',
-
-    # Legacy compatibility
     'qbittorrent.user': 'QBT_RULES_QBITTORRENT_USERNAME',
     'qbittorrent.pass': 'QBT_RULES_QBITTORRENT_PASSWORD',
 
-    # Rules & logging
+    # Rules & queue misc
     'rules.file': 'QBT_RULES_RULES_FILE',
     'config.dir': 'QBT_RULES_CONFIG_DIR',
+    'queue.cleanup_after': 'QBT_RULES_QUEUE_CLEANUP_AFTER',
 
-    # Notifications
-    'notifications.webhook_url': 'QBT_RULES_NOTIFICATIONS_WEBHOOK_URL',
-    'notifications.service': 'QBT_RULES_NOTIFICATIONS_SERVICE',
+    # logging.* uses QBT_RULES_LOG_* rather than QBT_RULES_LOGGING_*
     'logging.level': 'QBT_RULES_LOG_LEVEL',
     'logging.file': 'QBT_RULES_LOG_FILE',
     'logging.trace_mode': 'QBT_RULES_LOG_TRACE_MODE',
 
-    # Legacy logging
+    # engine.dry_run has no section prefix at all
     'engine.dry_run': 'QBT_RULES_DRY_RUN',
 }
 
@@ -511,16 +500,52 @@ class Config:
                          f"conditions={len(refs.get('conditions', {}))}, "
                          f"actions={len(refs.get('actions', {}))}")
 
+    def _load_schedule_from_env(self) -> Optional[List[Dict[str, str]]]:
+        """
+        Build a schedule list from indexed QBT_RULES_SCHEDULE_<N>_CRON /
+        _<N>_CONTEXT environment variables (each supporting the usual
+        _FILE variant via resolve_config). Indices must be contiguous
+        starting at 0; enumeration stops at the first missing _CRON.
+
+        Returns None if none are set, so the caller falls back to
+        config.yml's 'schedule' list. If any entries ARE found here, they
+        entirely replace config.yml's list rather than merging with it --
+        consistent with how every other field's env var overrides its
+        config.yml value outright.
+        """
+        entries = []
+        i = 0
+        while True:
+            cron = resolve_config(None, f'QBT_RULES_SCHEDULE_{i}_CRON', {}, 'unused', default=None)
+            if cron is None:
+                break
+
+            context = resolve_config(None, f'QBT_RULES_SCHEDULE_{i}_CONTEXT', {}, 'unused', default=None)
+            if context is None:
+                raise ConfigurationError(
+                    str(self.config_file),
+                    f"QBT_RULES_SCHEDULE_{i}_CRON is set but QBT_RULES_SCHEDULE_{i}_CONTEXT is missing"
+                )
+
+            entries.append({'cron': cron, 'context': context})
+            i += 1
+
+        return entries if entries else None
+
     def _load_schedule(self):
         """
-        Load and validate the optional 'schedule' section of config.yml
+        Load and validate the optional 'schedule' section
 
-        Each entry is a dict with 'cron' (a standard 5-field cron expression)
-        and 'context' (the context string to enqueue when the cron fires).
-        Not hot-reloaded -- config.yml is read once at startup, same as every
-        other top-level config.yml section.
+        Sourced from indexed QBT_RULES_SCHEDULE_<N>_CRON/_<N>_CONTEXT
+        environment variables if any are set (see _load_schedule_from_env),
+        otherwise from config.yml's 'schedule' list. Each entry is a dict
+        with 'cron' (a standard 5-field cron expression) and 'context'
+        (the context string to enqueue when the cron fires). Not
+        hot-reloaded -- read once at startup, same as every other
+        top-level config.yml section.
         """
-        self.schedule = self.config.get('schedule') or []
+        env_schedule = self._load_schedule_from_env()
+        self.schedule = env_schedule if env_schedule is not None else (self.config.get('schedule') or [])
 
         if not isinstance(self.schedule, list):
             raise ConfigurationError(
