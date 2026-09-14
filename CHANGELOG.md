@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-09-14
+
+### ✨ New Features
+- feat: add optional Prometheus metrics support (v0.7)
+- feat: add read-only web dashboard
+- feat: add arr_blocklist_and_search action for Sonarr/Radarr
+- feat: add generic outbound notify action (Discord/Slack/ntfy/generic)
+- feat: add internal cron scheduler, replacing reliance on external cron
+- feat: rename delete_torrent's keep_files to delete_files, deprecate old name
+
+### 🐛 Bug Fixes
+- fix: qBittorrent config env vars were completely non-functional
+- fix: show clean error summary on dashboard job detail, not raw traceback
+- fix: drop redundant default_ prefix from notifications config keys
+
+### ♻️ Refactoring
+- refactor: rename arr_blocklist_and_search to arr_blocklist, make search optional
+- refactor: generic per-section config resolver + indexed schedule env vars
+
+### 🔧 Maintenance
+- chore: Bump version to 0.6.0
+
+
 ## [0.5.9] - 2026-09-11
 
 ### Fixed
