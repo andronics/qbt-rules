@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-09-14
+
+**⚠️ BREAKING CHANGES:**
+- `delete_torrent`'s `keep_files` parameter removed entirely — use `delete_files` instead (direct semantics, no inversion)
+- qBittorrent config's undocumented `user`/`pass` YAML key aliases removed — `username`/`password` are the only accepted keys
+- Hidden `--torrent-hash` CLI alias removed — use `--hash`
+
+### Added
+- **Internal cron scheduler**: `schedule:` block in `config.yml` for recurring rule execution, with indexed `QBT_RULES_SCHEDULE_<N>_*` env var support. Fork-safe with multiple Gunicorn workers.
+- **Generic outbound notification action** (`notify`): Discord/Slack/ntfy/generic webhook support for rule-triggered alerts.
+- **`arr_blocklist` action**: blocklist-and-research automation for Sonarr/Radarr on a matched torrent.
+- **Read-only web dashboard**: browse jobs, queue state, and rule definitions in-browser, reusing the existing API-key auth.
+- **Optional Prometheus metrics** (`metrics.enabled`): job/action/scheduler counters and HTTP request histograms, multiprocess-safe under Gunicorn.
+
+### Fixed
+- **`qbittorrent.username`/`.password`/`.host` and every `QBT_RULES_QBITTORRENT_*` env var were silently non-functional** — only the undocumented `user`/`pass` YAML keys ever worked, and only when set directly in `config.yml`, never via env var. Every documented deployment path (`README.md`, all `docker-compose*.yml` files) showed the broken configuration. Now resolved through the same CLI → env → `_FILE` → config.yml → default chain as every other section.
+- **`QBT_RULES_LOG_*` env vars were dead** — the real code read bare, unprefixed `LOG_LEVEL`/`LOG_FILE`/`TRACE_MODE` directly, with no `_FILE` secret support, and `logging.http_access` had no env var support at all. Renamed to `QBT_RULES_LOGGING_*`, matching the documented naming convention, with full `_FILE` support gained for free.
+- **`QBT_RULES_DRY_RUN` was dead** — `Config.is_dry_run()` read a bare `DRY_RUN` env var directly, bypassing the env var mapping that was already documented. Same fix applied; `--dry-run` CLI flag behavior is unchanged.
+
 ## [0.5.9] - 2026-09-11
 
 ### Fixed
