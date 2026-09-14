@@ -28,10 +28,6 @@ def create_parser() -> argparse.ArgumentParser:
     """
     Create argument parser for qbt-rules CLI
 
-    Args:
-        description: Description for the parser
-        trigger_type: Legacy parameter for backward compatibility (default: None)
-
     Returns:
         Configured ArgumentParser
     """
@@ -69,14 +65,6 @@ def create_parser() -> argparse.ArgumentParser:
         '--wait',
         action='store_true',
         help='Wait for job to complete (polls server for status)'
-    )
-
-    parser.add_argument(
-        '--torrent-hash',
-        type=str,
-        default=None,
-        dest='hash',  # Map to hash
-        help=argparse.SUPPRESS  # Hidden, for backward compatibility
     )
 
     # Common configuration arguments
@@ -387,9 +375,11 @@ def handle_utility_args(args: argparse.Namespace, config) -> bool:
         logger.info("Validating configuration and rules...")
 
         try:
-            # Check qBittorrent config
-            qbt_config = config.get_qbittorrent_config()
-            required = ['host', 'user', 'pass']
+            # Check qBittorrent config -- deferred import avoids a circular
+            # import (cli.py already imports this module at load time)
+            from qbt_rules.cli import get_qbittorrent_config
+            qbt_config = get_qbittorrent_config(args, config)
+            required = ['host', 'username', 'password']
             missing = [k for k in required if not qbt_config.get(k)]
             if missing:
                 logger.error(f"Missing qBittorrent configuration: {', '.join(missing)}")

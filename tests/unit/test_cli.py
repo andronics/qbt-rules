@@ -10,6 +10,7 @@ import json
 
 from qbt_rules.cli import (
     resolve_section_config,
+    get_qbittorrent_config,
     get_server_config,
     get_client_config,
     get_queue_config,
@@ -116,17 +117,18 @@ class TestResolveSectionConfig:
 
     def test_env_var_map_override_takes_precedence_over_convention(self):
         """A config_key present in ENV_VAR_MAP wins over the mechanical
-        QBT_RULES_<SECTION>_<FIELD> guess -- this is how the legacy
-        qbittorrent.user/.pass aliases stay working."""
+        QBT_RULES_<SECTION>_<FIELD> guess -- this is how genuine naming
+        exceptions like logging.* (QBT_RULES_LOG_* rather than
+        QBT_RULES_LOGGING_*) stay working."""
         args = Namespace()
         config_obj = Mock(config={})
 
-        # qbittorrent.user is mapped to QBT_RULES_QBITTORRENT_USERNAME in
-        # ENV_VAR_MAP, not the mechanically-derived QBT_RULES_QBITTORRENT_USER
-        with patch.dict(os.environ, {'QBT_RULES_QBITTORRENT_USERNAME': 'admin2'}):
-            result = resolve_section_config(args, config_obj, 'qbittorrent', {'user': 'admin'})
+        # logging.level is mapped to QBT_RULES_LOG_LEVEL in ENV_VAR_MAP,
+        # not the mechanically-derived QBT_RULES_LOGGING_LEVEL
+        with patch.dict(os.environ, {'QBT_RULES_LOG_LEVEL': 'DEBUG'}):
+            result = resolve_section_config(args, config_obj, 'logging', {'level': 'INFO'})
 
-        assert result['user'] == 'admin2'
+        assert result['level'] == 'DEBUG'
 
     def test_cli_value_takes_precedence_over_env(self):
         args = Namespace(server_port=1111)
@@ -136,6 +138,111 @@ class TestResolveSectionConfig:
             result = resolve_section_config(args, config_obj, 'server', {'port': 5000})
 
         assert result['port'] == 1111
+
+
+class TestGetQbittorrentConfig:
+    """Test get_qbittorrent_config() function
+
+    This replaces Config.get_qbittorrent_config(), which read config.yml
+    directly and never supported CLI args, env vars, or _FILE secrets at
+    all for host/username/password -- silently ignoring every documented
+    QBT_RULES_QBITTORRENT_* environment variable. These tests assert real
+    resolved *values*, not just key presence, specifically because the
+    bug this replaces was masked by tests that only checked keys existed."""
+
+    def test_returns_default_config(self):
+        """Should return default configuration when nothing is set"""
+        args = Namespace()
+        config_obj = Mock(config={})
+
+        config = get_qbittorrent_config(args, config_obj)
+
+        assert config['host'] == 'http://localhost:8080'
+        assert config['username'] == 'admin'
+        assert config['password'] == ''
+
+    def test_uses_config_file_values(self):
+        """Should use config.yml values -- this is the path that always
+        worked, even before the fix"""
+        args = Namespace()
+        config_obj = Mock(config={
+            'qbittorrent': {
+                'host': 'http://qbittorrent:8080',
+                'username': 'myuser',
+                'password': 'mypass',
+            }
+        })
+
+        config = get_qbittorrent_config(args, config_obj)
+
+        assert config['host'] == 'http://qbittorrent:8080'
+        assert config['username'] == 'myuser'
+        assert config['password'] == 'mypass'
+
+    def test_uses_args_values(self):
+        """Should use CLI argument values when provided"""
+        args = Namespace(
+            qbittorrent_host='http://cli-host:8080',
+            qbittorrent_username='cliuser',
+            qbittorrent_password='clipass',
+        )
+        config_obj = Mock(config={})
+
+        config = get_qbittorrent_config(args, config_obj)
+
+        assert config['host'] == 'http://cli-host:8080'
+        assert config['username'] == 'cliuser'
+        assert config['password'] == 'clipass'
+
+    def test_uses_env_vars(self):
+        """The bug this replaces: QBT_RULES_QBITTORRENT_* env vars used to
+        have zero effect, regardless of key name. Confirm they now
+        actually resolve -- host, username, AND password."""
+        args = Namespace()
+        config_obj = Mock(config={})
+
+        env = {
+            'QBT_RULES_QBITTORRENT_HOST': 'http://env-host:8080',
+            'QBT_RULES_QBITTORRENT_USERNAME': 'envuser',
+            'QBT_RULES_QBITTORRENT_PASSWORD': 'envpass',
+        }
+        with patch.dict(os.environ, env):
+            config = get_qbittorrent_config(args, config_obj)
+
+        assert config['host'] == 'http://env-host:8080'
+        assert config['username'] == 'envuser'
+        assert config['password'] == 'envpass'
+
+    def test_uses_file_env_var_for_password(self, tmp_path):
+        """QBT_RULES_QBITTORRENT_PASSWORD_FILE, the documented
+        production-secrets pattern -- also used to have zero effect."""
+        secret_file = tmp_path / "qbt_password"
+        secret_file.write_text("file-secret-pass\n")
+
+        args = Namespace()
+        config_obj = Mock(config={})
+
+        with patch.dict(os.environ, {'QBT_RULES_QBITTORRENT_PASSWORD_FILE': str(secret_file)}):
+            config = get_qbittorrent_config(args, config_obj)
+
+        assert config['password'] == 'file-secret-pass'
+
+    def test_legacy_user_pass_keys_no_longer_work(self):
+        """The undocumented 'user'/'pass' config.yml key aliases are gone
+        -- a config.yml using only those now resolves to the default,
+        not the value that was actually set."""
+        args = Namespace()
+        config_obj = Mock(config={
+            'qbittorrent': {
+                'user': 'legacyuser',
+                'pass': 'legacypass',
+            }
+        })
+
+        config = get_qbittorrent_config(args, config_obj)
+
+        assert config['username'] == 'admin'  # default, NOT 'legacyuser'
+        assert config['password'] == ''       # default, NOT 'legacypass'
 
 
 class TestGetServerConfig:
@@ -317,12 +424,13 @@ class TestRunServerMode:
             queue_sqlite_path='/tmp/test.db',
             queue_redis_url=None
         )
-        config_obj = Mock(config={}, schedule=[])
-        config_obj.get_qbittorrent_config.return_value = {
-            'host': 'http://localhost:8080',
-            'user': 'admin',
-            'pass': 'password'
-        }
+        config_obj = Mock(config={
+            'qbittorrent': {
+                'host': 'http://localhost:8080',
+                'username': 'admin',
+                'password': 'password',
+            }
+        }, schedule=[])
         config_obj.get.return_value = False  # logging.http_access defaults to False
 
         run_server_mode(args, config_obj)
@@ -443,11 +551,6 @@ class TestRunServerMode:
             queue_redis_url=None
         )
         config_obj = Mock(config={}, schedule=[])
-        config_obj.get_qbittorrent_config.return_value = {
-            'host': 'http://localhost:8080',
-            'user': 'admin',
-            'pass': 'password'
-        }
 
         run_server_mode(args, config_obj)
 

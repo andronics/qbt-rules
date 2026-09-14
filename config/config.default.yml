@@ -228,9 +228,8 @@ logging:
   http_access: false
 
 # ============================================================================
-# LEGACY ENGINE SETTINGS
+# ENGINE SETTINGS
 # ============================================================================
-# (Maintained for backward compatibility)
 
 engine:
   # Dry-run mode: Test rules without making changes

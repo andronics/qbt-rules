@@ -474,38 +474,15 @@ class ActionExecutor:
 
     def _resolve_delete_files(self, params: Dict) -> bool:
         """
-        Resolve delete_torrent's delete_files parameter, supporting the
-        deprecated keep_files alias (inverted boolean, removed in v0.7.0).
+        Resolve delete_torrent's delete_files parameter
 
         Args:
             params: Action params dict, possibly containing 'delete_files'
-                    and/or the deprecated 'keep_files'
 
         Returns:
             True if the underlying files should be deleted, False to keep them
         """
-        has_delete_files = 'delete_files' in params
-        has_keep_files = 'keep_files' in params
-
-        if has_delete_files and has_keep_files:
-            logger.warning(
-                "delete_torrent: both 'delete_files' and 'keep_files' were specified; "
-                "'delete_files' takes precedence and 'keep_files' is ignored"
-            )
-            return bool(params['delete_files'])
-
-        if has_delete_files:
-            return bool(params['delete_files'])
-
-        if has_keep_files:
-            logger.warning(
-                "delete_torrent: 'keep_files' is deprecated and will be removed in v0.7.0 -- "
-                "use 'delete_files' instead (note the inverted meaning: delete_files=true "
-                "deletes the files, keep_files=true keeps them)"
-            )
-            return not bool(params['keep_files'])
-
-        return True
+        return bool(params.get('delete_files', True))
 
     def _execute_action(self, torrent: Dict, action_type: str, params: Dict) -> bool:
         """Execute the actual action"""

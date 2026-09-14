@@ -895,31 +895,6 @@ class TestConfig:
         config = Config(tmp_config_dir)
         assert config.get('nonexistent.key') is None
 
-    def test_get_qbittorrent_config(self, tmp_config_dir):
-        """Get qBittorrent configuration."""
-        config = Config(tmp_config_dir)
-        qbt_config = config.get_qbittorrent_config()
-
-        assert 'host' in qbt_config
-        assert 'user' in qbt_config
-        assert 'pass' in qbt_config
-        assert qbt_config['host'] == 'http://localhost:8080'
-
-    def test_get_qbittorrent_config_with_defaults(self, tmp_path):
-        """Get qBittorrent config with missing values uses defaults."""
-        config_dir = tmp_path / "config"
-        config_dir.mkdir()
-
-        (config_dir / "config.yml").write_text("logging:\n  level: INFO")
-        (config_dir / "rules.yml").write_text("rules: []")
-
-        config = Config(config_dir)
-        qbt_config = config.get_qbittorrent_config()
-
-        assert qbt_config['host'] == 'http://localhost:8080'
-        assert qbt_config['user'] == 'admin'
-        assert qbt_config['pass'] == ''
-
     def test_is_dry_run_false_by_default(self, tmp_config_dir):
         """Dry run is false by default."""
         config = Config(tmp_config_dir)

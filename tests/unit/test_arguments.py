@@ -370,23 +370,27 @@ class TestHandleUtilityArgs:
         assert result is True
 
     def test_validate_checks_qbittorrent_config(self):
-        """Validate checks qBittorrent configuration."""
+        """Validate checks qBittorrent configuration via the real
+        get_qbittorrent_config() (cli.py), not a Config method -- the
+        deferred `from qbt_rules.cli import get_qbittorrent_config` inside
+        handle_utility_args() means the patch target is where it's
+        defined, not where it's used."""
         args = Mock()
         args.validate = True
         args.list_rules = False
 
         mock_config = Mock()
-        mock_config.get_qbittorrent_config.return_value = {
-            'host': 'localhost',
-            'user': 'admin',
-            'pass': 'admin'
-        }
         mock_config.get_rules.return_value = []
 
-        handle_utility_args(args, mock_config)
+        with patch('qbt_rules.cli.get_qbittorrent_config') as mock_get_qbt:
+            mock_get_qbt.return_value = {
+                'host': 'localhost',
+                'username': 'admin',
+                'password': 'admin',
+            }
+            handle_utility_args(args, mock_config)
 
-        # Should call get_qbittorrent_config
-        mock_config.get_qbittorrent_config.assert_called_once()
+            mock_get_qbt.assert_called_once_with(args, mock_config)
 
     def test_validate_with_missing_qbittorrent_config(self, capsys):
         """Validate handles missing qBittorrent config fields."""
@@ -395,13 +399,15 @@ class TestHandleUtilityArgs:
         args.list_rules = False
 
         mock_config = Mock()
-        mock_config.get_qbittorrent_config.return_value = {
-            'host': 'localhost',
-            # Missing user and pass
-        }
         mock_config.get_rules.return_value = []
 
-        result = handle_utility_args(args, mock_config)
+        with patch('qbt_rules.cli.get_qbittorrent_config') as mock_get_qbt:
+            mock_get_qbt.return_value = {
+                'host': 'localhost',
+                'username': '',
+                'password': '',
+            }
+            result = handle_utility_args(args, mock_config)
 
         # Should still return True (validation completes with errors)
         assert result is True
@@ -413,17 +419,18 @@ class TestHandleUtilityArgs:
         args.list_rules = False
 
         mock_config = Mock()
-        mock_config.get_qbittorrent_config.return_value = {
-            'host': 'localhost',
-            'user': 'admin',
-            'pass': 'admin'
-        }
         mock_config.get_rules.return_value = [
             {'name': 'Rule 1', 'enabled': True, 'conditions': {'all': []}, 'actions': []},
             {'name': 'Rule 2', 'enabled': True, 'conditions': {'all': []}, 'actions': []},
         ]
 
-        handle_utility_args(args, mock_config)
+        with patch('qbt_rules.cli.get_qbittorrent_config') as mock_get_qbt:
+            mock_get_qbt.return_value = {
+                'host': 'localhost',
+                'username': 'admin',
+                'password': 'admin',
+            }
+            handle_utility_args(args, mock_config)
 
         # Should call get_rules
         mock_config.get_rules.assert_called_once()

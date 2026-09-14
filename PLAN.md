@@ -1516,7 +1516,7 @@ GET  /api/cross-seed/status/{job_id}
 
 ## v0.6.0 Planning
 
-**Status**: In progress. Six initiatives, all confirmed in scope for a single v0.6.0 release (not staged across multiple minors). Initiative 6 (Prometheus metrics) was originally scoped for v0.7.0 and moved here since nothing had been tagged/released yet — no reason to split it into a separate cycle.
+**Status**: In progress. Seven initiatives, all confirmed in scope for a single v0.6.0 release (not staged across multiple minors). Initiatives 6 (Prometheus metrics) and 7 (legacy cleanup, including the `keep_files` removal originally scoped for v0.7.0) were both folded in here since nothing had been tagged/released yet — no reason to split either into a separate cycle.
 
 ### 1. `delete_torrent`: `keep_files` → `delete_files` rename
 
@@ -1531,7 +1531,7 @@ actions:
       delete_files: true   # canonical; also the default if params are omitted
 ```
 
-`keep_files` still works during a deprecation window (emits a `logger.warning`; if both are specified, `delete_files` wins with a warning). **Removal target: v0.7.0** — see below.
+**Update:** `keep_files` was fully removed (not just deprecated) later in this same v0.6.0 cycle — see Initiative 7 below. Since v0.6.0 hadn't shipped yet, nobody ever saw a released version where it worked *and* was deprecated, so there was no two-release migration to preserve.
 
 ### 2. Internal cron scheduler
 
@@ -1615,9 +1615,26 @@ New optional `GET /metrics` endpoint (`server.py`), off by default (`metrics.ena
 
 **Files:** `src/qbt_rules/metrics.py` (new), `src/qbt_rules/cli.py`, `src/qbt_rules/server.py`, `src/qbt_rules/engine.py`, `src/qbt_rules/worker.py`, `src/qbt_rules/scheduler.py`, `pyproject.toml` (new `metrics` extra + pytest marker), `config/config.default.yml`. Tests: new `tests/unit/test_metrics.py`, `TestMetricsRoutes` in `test_server.py`; `tests/conftest.py` gained a session-wide `PROMETHEUS_MULTIPROC_DIR` setup (must be set before prometheus_client's first import anywhere in the pytest session, which a per-test fixture can't achieve) and a shared `reset_metrics_module_state` autouse fixture. Wiki: new `Metrics.md`, cross-linked from `Home.md`/`_Sidebar.md`/`HTTP-API-Reference.md`/`Architecture-Internals.md`/`Security.md`/`Scheduling.md`.
 
+### 7. Remove `keep_files`, fix qBittorrent config, drop legacy shims
+
+**Status**: Implemented.
+
+A full audit for "legacy" code across the repo (prompted by wanting to remove all of it before release) surfaced a real, severe bug beyond routine cleanup: the **documented** `qbittorrent.username`/`.password` config.yml keys, and **every** `QBT_RULES_QBITTORRENT_*` environment variable (including `.host`), were silently non-functional — only the undocumented `user`/`pass` YAML keys ever worked, and only set directly in `config.yml`, never via env var. Every deployment path the repo documents (`README.md`, all `docker-compose*.yml` files, `config/config.default.yml`) showed the broken path. Root cause: `Config.get_qbittorrent_config()` read straight off `self.config` instead of going through `resolve_config()`/`resolve_section_config()` like every other section — the one section that never got migrated during the earlier config-architecture cleanup.
+
+**Fix:** new `get_qbittorrent_config(args, config_obj)` in `cli.py`, using the same `resolve_section_config()` helper every other section already uses — `host`/`username`/`password` now genuinely support CLI args → `_FILE` env var → direct env var → config.yml → default, matching what was documented all along. `Config.get_qbittorrent_config()` removed entirely; the undocumented `user`/`pass` YAML key aliases dropped outright (`username`/`password` are the only accepted keys now) — this also let `ENV_VAR_MAP` shrink further, since the three canonical qbittorrent keys already matched the mechanical convention and needed no explicit entries at all. **Verified empirically** (not just unit-tested): started a real server with `QBT_RULES_QBITTORRENT_HOST`/`_USERNAME`/`_PASSWORD` set to values different from `config.yml`, confirmed the env var values won; confirmed a `config.yml` using only the old `user`/`pass` keys now resolves to defaults instead of silently succeeding.
+
+**Also removed in this pass:**
+- `keep_files` (see Initiative 1 above) — full removal, not just the deprecation window; `_resolve_delete_files()` collapsed to a single-line `return bool(params.get('delete_files', True))`.
+- `--torrent-hash`, a hidden (`argparse.SUPPRESS`) undocumented alias for `--hash`, no stated removal target — confirmed gone from `--help` and now genuinely errors as an unrecognized argument.
+- Stale/misleading documentation with no functional impact: a `create_parser()` docstring referencing a `trigger_type` parameter that hasn't existed since the v0.4.1 `--trigger` removal; a `test_api.py` module docstring claiming skipped legacy tests exist that don't; `config.default.yml`'s `engine.dry_run` section header claiming "legacy"/"backward compatibility" framing for a setting that was never actually deprecated, just an alternate (still fully supported) way to configure dry-run vs. the `--dry-run` CLI flag.
+
+**Explicitly scoped out:** `CHANGELOG.md`'s v0.4.0 entry documents two deprecations (PyPI distribution, standalone CLI mode) with no later "Removed" entry; current code shows neither is gated/present anymore. This is a historical `CHANGELOG.md` documentation gap, not live code — left alone.
+
+**Files:** `src/qbt_rules/engine.py`, `src/qbt_rules/cli.py`, `src/qbt_rules/config.py`, `src/qbt_rules/arguments.py`, `config/config.default.yml`. Tests: `tests/unit/test_engine/test_action_executor.py`, `tests/integration/test_rule_execution.py`, `tests/unit/test_config.py`, `tests/unit/test_cli.py` (new `TestGetQbittorrentConfig`, asserting real resolved values — the old tests only checked key presence, which is exactly how this bug went unnoticed), `tests/unit/test_arguments.py`, `tests/unit/test_api.py`. Wiki: `Actions.md`, `Frequently-Asked-Questions.md` (drop `keep_files` deprecation framing), `In‐Depth-Configuration.md` (fix the `qbittorrent.user`/`.pass` "still works" claim).
+
 ### Sequencing
 
-Initiatives 3 and 4 share the same `ActionExecutor`/`RulesEngine` signature change (adding `config`) — land once, rebase the other. Initiative 5's `create_app()` signature change (adding `config`, for the rules view) is independent. Initiative 6's fork-safety design directly reuses Initiative 2's established pre-fork/no-post_fork-restart pattern, but has no code-level shared surface with any other initiative. Initiatives 1 and 2 have no shared surface with anything else.
+Initiatives 3 and 4 share the same `ActionExecutor`/`RulesEngine` signature change (adding `config`) — land once, rebase the other. Initiative 5's `create_app()` signature change (adding `config`, for the rules view) is independent. Initiative 6's fork-safety design directly reuses Initiative 2's established pre-fork/no-post_fork-restart pattern, but has no code-level shared surface with any other initiative. Initiative 7 touches `keep_files` (shared with Initiative 1, landed after it) and qBittorrent config resolution (a new, previously-unmigrated section — no shared surface with Initiatives 2-6). Initiatives 1 and 2 have no shared surface with anything else.
 
 Once everything above is merged to `main`: `scripts/bump-version.sh minor` (0.5.x → 0.6.0).
 
@@ -1625,11 +1642,7 @@ Once everything above is merged to `main`: `scripts/bump-version.sh minor` (0.5.
 
 ## v0.7.0 Planning
 
-**Status**: Planned (single confirmed item — Prometheus metrics moved into v0.6.0 instead, see below, since nothing had been tagged/released yet and it made sense to bundle it with the other five initiatives into one release).
-
-### Remove deprecated `keep_files` parameter
-
-`delete_torrent`'s `keep_files` parameter (deprecated in v0.6.0, see above) is removed entirely in v0.7.0. Any rule still using it after the v0.6.0 deprecation window will need to migrate to `delete_files` — remembering the **polarity is inverted**, not just the name (`keep_files: true` → `delete_files: false`, and vice versa). This isn't a silent removal: rules using the old key will start erroring (or being ignored, defaulting to delete) rather than warning, so the CHANGELOG entry and release notes should call this out prominently as the second half of a two-release migration, not a fresh breaking change.
+**Status**: Nothing currently planned. Both items originally scoped here — Prometheus metrics and the `keep_files` removal — were rolled into v0.6.0 instead (Initiatives 6 and 7 above), since nothing had been tagged/released yet and there was no reason to split either across two release cycles.
 
 ---
 

@@ -33,15 +33,6 @@ from qbt_rules.resolver import RuleResolver
 # exists only for the handful of variables that don't follow that
 # convention.
 ENV_VAR_MAP = {
-    # qBittorrent configuration (legacy 'user'/'pass' aliases don't follow
-    # the QBT_RULES_QBITTORRENT_USER/PASS convention -- they map to the
-    # same env vars as the canonical 'username'/'password' keys)
-    'qbittorrent.host': 'QBT_RULES_QBITTORRENT_HOST',
-    'qbittorrent.username': 'QBT_RULES_QBITTORRENT_USERNAME',
-    'qbittorrent.password': 'QBT_RULES_QBITTORRENT_PASSWORD',
-    'qbittorrent.user': 'QBT_RULES_QBITTORRENT_USERNAME',
-    'qbittorrent.pass': 'QBT_RULES_QBITTORRENT_PASSWORD',
-
     # Rules & queue misc
     'rules.file': 'QBT_RULES_RULES_FILE',
     'config.dir': 'QBT_RULES_CONFIG_DIR',
@@ -601,14 +592,6 @@ class Config:
                 return default
 
         return value
-
-    def get_qbittorrent_config(self) -> Dict[str, str]:
-        """Get qBittorrent connection configuration"""
-        return {
-            'host': self.get('qbittorrent.host', 'http://localhost:8080'),
-            'user': self.get('qbittorrent.user', 'admin'),
-            'pass': self.get('qbittorrent.pass', '')
-        }
 
     def is_dry_run(self) -> bool:
         """Check if dry-run mode is enabled"""

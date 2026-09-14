@@ -73,34 +73,6 @@ class TestAutoCategorizationRules:
 class TestCleanupRules:
     """Test cleanup rule scenarios."""
 
-    def test_delete_old_seeded_torrents(self, mock_api, mock_config, old_seeded_torrent):
-        """Delete torrents that are old and well-seeded."""
-        rule = {
-            'name': 'Delete old seeded torrents',
-            'enabled': True,
-            'context': 'weekly-cleanup',
-            'conditions': {
-                'all': [
-                    {'field': 'info.state', 'operator': 'in', 'value': ['uploading', 'pausedUP', 'stalledUP']},
-                    {'field': 'info.completion_on', 'operator': 'older_than', 'value': '30 days'},
-                    {'field': 'info.ratio', 'operator': '>=', 'value': 2.0},
-                ]
-            },
-            'actions': [
-                {'type': 'delete_torrent', 'params': {'keep_files': False}},
-            ]
-        }
-
-        mock_config.get_rules = Mock(return_value=[rule])
-        mock_api.torrents_data = {old_seeded_torrent['hash']: old_seeded_torrent}
-
-        engine = RulesEngine(mock_api, mock_config)
-        engine.run(context='weekly-cleanup')
-
-        assert engine.stats.rules_matched == 1
-        assert len(mock_api.calls['delete']) == 1
-        assert mock_api.calls['delete'][0]['delete_files'] is True
-
     @patch('qbt_rules.engine.requests.post')
     def test_notify_after_delete_uses_correct_torrent_via_real_engine_loop(
         self, mock_post, mock_api, mock_config, old_seeded_torrent
@@ -152,8 +124,8 @@ class TestCleanupRules:
             json={'message': f"Deleted {old_seeded_torrent['name']}"},
         )
 
-    def test_delete_old_seeded_torrents_canonical_param(self, mock_api, mock_config, old_seeded_torrent):
-        """Same as above, using the canonical delete_files param instead of deprecated keep_files."""
+    def test_delete_old_seeded_torrents(self, mock_api, mock_config, old_seeded_torrent):
+        """Delete torrents that are old and well-seeded."""
         rule = {
             'name': 'Delete old seeded torrents',
             'enabled': True,
@@ -625,7 +597,7 @@ class TestRealWorldCompleteScenario:
                 },
                 'actions': [
                     {'type': 'add_tag', 'params': {'tags': ['old']}},
-                    {'type': 'delete_torrent', 'params': {'keep_files': True}},
+                    {'type': 'delete_torrent', 'params': {'delete_files': True}},
                 ]
             },
         ]
@@ -832,7 +804,7 @@ class TestRuleChainingWithCacheUpdates:
                     ]
                 },
                 'actions': [
-                    {'type': 'delete_torrent', 'params': {'keep_files': False}}
+                    {'type': 'delete_torrent', 'params': {'delete_files': True}}
                 ]
             },
             {

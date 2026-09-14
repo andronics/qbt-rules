@@ -1,7 +1,5 @@
 """Comprehensive tests for ActionExecutor class in engine.py."""
 
-import logging
-
 import pytest
 from unittest.mock import Mock, patch, call
 from qbt_rules.engine import ActionExecutor
@@ -202,40 +200,28 @@ class TestDeleteAction:
             delete_files=True
         )
 
-    def test_delete_keep_files_true_deprecated(self, mock_api, sample_torrent, caplog):
-        """Deprecated keep_files=True still works and keeps files, with a warning."""
+    def test_delete_keep_files_key_is_ignored(self, mock_api, sample_torrent):
+        """keep_files was removed entirely -- it's just an unrecognized key
+        now, with no effect on behavior at all (no warning, no special
+        handling), same as any other extra key in params."""
         mock_api.delete_torrents = Mock(return_value=True)
         executor = ActionExecutor(mock_api, dry_run=False)
 
+        # keep_files=True would have meant "don't delete" under the old
+        # (removed) alias -- confirm it's now fully inert and files are
+        # deleted anyway, matching the no-params default.
         action = {'type': 'delete_torrent', 'params': {'keep_files': True}}
-        with caplog.at_level(logging.WARNING):
-            success, skipped = executor.execute(sample_torrent, action)
-
-        assert success is True
-        mock_api.delete_torrents.assert_called_once_with(
-            [sample_torrent['hash']],
-            delete_files=False
-        )
-        assert "keep_files' is deprecated" in caplog.text
-
-    def test_delete_keep_files_false_deprecated(self, mock_api, sample_torrent, caplog):
-        """Deprecated keep_files=False still works and deletes files, with a warning."""
-        mock_api.delete_torrents = Mock(return_value=True)
-        executor = ActionExecutor(mock_api, dry_run=False)
-
-        action = {'type': 'delete_torrent', 'params': {'keep_files': False}}
-        with caplog.at_level(logging.WARNING):
-            success, skipped = executor.execute(sample_torrent, action)
+        success, skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.delete_torrents.assert_called_once_with(
             [sample_torrent['hash']],
             delete_files=True
         )
-        assert "keep_files' is deprecated" in caplog.text
 
-    def test_delete_files_and_keep_files_both_specified(self, mock_api, sample_torrent, caplog):
-        """When both are specified, delete_files wins and a warning is logged."""
+    def test_delete_files_takes_precedence_over_stray_keep_files(self, mock_api, sample_torrent):
+        """delete_files is the only param that matters; a stray keep_files
+        alongside it is simply ignored, not specially reconciled."""
         mock_api.delete_torrents = Mock(return_value=True)
         executor = ActionExecutor(mock_api, dry_run=False)
 
@@ -243,16 +229,13 @@ class TestDeleteAction:
             'type': 'delete_torrent',
             'params': {'delete_files': False, 'keep_files': False},
         }
-        with caplog.at_level(logging.WARNING):
-            success, skipped = executor.execute(sample_torrent, action)
+        success, skipped = executor.execute(sample_torrent, action)
 
         assert success is True
-        # delete_files=False wins even though keep_files=False would imply deletion
         mock_api.delete_torrents.assert_called_once_with(
             [sample_torrent['hash']],
             delete_files=False
         )
-        assert "'keep_files' is ignored" in caplog.text
 
 
 # ============================================================================
@@ -451,18 +434,17 @@ class TestDryRunMode:
         assert success is True
         mock_api.delete_torrents.assert_not_called()
 
-    def test_dry_run_delete_with_deprecated_keep_files(self, mock_api, sample_torrent, caplog):
-        """Dry run mode still resolves the deprecated keep_files alias and warns."""
+    def test_dry_run_delete_ignores_stray_keep_files(self, mock_api, sample_torrent):
+        """Dry run mode also treats keep_files as inert -- no special
+        resolution, no warning."""
         mock_api.delete_torrents = Mock(return_value=True)
         executor = ActionExecutor(mock_api, dry_run=True)
 
         action = {'type': 'delete_torrent', 'params': {'keep_files': True}}
-        with caplog.at_level(logging.WARNING):
-            success, skipped = executor.execute(sample_torrent, action)
+        success, skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.delete_torrents.assert_not_called()
-        assert "keep_files' is deprecated" in caplog.text
 
     def test_dry_run_set_category(self, mock_api, sample_torrent):
         """Dry run mode doesn't execute set_category."""

@@ -33,10 +33,10 @@ def resolve_section_config(args, config_obj, section: str, fields: dict, parsers
     `section` become underscores, e.g. section='integrations.sonarr' ->
     QBT_RULES_INTEGRATIONS_SONARR_<FIELD>) unless ENV_VAR_MAP has an
     explicit override for "<section>.<field>" -- needed for the handful
-    of legacy-named variables (qbittorrent.user/.pass aliases, logging.*'s
-    QBT_RULES_LOG_* prefix, engine.dry_run's bare QBT_RULES_DRY_RUN). CLI
-    arg names auto-derive as <section>_<field> (dots become underscores),
-    matching this codebase's existing --server-port style flag naming.
+    of genuine naming exceptions (logging.*'s QBT_RULES_LOG_* prefix,
+    engine.dry_run's bare QBT_RULES_DRY_RUN). CLI arg names auto-derive as
+    <section>_<field> (dots become underscores), matching this codebase's
+    existing --server-port style flag naming.
 
     Args:
         args: Parsed CLI arguments
@@ -64,6 +64,21 @@ def resolve_section_config(args, config_obj, section: str, fields: dict, parsers
             value = parsers[field](value)
         result[field] = value
     return result
+
+
+def get_qbittorrent_config(args, config_obj) -> dict:
+    """
+    Get qBittorrent connection configuration from CLI args, env vars, or
+    config file
+
+    Returns:
+        Dictionary with 'host', 'username', 'password'
+    """
+    return resolve_section_config(args, config_obj, 'qbittorrent', {
+        'host': 'http://localhost:8080',
+        'username': 'admin',
+        'password': '',
+    })
 
 
 def get_server_config(args, config_obj) -> dict:
@@ -236,11 +251,11 @@ def run_server_mode(args, config_obj):
     logger.info(f"Queue backend: {queue.__class__.__name__}")
 
     # Initialize qBittorrent API (lazy initialization - won't connect until first job)
-    qbt_config = config_obj.get_qbittorrent_config()
+    qbt_config = get_qbittorrent_config(args, config_obj)
     api = QBittorrentAPI(
         host=qbt_config['host'],
-        username=qbt_config['user'],
-        password=qbt_config['pass'],
+        username=qbt_config['username'],
+        password=qbt_config['password'],
         connect_now=False  # Defer connection until first job execution
     )
     logger.info(f"qBittorrent: {qbt_config['host']} (will connect on first job)")

@@ -1,7 +1,5 @@
 """
 Tests for QBittorrentAPI class.
-
-Contains both legacy v0.3.x tests (skipped) and new v0.4.0 tests (active).
 """
 
 import pytest
