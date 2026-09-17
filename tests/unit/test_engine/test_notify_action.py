@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from qbt_rules.engine import ActionExecutor
+from qbt_rules.engine import ActionExecutor, ConditionEvaluator
 
 
 def _mock_response(status_code=200):
@@ -34,7 +34,7 @@ class TestNotifyPayloadShapes:
             'params': {
                 'service': 'discord',
                 'url': 'https://discord.com/api/webhooks/x/y',
-                'message': 'Torrent {name} matched',
+                'message': 'Torrent ${info.name} matched',
             },
         }
         success, skipped = executor.execute(sample_torrent, action)
@@ -56,7 +56,7 @@ class TestNotifyPayloadShapes:
             'params': {
                 'service': 'slack',
                 'url': 'https://hooks.slack.com/services/x',
-                'message': 'Torrent {name} matched',
+                'message': 'Torrent ${info.name} matched',
             },
         }
         success, skipped = executor.execute(sample_torrent, action)
@@ -78,7 +78,7 @@ class TestNotifyPayloadShapes:
             'params': {
                 'service': 'ntfy',
                 'url': 'https://ntfy.sh/my-topic',
-                'message': 'Torrent {name} matched',
+                'message': 'Torrent ${info.name} matched',
             },
         }
         success, skipped = executor.execute(sample_torrent, action)
@@ -100,7 +100,7 @@ class TestNotifyPayloadShapes:
             'params': {
                 'service': 'generic',
                 'url': 'https://example.com/webhook',
-                'message': 'Torrent {name} matched',
+                'message': 'Torrent ${info.name} matched',
             },
         }
         success, skipped = executor.execute(sample_torrent, action)
@@ -169,7 +169,7 @@ class TestNotifyTemplating:
             'params': {
                 'service': 'generic',
                 'url': 'https://example.com/webhook',
-                'message': 'Tags: {tags}',
+                'message': 'Tags: ${info.tags}',
             },
         }
         success, skipped = executor.execute(torrent, action)
@@ -191,7 +191,7 @@ class TestNotifyTemplating:
             'params': {
                 'service': 'generic',
                 'url': 'https://example.com/webhook',
-                'message': 'Tags: [{tags}]',
+                'message': 'Tags: [${info.tags}]',
             },
         }
         success, skipped = executor.execute(sample_torrent, action)
@@ -204,7 +204,14 @@ class TestNotifyTemplating:
         )
 
     @patch('qbt_rules.engine.requests.post')
-    def test_missing_template_field_skips_without_crashing(self, mock_post, mock_api, sample_torrent, caplog):
+    def test_unknown_field_in_known_namespace_renders_empty(self, mock_post, mock_api, sample_torrent):
+        """${info.*} is a real, valid namespace -- a field name within it
+        that this torrent doesn't have (e.g. a typo, or a field that's
+        simply absent) can't be cleanly distinguished from "torrent
+        legitimately has no value here" the way an unknown *namespace*
+        can, so it renders as an empty string rather than skipping the
+        whole notification."""
+        mock_post.return_value = _mock_response()
         executor = ActionExecutor(mock_api, dry_run=False)
 
         action = {
@@ -212,7 +219,34 @@ class TestNotifyTemplating:
             'params': {
                 'service': 'discord',
                 'url': 'https://discord.com/api/webhooks/x/y',
-                'message': 'Torrent {nonexistent_field} matched',
+                'message': 'Torrent [${info.nonexistent_field}] matched',
+            },
+        }
+        success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        mock_post.assert_called_once_with(
+            'https://discord.com/api/webhooks/x/y',
+            timeout=10,
+            json={'content': 'Torrent [] matched'},
+        )
+
+    @patch('qbt_rules.engine.requests.post')
+    def test_unknown_namespace_skips_without_crashing(self, mock_post, mock_api, sample_torrent, caplog):
+        """Unlike an unknown field, an unrecognized *namespace* (e.g. a
+        typo'd 'infoo.name', or a stray ${rule.*}/${vars.*} token that
+        somehow never got resolved) is unambiguous -- there's no
+        real endpoint by that name at all -- so this stays strict:
+        skip the whole notification with a warning, same as the old
+        {nonexistent_field} str.format() KeyError behavior did."""
+        executor = ActionExecutor(mock_api, dry_run=False)
+
+        action = {
+            'type': 'notify',
+            'params': {
+                'service': 'discord',
+                'url': 'https://discord.com/api/webhooks/x/y',
+                'message': 'Torrent ${bogus.field} matched',
             },
         }
         with caplog.at_level(logging.WARNING):
@@ -250,7 +284,7 @@ class TestNotifyConfigDefaults:
             notifications_config={'webhook_url': 'https://example.com/default', 'service': 'generic'}
         )
 
-        action = {'type': 'notify', 'params': {'message': 'Torrent {name} matched'}}
+        action = {'type': 'notify', 'params': {'message': 'Torrent ${info.name} matched'}}
         success, skipped = executor.execute(sample_torrent, action)
 
         assert success is True
@@ -300,7 +334,7 @@ class TestNotifyDryRun:
             'params': {
                 'service': 'discord',
                 'url': 'https://discord.com/api/webhooks/x/y',
-                'message': 'Torrent {name} matched',
+                'message': 'Torrent ${info.name} matched',
             },
         }
         success, skipped = executor.execute(sample_torrent, action)
@@ -373,7 +407,7 @@ class TestNotifyChainedAfterDelete:
             'params': {
                 'service': 'generic',
                 'url': 'https://example.com/webhook',
-                'message': 'Deleted {name}',
+                'message': 'Deleted ${info.name}',
             },
         }
         notify_success, _ = executor.execute(sample_torrent, notify_action)
@@ -384,3 +418,131 @@ class TestNotifyChainedAfterDelete:
             timeout=10,
             json={'message': 'Deleted Example.Torrent.1080p'},
         )
+
+
+class TestNotifyRuntimeCollectionFields:
+    """${trackers.*}/${files.*}/${peers.*} -- collection endpoints that
+    require their own lazy-loaded API call, unlike ${info.*} which reads
+    straight off the already-fetched torrent dict."""
+
+    @patch('qbt_rules.engine.requests.post')
+    def test_trackers_url_comma_joined(self, mock_post, mock_api, sample_torrent):
+        mock_post.return_value = _mock_response()
+        mock_api.trackers_data[sample_torrent['hash']] = [
+            {'url': 'http://tracker1.example'},
+            {'url': 'http://tracker2.example'},
+        ]
+        executor = ActionExecutor(mock_api, dry_run=False)
+
+        action = {
+            'type': 'notify',
+            'params': {
+                'service': 'generic',
+                'url': 'https://example.com/webhook',
+                'message': 'Trackers: ${trackers.url}',
+            },
+        }
+        success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        mock_post.assert_called_once_with(
+            'https://example.com/webhook',
+            timeout=10,
+            json={'message': 'Trackers: http://tracker1.example, http://tracker2.example'},
+        )
+
+    @patch('qbt_rules.engine.requests.post')
+    def test_files_name_comma_joined(self, mock_post, mock_api, sample_torrent):
+        mock_post.return_value = _mock_response()
+        mock_api.files_data[sample_torrent['hash']] = [
+            {'name': 'movie.mkv'},
+            {'name': 'subtitle.srt'},
+        ]
+        executor = ActionExecutor(mock_api, dry_run=False)
+
+        action = {
+            'type': 'notify',
+            'params': {
+                'service': 'generic',
+                'url': 'https://example.com/webhook',
+                'message': 'Files: ${files.name}',
+            },
+        }
+        success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        mock_post.assert_called_once_with(
+            'https://example.com/webhook',
+            timeout=10,
+            json={'message': 'Files: movie.mkv, subtitle.srt'},
+        )
+
+    @patch('qbt_rules.engine.requests.post')
+    def test_no_trackers_renders_empty_not_an_error(self, mock_post, mock_api, sample_torrent):
+        """An empty collection (this torrent just has none) isn't a typo --
+        it's a legitimate, common state, so it renders as an empty string
+        rather than skipping the notification."""
+        mock_post.return_value = _mock_response()
+        executor = ActionExecutor(mock_api, dry_run=False)
+
+        action = {
+            'type': 'notify',
+            'params': {
+                'service': 'generic',
+                'url': 'https://example.com/webhook',
+                'message': 'Trackers: [${trackers.url}]',
+            },
+        }
+        success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        mock_post.assert_called_once_with(
+            'https://example.com/webhook',
+            timeout=10,
+            json={'message': 'Trackers: []'},
+        )
+
+
+class TestNotifySharesFieldResolverCache:
+    """RulesEngine wires ActionExecutor's field_resolver to the same
+    ConditionEvaluator instance it uses for conditions, so a torrent's
+    trackers/files/peers are only ever fetched once per run, not once for
+    condition evaluation and again for notify templating."""
+
+    @patch('qbt_rules.engine.requests.post')
+    def test_shared_evaluator_only_fetches_trackers_once(self, mock_post, mock_api, sample_torrent):
+        mock_post.return_value = _mock_response()
+        mock_api.trackers_data[sample_torrent['hash']] = [{'url': 'http://tracker1.example'}]
+
+        evaluator = ConditionEvaluator(mock_api)
+        executor = ActionExecutor(mock_api, dry_run=False, field_resolver=evaluator)
+
+        with patch.object(mock_api, 'get_trackers', wraps=mock_api.get_trackers) as spy:
+            # Simulates a condition referencing trackers.url ...
+            evaluator.get_field_value(sample_torrent, 'trackers.url')
+            # ... then notify referencing the same field for the same torrent
+            action = {
+                'type': 'notify',
+                'params': {
+                    'service': 'generic',
+                    'url': 'https://example.com/webhook',
+                    'message': 'Tracker: ${trackers.url}',
+                },
+            }
+            success, _ = executor.execute(sample_torrent, action)
+
+            assert success is True
+            spy.assert_called_once()
+
+    @patch('qbt_rules.engine.requests.post')
+    def test_unshared_executor_fetches_independently(self, mock_post, mock_api, sample_torrent):
+        """Without an explicit field_resolver (e.g. direct construction in
+        a test, or any other caller that doesn't wire one up), ActionExecutor
+        falls back to its own private ConditionEvaluator -- functionally
+        correct, just without the cache-sharing optimization."""
+        mock_post.return_value = _mock_response()
+        mock_api.trackers_data[sample_torrent['hash']] = [{'url': 'http://tracker1.example'}]
+        executor = ActionExecutor(mock_api, dry_run=False)  # no field_resolver
+
+        assert isinstance(executor.field_resolver, ConditionEvaluator)
+        assert executor.field_resolver is not None

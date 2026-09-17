@@ -17,6 +17,12 @@ from qbt_rules import metrics
 
 logger = get_logger(__name__)
 
+# Pattern for runtime action-param templating: ${info.name}, ${trackers.url},
+# etc -- the per-torrent counterpart to resolver.py's TOKEN_PATTERN, which
+# handles the load-time-only ${vars.*}/${rule.*} tokens and deliberately
+# leaves these untouched for ActionExecutor to resolve here instead.
+ACTION_TEMPLATE_PATTERN = re.compile(r'\$\{(\w+\.\w+)\}')
+
 
 @dataclass
 class RuleStats:
@@ -183,6 +189,21 @@ class ConditionEvaluator:
 
         # Evaluate based on operator
         return self._apply_operator(actual, operator, value, field)
+
+    def get_field_value(self, torrent: Dict, field: str) -> Any:
+        """
+        Public entry point for resolving a dot-notation torrent field
+        (info.*, trackers.*, files.*, peers.*, properties.*, webseeds.*,
+        transfer.*, app.*)
+
+        Exposed so ActionExecutor's notify templating (${info.x}/
+        ${trackers.x}/etc in a message) can share this evaluator's
+        lazy-loaded, per-run caches instead of independently re-fetching
+        trackers/files/peers from the qBittorrent API -- see RulesEngine.
+        __init__, which passes this evaluator to ActionExecutor as its
+        field_resolver.
+        """
+        return self._get_field_value(torrent, field)
 
     def _get_field_value(self, torrent: Dict, field: str) -> Any:
         """
@@ -378,7 +399,8 @@ class ActionExecutor:
         api: QBittorrentAPI,
         dry_run: bool,
         notifications_config: Optional[Dict[str, str]] = None,
-        integrations_config: Optional[Dict[str, Dict[str, str]]] = None
+        integrations_config: Optional[Dict[str, Dict[str, str]]] = None,
+        field_resolver: Optional['ConditionEvaluator'] = None,
     ):
         """
         Initialize action executor
@@ -393,11 +415,21 @@ class ActionExecutor:
                 ({'sonarr': {'url', 'api_key'}, 'radarr': {...}}) for the
                 arr_blocklist action, already _FILE-resolved
                 at server startup
+            field_resolver: Object exposing get_field_value(torrent, field)
+                (a ConditionEvaluator, duck-typed) -- used to resolve
+                ${info.x}/${trackers.x}/etc tokens in notify messages.
+                Optional: RulesEngine always passes its own evaluator, so
+                notify shares the same lazy-loaded trackers/files/peers
+                caches conditions already populated for this torrent
+                rather than re-fetching from the API; falls back to a
+                private, unshared ConditionEvaluator if none is given
+                (e.g. direct construction in a test)
         """
         self.api = api
         self.dry_run = dry_run
         self.notifications_config = notifications_config or {}
         self.integrations_config = integrations_config or {}
+        self.field_resolver = field_resolver or ConditionEvaluator(api)
 
     def execute(self, torrent: Dict, action: Dict) -> Tuple[bool, bool]:
         """
@@ -609,15 +641,26 @@ class ActionExecutor:
         """
         Render a notify action's message template against torrent fields
 
-        Uses str.format(**template_vars), where template_vars is the torrent
-        dict with 'tags' replaced by a clean, comma-joined list (the raw
-        info.tags field is qBittorrent's unparsed comma-separated string,
-        e.g. "hd,new" with no space -- not what a human-readable
-        notification should show).
+        Uses the same ${namespace.field} dot-notation conditions already
+        use (info.*, trackers.*, files.*, peers.*, properties.*,
+        webseeds.*, transfer.*, app.*), resolved via self.field_resolver
+        so trackers/files/peers share the same lazy-loaded, per-run cache
+        the condition evaluator already populated for this torrent,
+        rather than re-fetching from the qBittorrent API. A collection
+        field's list result (e.g. ${trackers.url} with several trackers,
+        or ${info.tags}) is comma-joined for a readable message.
+
+        ${vars.*} and ${rule.*} tokens are NOT handled here -- those are
+        already gone from the string by the time an action's params reach
+        the engine, resolved once per rule at config-load time by
+        resolver.py (see its module docstring).
 
         Args:
             torrent: Torrent dictionary
-            message: Message template, e.g. "Torrent {name} matched"
+            message: Message template, e.g.
+                "[${rule.name}] ${info.name} matched" -- ${rule.name} is
+                already substituted away by the time this runs; only
+                ${info.name} is resolved here, per-torrent
 
         Returns:
             Rendered message, or None if message was None or templating failed
@@ -625,12 +668,15 @@ class ActionExecutor:
         if message is None:
             return None
 
-        template_vars = dict(torrent)
-        template_vars['tags'] = ', '.join(parse_tags(torrent))
+        def replace(match: re.Match) -> str:
+            value = self.field_resolver.get_field_value(torrent, match.group(1))
+            if isinstance(value, list):
+                return ', '.join(str(v) for v in value)
+            return '' if value is None else str(value)
 
         try:
-            return message.format(**template_vars)
-        except (KeyError, IndexError) as e:
+            return ACTION_TEMPLATE_PATTERN.sub(replace, message)
+        except FieldError as e:
             logger.warning(f"  notify: message template references an unknown field ({e}), skipping")
             return None
 
@@ -847,7 +893,8 @@ class RulesEngine:
         self.executor = ActionExecutor(
             api, dry_run,
             notifications_config=notifications_config,
-            integrations_config=integrations_config
+            integrations_config=integrations_config,
+            field_resolver=self.evaluator,
         )
         self.stats = RuleStats()
 

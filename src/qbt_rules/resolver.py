@@ -3,10 +3,19 @@ Reference and variable resolution for qBittorrent automation rules
 
 Implements the resolver layer that provides:
 - Variable substitution: ${vars.name} → value
+- Rule field substitution: ${rule.name} → this rule's own name/context/etc
 - Reference expansion: $ref: conditions.name → condition structure
 - Instance-scoped variable overrides
 - Type-aware value substitution
 - Circular dependency detection
+
+${vars.*} and ${rule.*} are both resolved here, once per rule, at
+config-load time -- unlike ${info.*}/${trackers.*}/etc (torrent field
+references used in condition values and notify messages), which vary
+per torrent and can only be resolved at runtime, in engine.py. This
+module's TOKEN_PATTERN deliberately matches only the `vars.`/`rule.`
+prefixes, so those runtime tokens pass through untouched and remain in
+the string for the engine to resolve later.
 """
 
 import copy
@@ -16,17 +25,21 @@ from typing import Any, Dict, List, Optional, Set
 from qbt_rules.errors import (
     CircularRefError,
     InvalidRefError,
+    InvalidRuleFieldError,
     InvalidVariableError,
     RefTypeMismatchError,
     UnknownRefError,
+    UnknownRuleFieldError,
     UnknownVariableError,
 )
 from qbt_rules.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Pattern for variable substitution: ${vars.name}
-VAR_PATTERN = re.compile(r'\$\{(vars\.\w+)\}')
+# Pattern for load-time token substitution: ${vars.name} / ${rule.field}.
+# Deliberately scoped to just these two prefixes -- ${info.*}/${trackers.*}/
+# etc must NOT match here, since those are runtime-only (see module docstring).
+TOKEN_PATTERN = re.compile(r'\$\{((?:vars|rule)\.\w+)\}')
 
 
 class RuleResolver:
@@ -136,8 +149,13 @@ class RuleResolver:
                     path=f"rules['{rule_name}'].{key}"
                 )
 
-        # Phase 3: Substitute all ${vars.*} variables (type-aware)
-        resolved = self._substitute_vars(resolved)
+        # Phase 3: Substitute all ${vars.*} and ${rule.*} tokens (type-aware).
+        # ${rule.*} resolves against `rule` (the original, pre-substitution
+        # dict) rather than `resolved` -- rule.name/rule.context are always
+        # plain scalars in practice, so this is equivalent either way, but
+        # using the original avoids a self-referential edge case if a
+        # rule's own name field somehow itself contained a ${vars.*} token.
+        resolved = self._substitute_tokens(resolved, rule)
 
         return resolved
 
@@ -255,41 +273,64 @@ class RuleResolver:
             # Scalar value - return as-is
             return node
 
-    def _substitute_vars(self, node: Any) -> Any:
+    # Endpoints _get_field_value() (engine.py) handles at runtime -- a whole-
+    # string ${namespace.x} token using one of these prefixes must be left
+    # untouched here rather than treated as a malformed vars/rule token, since
+    # it's meant for the engine to resolve later, once a torrent is known.
+    RUNTIME_TOKEN_NAMESPACES = (
+        'info', 'trackers', 'files', 'peers', 'properties', 'webseeds', 'transfer', 'app',
+    )
+
+    def _substitute_tokens(self, node: Any, rule: Dict[str, Any]) -> Any:
         """
-        Recursively substitute ${vars.*} variables in a data structure
+        Recursively substitute ${vars.*} and ${rule.*} tokens in a data structure
 
         Type-aware substitution:
-        - If ${vars.x} is the entire string value → preserve original type
-        - If ${vars.x} is embedded in string → interpolate as string
+        - If the token is the entire string value → preserve original type
+        - If embedded in a larger string → interpolate as string
+
+        ${info.*}/${trackers.*}/etc (runtime, per-torrent fields -- see
+        RUNTIME_TOKEN_NAMESPACES) are deliberately left untouched: as a
+        whole-string value they're recognized and passed through as-is;
+        embedded in a larger string they're never matched by TOKEN_PATTERN
+        in the first place, so they pass through for free.
 
         Args:
             node: Current node being processed
+            rule: The rule ${rule.*} tokens resolve against
 
         Returns:
-            Node with all variables substituted
+            Node with all vars/rule tokens substituted
+
+        Raises:
+            InvalidVariableError/UnknownVariableError: Malformed or unknown
+                ${vars.*} token
+            InvalidRuleFieldError/UnknownRuleFieldError: Malformed or unknown
+                ${rule.*} token
         """
         if isinstance(node, dict):
-            return {key: self._substitute_vars(value) for key, value in node.items()}
+            return {key: self._substitute_tokens(value, rule) for key, value in node.items()}
 
         elif isinstance(node, list):
-            return [self._substitute_vars(item) for item in node]
+            return [self._substitute_tokens(item, rule) for item in node]
 
         elif isinstance(node, str):
-            # Check if entire string is a single variable reference
+            # Check if entire string is a single token
             if node.startswith('${') and node.endswith('}') and node.count('${') == 1:
-                # Extract variable path
-                var_path = node[2:-1]  # Remove ${ and }
+                token_path = node[2:-1]  # Remove ${ and }
+                if token_path.split('.', 1)[0] in self.RUNTIME_TOKEN_NAMESPACES:
+                    return node
                 # Preserve original type
-                return self._resolve_var(var_path)
+                return self._resolve_token(token_path, rule)
 
-            # String with embedded variables - interpolate
-            def replace_var(match):
-                var_path = match.group(1)
-                value = self._resolve_var(var_path)
-                return str(value)
+            # String with embedded tokens - interpolate. TOKEN_PATTERN only
+            # matches vars./rule. prefixes, so a ${runtime.x} token embedded
+            # in a larger string is never matched here -- it passes through
+            # untouched with no special-casing needed.
+            def replace_token(match):
+                return str(self._resolve_token(match.group(1), rule))
 
-            return VAR_PATTERN.sub(replace_var, node)
+            return TOKEN_PATTERN.sub(replace_token, node)
 
         else:
             # Scalar non-string value - return as-is
@@ -364,3 +405,45 @@ class RuleResolver:
             raise UnknownVariableError(var_name=name, available_vars=list(self.vars.keys()))
 
         return self.vars[name]
+
+    def _resolve_token(self, token_path: str, rule: Dict[str, Any]) -> Any:
+        """Dispatch a vars.x or rule.x token path to the matching resolver"""
+        if token_path == 'rule' or token_path.startswith('rule.'):
+            return self._resolve_rule_field(token_path, rule)
+        return self._resolve_var(token_path)
+
+    def _resolve_rule_field(self, field_path: str, rule: Dict[str, Any]) -> Any:
+        """
+        Resolve a rule's own field by dot-notation path
+
+        Unlike ${vars.*} (a global lookup into refs.vars), ${rule.*} is
+        self-referential -- it resolves against the specific rule currently
+        being processed, not a shared cross-rule table.
+
+        Args:
+            field_path: Field path like 'rule.name'
+            rule: The current rule dict
+
+        Returns:
+            Field value (preserving original type)
+
+        Raises:
+            InvalidRuleFieldError: Invalid path format
+            UnknownRuleFieldError: Field not present on this rule
+        """
+        parts = field_path.split('.', 1)
+        if len(parts) != 2 or parts[0] != 'rule':
+            raise InvalidRuleFieldError(
+                field_path=field_path,
+                reason="Expected format 'rule.name' (e.g., 'rule.name', 'rule.context')"
+            )
+
+        field_name = parts[1]
+        if field_name not in rule:
+            raise UnknownRuleFieldError(
+                field_name=field_name,
+                rule_name=rule.get('name', 'unknown'),
+                available_fields=list(rule.keys()),
+            )
+
+        return rule[field_name]

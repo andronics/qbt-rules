@@ -201,6 +201,167 @@ class TestVariableSubstitution:
         assert 'vars.name' in str(exc_info.value)
 
 
+class TestRuleFieldSubstitution:
+    """Test ${rule.*} token substitution -- self-referential, resolves
+    against the rule currently being processed, not a shared/global table
+    like ${vars.*}."""
+
+    def test_substitute_rule_name_whole_string(self):
+        resolver = RuleResolver(refs={})
+        rule = {
+            'name': 'My Rule',
+            'conditions': [],
+            'actions': [
+                {'type': 'notify', 'params': {'message': '${rule.name}'}}
+            ]
+        }
+
+        resolved = resolver.resolve_rule(rule)
+        assert resolved['actions'][0]['params']['message'] == 'My Rule'
+
+    def test_substitute_rule_name_embedded_in_string(self):
+        resolver = RuleResolver(refs={})
+        rule = {
+            'name': 'My Rule',
+            'conditions': [],
+            'actions': [
+                {'type': 'notify', 'params': {'message': '[${rule.name}] matched'}}
+            ]
+        }
+
+        resolved = resolver.resolve_rule(rule)
+        assert resolved['actions'][0]['params']['message'] == '[My Rule] matched'
+
+    def test_substitute_rule_context_string(self):
+        resolver = RuleResolver(refs={})
+        rule = {
+            'name': 'My Rule',
+            'context': 'weekly-cleanup',
+            'conditions': [],
+            'actions': [
+                {'type': 'notify', 'params': {'message': 'context: ${rule.context}'}}
+            ]
+        }
+
+        resolved = resolver.resolve_rule(rule)
+        assert resolved['actions'][0]['params']['message'] == 'context: weekly-cleanup'
+
+    def test_substitute_rule_context_list_preserves_type_as_whole_value(self):
+        """Type-aware substitution applies to ${rule.*} the same as
+        ${vars.*}: a whole-string token preserves the field's real type."""
+        resolver = RuleResolver(refs={})
+        rule = {
+            'name': 'My Rule',
+            'context': ['weekly-cleanup', 'nightly'],
+            'conditions': [],
+            'actions': [
+                {'type': 'notify', 'params': {'context_value': '${rule.context}'}}
+            ]
+        }
+
+        resolved = resolver.resolve_rule(rule)
+        assert resolved['actions'][0]['params']['context_value'] == ['weekly-cleanup', 'nightly']
+
+    def test_substitute_rule_stop_on_match(self):
+        resolver = RuleResolver(refs={})
+        rule = {
+            'name': 'My Rule',
+            'stop_on_match': True,
+            'conditions': [],
+            'actions': [
+                {'type': 'notify', 'params': {'message': 'stop: ${rule.stop_on_match}'}}
+            ]
+        }
+
+        resolved = resolver.resolve_rule(rule)
+        assert resolved['actions'][0]['params']['message'] == 'stop: True'
+
+    def test_unknown_rule_field_raises_error(self):
+        from qbt_rules.errors import UnknownRuleFieldError
+
+        resolver = RuleResolver(refs={})
+        rule = {
+            'name': 'My Rule',
+            'conditions': [],
+            'actions': [
+                {'type': 'notify', 'params': {'message': '${rule.nmae}'}}  # typo
+            ]
+        }
+
+        with pytest.raises(UnknownRuleFieldError) as exc_info:
+            resolver.resolve_rule(rule)
+
+        assert 'nmae' in str(exc_info.value)
+
+    def test_invalid_rule_field_path_raises_error(self):
+        from qbt_rules.errors import InvalidRuleFieldError
+
+        resolver = RuleResolver(refs={})
+        rule = {
+            'name': 'My Rule',
+            'conditions': [],
+            'actions': [
+                {'type': 'notify', 'params': {'message': '${rule}'}}  # missing '.field'
+            ]
+        }
+
+        with pytest.raises(InvalidRuleFieldError):
+            resolver.resolve_rule(rule)
+
+    def test_rule_and_vars_tokens_together_in_one_string(self):
+        resolver = RuleResolver(refs={'vars': {'min_ratio': 2.0}})
+        rule = {
+            'name': 'My Rule',
+            'conditions': [],
+            'actions': [
+                {'type': 'notify', 'params': {'message': '[${rule.name}] ratio >= ${vars.min_ratio}'}}
+            ]
+        }
+
+        resolved = resolver.resolve_rule(rule)
+        assert resolved['actions'][0]['params']['message'] == '[My Rule] ratio >= 2.0'
+
+    def test_runtime_namespace_tokens_pass_through_untouched(self):
+        """${info.*}/${trackers.*}/etc are resolved later, per-torrent, by
+        engine.py -- resolve_rule() must leave them alone rather than
+        mistaking them for a malformed vars/rule token. This is also a
+        regression check: before ${rule.*} existed, a whole-string
+        ${info.x}-style value would incorrectly raise InvalidVariableError,
+        since the old code blindly treated any whole ${...} string as a
+        vars token without checking its prefix first."""
+        resolver = RuleResolver(refs={})
+        rule = {
+            'name': 'My Rule',
+            'conditions': [],
+            'actions': [
+                {'type': 'notify', 'params': {
+                    'message': '${info.name} ratio ${info.ratio} trackers ${trackers.url}',
+                    'whole_value': '${info.ratio}',
+                }}
+            ]
+        }
+
+        resolved = resolver.resolve_rule(rule)
+        assert resolved['actions'][0]['params']['message'] == '${info.name} ratio ${info.ratio} trackers ${trackers.url}'
+        assert resolved['actions'][0]['params']['whole_value'] == '${info.ratio}'
+
+    def test_mistyped_vars_prefix_still_raises_error(self):
+        """A near-miss like ${var.x} (singular) isn't a recognized runtime
+        namespace either, so it must still surface as an actionable error
+        rather than silently passing through as literal text."""
+        resolver = RuleResolver(refs={'vars': {'min_ratio': 2.0}})
+        rule = {
+            'name': 'My Rule',
+            'conditions': [],
+            'actions': [
+                {'type': 'notify', 'params': {'message': '${var.min_ratio}'}}
+            ]
+        }
+
+        with pytest.raises(InvalidVariableError):
+            resolver.resolve_rule(rule)
+
+
 class TestReferenceExpansion:
     """Test $ref: path reference expansion"""
 
