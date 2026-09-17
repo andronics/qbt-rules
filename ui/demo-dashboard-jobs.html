@@ -35,10 +35,16 @@
     string) — not a generic/invented error shape.
   - No cancel/retry actions on pending/processing rows: those would imply a live
     DELETE /api/jobs/<id> call, out of scope for a static read-only demo.
+  - Added a docked rules.yml/config.yml YAML panel, copied verbatim (CSS, colorizer,
+    excerpt content) from demo-metrics-config-dashboard.html, hidden by default (a
+    "YAML ◂" toggle in the topbar / collapsed tab on the workspace edge opens it) —
+    all four dashboard concept pages now offer the same reference panel. Required
+    converting the page shell from natural page-scroll (body min-height:100vh) to a
+    fixed-height app shell (body overflow:hidden, #app height:100vh) so the panel and
+    `.dash` can each scroll independently, matching the other demos' shells.
 
-  NOT part of this demo: no rule visuals, no metrics/YAML panel (those are
-  demo-dashboard-rules.html and demo-metrics-config-dashboard.html's concerns), no
-  live data fetching.
+  NOT part of this demo: no rule visuals (that's demo-dashboard-rules.html's concern),
+  no live data fetching.
 -->
 <!doctype html>
 <html lang="en">
@@ -65,6 +71,13 @@
     --c-any:#f59e0b;   --c-any-bg:rgba(245,158,11,.14);
     --c-action:#22c55e;--c-action-bg:rgba(34,197,94,.12);
 
+    --yaml-key:#7dd3fc;
+    --yaml-str:#a7e08a;
+    --yaml-num:#f5b962;
+    --yaml-ref:#5eead4;
+    --yaml-comment:#5b6577;
+    --yaml-punct:#6b7280;
+
     --radius: 10px;
     --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Code", Consolas, "Liberation Mono", monospace;
@@ -77,6 +90,7 @@
       --fg:#161a22; --fg-dim:#454d5e; --muted:#6b7280;
       --accent:#2f5ce0; --accent-soft:rgba(47,92,224,.12);
       --c-any-bg:rgba(245,158,11,.12); --c-action-bg:rgba(34,197,94,.10);
+      --yaml-comment:#8a93a6; --yaml-punct:#8a93a6;
     }
   }
   *{box-sizing:border-box;}
@@ -85,11 +99,15 @@
     margin:0; background:var(--bg-app); color:var(--fg);
     font-family:var(--font-ui);
     -webkit-font-smoothing:antialiased;
+    overflow:hidden;
   }
   button, select{font-family:inherit;}
   ::selection{background:var(--accent-soft);}
 
-  #app{ display:grid; grid-template-rows:auto 1fr auto; min-height:100vh; min-width:760px; }
+  /* height:100vh (not min-height) so the workspace row is bounded -- needed
+     for .dash and the new .yaml-panel to each scroll independently instead
+     of growing the whole page. */
+  #app{ display:grid; grid-template-rows:auto 1fr auto; height:100vh; min-width:760px; }
 
   /* ---------- topbar (verbatim from demo-rule-builder-params.html) ---------- */
   .topbar{
@@ -108,6 +126,16 @@
   }
   .nav-tab:hover{ border-color:var(--border-strong); color:var(--fg); }
   .nav-tab.active{ background:var(--accent-soft); border-color:var(--accent); color:var(--fg); cursor:default; }
+  .icon-btn{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2); color:var(--fg-dim);
+    border-radius:8px; padding:.4rem .6rem; font-size:.75rem; cursor:pointer; display:flex; gap:.35rem; align-items:center;
+    font-family:var(--font-ui);
+  }
+  .icon-btn:hover{ color:var(--fg); border-color:var(--border-strong); }
+
+  /* ---------- workspace grid (dash + docked YAML panel) ---------- */
+  .workspace{ display:grid; grid-template-columns:1fr 420px; min-height:0; transition:grid-template-columns .18s ease; }
+  .workspace.no-yaml{ grid-template-columns:1fr 0px; }
 
   /* ---------- dashboard content ---------- */
   .dash{ overflow-y:auto; padding:1.1rem 1.3rem 2rem; background:var(--bg-canvas); }
@@ -185,6 +213,38 @@
     padding:.7rem .8rem; white-space:pre-wrap; line-height:1.55; overflow-x:auto;
   }
 
+  /* ---------- yaml panel (verbatim classes from demo-metrics-config-dashboard.html) ---------- */
+  .yaml-panel{ display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border); background:var(--bg-panel); overflow:hidden; }
+  .yaml-head{ display:flex; align-items:center; gap:.5rem; padding:.55rem .75rem; border-bottom:1px solid var(--border); }
+  .yaml-head .title{ font-size:.74rem; color:var(--fg-dim); font-family:var(--font-mono); flex:1; }
+  .yaml-modes{ display:flex; background:var(--bg-panel-2); border:1px solid var(--border); border-radius:7px; overflow:hidden; }
+  .yaml-mode-btn{
+    appearance:none; border:none; background:transparent; color:var(--muted); font-size:.68rem;
+    padding:.3rem .55rem; cursor:pointer; font-family:var(--font-mono);
+  }
+  .yaml-mode-btn.active{ background:var(--accent); color:#fff; }
+  .yaml-body{ flex:1; overflow:auto; padding:.7rem .5rem; }
+  .yaml-body pre{ margin:0; font-family:var(--font-mono); font-size:.72rem; line-height:1.6; }
+  .yline{ padding:0 .5rem 0 .35rem; border-radius:4px; white-space:pre; cursor:default; }
+  .yk{ color:var(--yaml-key); }
+  .ys{ color:var(--yaml-str); }
+  .yn{ color:var(--yaml-num); }
+  .yr{ color:var(--yaml-ref); font-weight:600; }
+  .yc{ color:var(--yaml-comment); font-style:italic; }
+  .yp{ color:var(--yaml-punct); }
+  .yaml-note{
+    font-size:.63rem; color:var(--muted); padding:.5rem .75rem; border-top:1px solid var(--border);
+    background:var(--bg-panel-2); line-height:1.5;
+  }
+
+  .yaml-collapsed-tab{
+    position:absolute; right:0; top:64px; writing-mode:vertical-rl; background:var(--bg-panel);
+    border:1px solid var(--border); border-right:none; border-radius:8px 0 0 8px; padding:.5rem .3rem;
+    font-size:.68rem; color:var(--muted); cursor:pointer; display:none; z-index:5;
+  }
+  .workspace.no-yaml .yaml-collapsed-tab{ display:block; }
+  .workspace.no-yaml .yaml-panel{ display:none; }
+
   /* ---------- statusbar (verbatim) ---------- */
   .statusbar{
     padding:.4rem 1rem; border-top:1px solid var(--border); background:var(--bg-panel);
@@ -209,9 +269,27 @@
       <a class="nav-tab" href="demo-dashboard-rules.html">Rules</a>
       <a class="nav-tab" href="demo-metrics-config-dashboard.html">Metrics</a>
     </div>
+    <button class="icon-btn" id="btnYamlToggle" title="Toggle YAML panel">YAML ◂</button>
   </header>
 
-  <div class="dash" id="dash"><!-- rendered by renderJobsList() / renderJobDetail() --></div>
+  <div class="workspace no-yaml" id="workspace" style="position:relative;">
+
+    <div class="dash" id="dash"><!-- rendered by renderJobsList() / renderJobDetail() --></div>
+
+    <button class="yaml-collapsed-tab" id="yamlTab">YAML ▸</button>
+    <aside class="yaml-panel" id="yamlPanel">
+      <div class="yaml-head">
+        <span class="title" id="yamlFileLabel">rules.yml</span>
+        <div class="yaml-modes" id="yamlModes">
+          <button class="yaml-mode-btn active" data-file="rules">rules.yml</button>
+          <button class="yaml-mode-btn" data-file="config">config.yml</button>
+        </div>
+      </div>
+      <div class="yaml-body"><pre id="yamlOut"></pre></div>
+      <div class="yaml-note" id="yamlNote"></div>
+    </aside>
+
+  </div>
 
   <footer class="statusbar">
     <span id="statusLeft">Ready.</span>
@@ -407,9 +485,312 @@ function renderCurrentView(){
 }
 
 /* ======================================================================
+   YAML panel — verbatim from demo-metrics-config-dashboard.html: same
+   colorizer, same rules.yml/config.yml excerpts, hidden by default here too.
+   ====================================================================== */
+function colorizeYamlLine(text){
+  const hashIdx = text.indexOf('#');
+  let code = text, comment = '';
+  if(hashIdx >= 0){ code = text.slice(0,hashIdx); comment = text.slice(hashIdx); }
+
+  const leadMatch = code.match(/^(\s*(?:-\s*)?)/);
+  const lead = leadMatch ? leadMatch[0] : '';
+  let rest = code.slice(lead.length);
+  let out = escapeHtml(lead);
+
+  const kvMatch = rest.match(/^([A-Za-z_][\w.]*)\s*:\s*(.*)$/);
+  if(kvMatch){
+    const key = kvMatch[1], val = kvMatch[2];
+    out += `<span class="yk">${escapeHtml(key)}</span><span class="yp">:</span>` + (val ? ' ' + colorizeValue(val) : '');
+  } else if(rest.trim().startsWith('$ref:')){
+    const afterColon = rest.trim().slice(5).trim();
+    out += `<span class="yr">$ref</span><span class="yp">:</span> <span class="yr">${escapeHtml(afterColon)}</span>`;
+  } else {
+    out += colorizeValue(rest);
+  }
+  if(comment) out += `<span class="yc">${escapeHtml(comment)}</span>`;
+  return out;
+}
+function colorizeValue(v){
+  const t = v.trim();
+  if(!t) return '';
+  if(t.startsWith('$ref:')) return `<span class="yr">${escapeHtml(t)}</span>`;
+  if(/\$\{[^}]+\}/.test(t)){
+    const parts = t.split(/(\$\{[^}]+\})/g);
+    return parts.map(p => /^\$\{[^}]+\}$/.test(p) ? `<span class="yr">${escapeHtml(p)}</span>` : colorizeValuePlain(p)).join('');
+  }
+  return colorizeValuePlain(t);
+}
+function colorizeValuePlain(t){
+  if(!t) return '';
+  if(/^["'].*["']$/.test(t)) return `<span class="ys">${escapeHtml(t)}</span>`;
+  if(/^-?\d+(\.\d+)?$/.test(t)) return `<span class="yn">${escapeHtml(t)}</span>`;
+  if(/^(true|false)$/.test(t)) return `<span class="yn">${escapeHtml(t)}</span>`;
+  if(t.startsWith('[') || t.startsWith('{')) return `<span class="yp">${escapeHtml(t)}</span>`;
+  return escapeHtml(t);
+}
+function renderYamlLines(text){
+  return text.split('\n').map(line => `<div class="yline">${colorizeYamlLine(line)}</div>`).join('');
+}
+
+// Real excerpt: advanced-rules-example.yml — refs.vars, refs.conditions (trimmed to the
+// tracker/seeding/content groups), and the first 4 of its 10 `rules:` entries. The full
+// file is 473 lines; every other ui/demo-*.html uses this same example set.
+const RULES_YML = `# Advanced qBittorrent Rules Configuration with Resolver Layer
+# Demonstrates comprehensive use of refs with 30+ reusable components and 10 complex rules
+#
+# (excerpt — full file is advanced-rules-example.yml, 473 lines, 10 rules total)
+
+refs:
+  vars:
+    min_ratio_private: 2.0          # Private trackers require higher ratios
+    min_ratio_public: 1.0           # Public trackers are more lenient
+    excellent_ratio: 5.0            # Consider this "well seeded"
+    completion_age_short: "7 days"
+    completion_age_medium: "30 days"
+    completion_age_long: "90 days"
+    large_file_bytes: 53687091200   # 50 GB
+    huge_file_bytes: 107374182400   # 100 GB
+    protected_categories:
+      - keep
+      - seedbox
+      - long-term
+      - permanent
+      - archive
+    hd_content_pattern: '(?i).*(1080p|2160p|4k|uhd|bluray|remux).*'
+    tv_show_pattern: '(?i).*(s\\d{2}e\\d{2}|season[\\s._-]*\\d+).*'
+
+  conditions:
+    private-tracker:
+      any:
+        - field: trackers.url
+          operator: contains
+          value: "privatehd.to"
+        - field: trackers.url
+          operator: contains
+          value: "torrentleech.org"
+        - field: trackers.url
+          operator: contains
+          value: "iptorrents.com"
+
+    well-seeded-private:
+      all:
+        - field: info.ratio
+          operator: ">="
+          value: \${vars.min_ratio_private}
+        - field: info.completion_on
+          operator: older_than
+          value: \${vars.completion_age_medium}
+
+    under-seeded-private:
+      all:
+        - field: info.ratio
+          operator: "<"
+          value: \${vars.min_ratio_private}
+        - field: info.state
+          operator: in
+          value:
+            - uploading
+            - stalledUP
+            - queuedUP
+
+    hd-content:
+      all:
+        - field: info.name
+          operator: matches
+          value: \${vars.hd_content_pattern}
+
+rules:
+  # Rule 1: Private Tracker Under-Seeding Emergency
+  - name: "Force seed private tracker torrents under ratio"
+    enabled: true
+    context: download-finished
+    stop_on_match: false
+    conditions:
+      - $ref: conditions.private-tracker
+      - $ref: conditions.under-seeded-private
+      - none:
+          - $ref: conditions.protected-content
+    actions:
+      - $ref: actions.force-seed-private
+
+  # Rule 2: Private Tracker Cleanup - Well Seeded
+  - name: "Cleanup well-seeded private tracker torrents"
+    enabled: true
+    context: weekly-cleanup
+    conditions:
+      - $ref: conditions.private-tracker
+      - $ref: conditions.well-seeded-private
+      - none:
+          - $ref: conditions.protected-content
+    actions:
+      - $ref: actions.safe-delete
+
+  # Rule 3: Public Tracker Quick Cleanup
+  - name: "Cleanup public tracker torrents after medium term"
+    enabled: true
+    context: weekly-cleanup
+    conditions:
+      - $ref: conditions.public-tracker
+      - $ref: conditions.well-seeded-public
+      - none:
+          - $ref: conditions.protected-content
+          - $ref: conditions.hd-content
+    actions:
+      - $ref: actions.safe-delete
+
+  # Rule 4: HD Content Auto-Organization
+  - name: "Auto-categorize and prioritize HD content from private trackers"
+    enabled: true
+    context: torrent-imported
+    stop_on_match: false
+    conditions:
+      - $ref: conditions.private-tracker
+      - $ref: conditions.hd-content
+      - any:
+          - $ref: conditions.tv-show
+          - $ref: conditions.movie
+    actions:
+      - $ref: actions.process-hd-content
+`;
+
+// config/config.default.yml, every real section verbatim, trimmed of per-field
+// env-var comments and the docker-compose example block (283 lines -> ~100)
+const CONFIG_YML = `# qbt-rules v0.4.0 - Configuration Settings
+#
+# This file contains all configuration for the qbt-rules client-server architecture.
+# For rules definitions, see rules.yml
+#
+# Configuration Resolution Order (highest to lowest priority):
+# 1. CLI flags (e.g., --server-port 5000)
+# 2. Environment variable _FILE variant (e.g., QBT_RULES_SERVER_API_KEY_FILE=/secrets/key)
+# 3. Environment variable (e.g., QBT_RULES_SERVER_PORT=5000)
+# 4. This config file
+# 5. Default values
+#
+# ALL environment variables support _FILE variants for secret management.
+
+server:
+  # Server bind address (0.0.0.0 for all interfaces, 127.0.0.1 for localhost only)
+  host: 0.0.0.0
+  # Server port
+  port: 5000
+  # API authentication key (REQUIRED - generate with: openssl rand -hex 32)
+  api_key: your-secure-api-key-here-generate-a-random-key
+  # Gunicorn worker processes (1 is sufficient for home use)
+  workers: 1
+
+queue:
+  # Queue backend: 'sqlite' (default) or 'redis'
+  backend: sqlite
+  # SQLite database path (only used when backend=sqlite)
+  sqlite_path: /config/qbt-rules.db
+  # Redis connection URL (only used when backend=redis)
+  # redis_url: redis://localhost:6379/0
+  # Job retention period - how long to keep completed/failed jobs
+  cleanup_after: 7d
+
+client:
+  # Server URL for client to connect to
+  server_url: http://localhost:5000
+  # API key for client authentication (must match server.api_key)
+  api_key: your-secure-api-key-here-generate-a-random-key
+
+qbittorrent:
+  # qBittorrent Web UI URL
+  host: http://localhost:8080
+  # qBittorrent Web UI username
+  username: admin
+  # qBittorrent Web UI password
+  password: adminpass
+
+rules:
+  # Path to rules file
+  file: /config/rules.yml
+
+# SCHEDULE CONFIGURATION (optional) -- internal cron scheduler, enqueues a job for
+# each entry when its cron expression fires. Uncomment and customize:
+#
+# schedule:
+#   - cron: "*/30 * * * *"   # Every 30 minutes
+#     context: cron
+#   - cron: "0 3 * * *"      # Daily at 3 AM
+#     context: nightly
+
+notifications:
+  # Default webhook URL used when a notify action omits params.url
+  # webhook_url: https://discord.com/api/webhooks/your-webhook-here
+  # Default service used when a notify action omits params.service
+  # One of: discord, slack, ntfy, generic
+  service: generic
+
+# INTEGRATIONS CONFIGURATION (optional) -- Sonarr/Radarr for the "arr_blocklist" action.
+# Uncomment and customize the service(s) you use:
+#
+# integrations:
+#   sonarr:
+#     url: http://sonarr:8989
+#     api_key: your-sonarr-api-key-here
+#   radarr:
+#     url: http://radarr:7878
+#     api_key: your-radarr-api-key-here
+
+metrics:
+  # Enable the /metrics endpoint and internal instrumentation
+  enabled: false
+  # Directory used by prometheus_client's multiprocess mode
+  multiproc_dir: /tmp/qbt-rules-metrics
+
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: INFO
+  # Log file path (relative to CONFIG_DIR or absolute)
+  file: /config/qbt-rules.log
+  # Trace mode: Include module/function/line numbers in logs (for debugging)
+  trace_mode: false
+  # Log HTTP access requests (including health checks)
+  http_access: false
+
+engine:
+  # Dry-run mode: Test rules without making changes
+  # Note: Use --dry-run CLI flag instead (preferred)
+  dry_run: false
+`;
+
+const YAML_FILES = {
+  rules:  { label: 'rules.yml',  text: RULES_YML,  note: 'Excerpt of advanced-rules-example.yml (473 lines, 10 rules total) — the same example rule set used by every other ui/demo-rule-builder*.html.' },
+  config: { label: 'config.yml', text: CONFIG_YML, note: 'Every real section of config/config.default.yml verbatim (the actual shipped default), trimmed of per-field env-var comments and the trailing docker-compose example for panel readability.' },
+};
+let activeYamlFile = 'rules';
+
+function renderYamlPanel(){
+  const f = YAML_FILES[activeYamlFile];
+  document.getElementById('yamlFileLabel').textContent = f.label;
+  document.getElementById('yamlOut').innerHTML = renderYamlLines(f.text);
+  document.getElementById('yamlNote').textContent = f.note;
+}
+
+document.querySelectorAll('.yaml-mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    activeYamlFile = btn.dataset.file;
+    document.querySelectorAll('.yaml-mode-btn').forEach(b => b.classList.toggle('active', b===btn));
+    renderYamlPanel();
+  });
+});
+
+function toggleYamlPanel(){
+  const ws = document.getElementById('workspace');
+  const collapsed = ws.classList.toggle('no-yaml');
+  document.getElementById('btnYamlToggle').textContent = collapsed ? 'YAML ◂' : 'YAML ▸';
+}
+document.getElementById('btnYamlToggle').addEventListener('click', toggleYamlPanel);
+document.getElementById('yamlTab').addEventListener('click', toggleYamlPanel);
+
+/* ======================================================================
    Init
    ====================================================================== */
 renderCurrentView();
+renderYamlPanel();
 const completedCount = MOCK_JOBS.filter(j=>j.status==='completed').length;
 document.getElementById('statusLeft').textContent =
   `${MOCK_JOBS.length} mock jobs · ${completedCount} completed · ${MOCK_JOBS.filter(j=>j.status==='failed').length} failed`;
