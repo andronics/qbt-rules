@@ -1,0 +1,41 @@
+name: Clean Up Dev Docker Images
+
+# Deletes dev/** branch Docker images (tags prefixed "dev-", e.g. dev-my-feature
+# and dev-my-feature-sha-<short-sha>) older than 7 days from GHCR. Scoped to the
+# "dev-*" tag pattern only, so it never touches "latest", "edge", or semver
+# release tags produced by docker-build.yml for main/tag pushes.
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # daily at 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Preview deletions without executing'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Delete dev images older than 7 days
+        uses: snok/container-retention-policy@v3.1.0
+        with:
+          account: user
+          # GITHUB_TOKEN can delete package versions here only if this
+          # user-owned repo's package settings grant the Actions token
+          # "Admin" role (Package settings -> Manage Actions access). If
+          # deletions fail with a permissions error, add a classic PAT with
+          # the `delete:packages` scope as a repo secret named
+          # PACKAGES_DELETE_TOKEN and this falls back to it automatically.
+          token: ${{ secrets.PACKAGES_DELETE_TOKEN || secrets.GITHUB_TOKEN }}
+          image-names: qbt-rules
+          image-tags: "dev-*"
+          cut-off: 7d
+          dry-run: ${{ inputs['dry-run'] || false }}
