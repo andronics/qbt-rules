@@ -1214,6 +1214,58 @@ class TestSummarizeError:
         )
 
 
+class TestTimeago:
+    """Test _timeago() -- the timeago Jinja filter behind dashboard
+    "Created" columns (e.g. "2 hours ago")."""
+
+    def test_none_returns_empty_string(self):
+        from qbt_rules.server import _timeago
+        assert _timeago(None) == ''
+
+    def test_invalid_string_returned_unchanged(self):
+        from qbt_rules.server import _timeago
+        assert _timeago('not a timestamp') == 'not a timestamp'
+
+    def test_just_now(self):
+        from qbt_rules.server import _timeago
+        from datetime import datetime, timezone
+        assert _timeago(datetime.now(timezone.utc)) == 'just now'
+
+    def test_minutes_ago(self):
+        from qbt_rules.server import _timeago
+        from datetime import datetime, timezone, timedelta
+        dt = datetime.now(timezone.utc) - timedelta(minutes=5)
+        assert _timeago(dt) == '5 minutes ago'
+
+    def test_singular_unit_has_no_trailing_s(self):
+        from qbt_rules.server import _timeago
+        from datetime import datetime, timezone, timedelta
+        dt = datetime.now(timezone.utc) - timedelta(hours=1)
+        assert _timeago(dt) == '1 hour ago'
+
+    def test_days_ago(self):
+        from qbt_rules.server import _timeago
+        from datetime import datetime, timezone, timedelta
+        dt = datetime.now(timezone.utc) - timedelta(days=4)
+        assert _timeago(dt) == '4 days ago'
+
+    def test_iso_string_is_parsed(self):
+        """Some unit-test fixtures elsewhere in this file pass created_at
+        as a plain ISO string rather than a real datetime -- the filter
+        must handle both, matching what real job dicts vs. test mocks
+        actually carry."""
+        from qbt_rules.server import _timeago
+        from datetime import datetime, timezone, timedelta
+        dt = datetime.now(timezone.utc) - timedelta(days=2)
+        assert _timeago(dt.isoformat()) == '2 days ago'
+
+    def test_naive_datetime_treated_as_utc(self):
+        from qbt_rules.server import _timeago
+        from datetime import datetime, timezone, timedelta
+        dt = (datetime.now(timezone.utc) - timedelta(hours=3)).replace(tzinfo=None)
+        assert _timeago(dt) == '3 hours ago'
+
+
 class TestDashboardRoutes:
     """Test the read-only web dashboard (/, /jobs, /rules)"""
 

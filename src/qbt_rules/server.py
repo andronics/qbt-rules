@@ -37,6 +37,46 @@ dashboard_config: Optional[Config] = None
 metrics_enabled: bool = False
 
 
+def _timeago(value) -> str:
+    """
+    Jinja filter: render a timestamp as relative time ("2 hours ago")
+
+    Args:
+        value: A timezone-aware datetime (as list_jobs()/get_job() return
+            for created_at/started_at/completed_at), an ISO-8601 string
+            (the shape some unit-test fixtures use directly), or None
+
+    Returns:
+        A human-readable relative time string, the original string
+        unchanged if it isn't valid ISO-8601, or '' for None
+    """
+    if value is None:
+        return ''
+
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return value
+
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+
+    seconds = (datetime.now(timezone.utc) - value).total_seconds()
+    if seconds < 60:
+        return 'just now'
+
+    for unit_seconds, unit_name in (
+        (86400 * 365, 'year'), (86400 * 30, 'month'), (86400, 'day'),
+        (3600, 'hour'), (60, 'minute'),
+    ):
+        count = int(seconds / unit_seconds)
+        if count >= 1:
+            return f"{count} {unit_name}{'' if count == 1 else 's'} ago"
+
+    return 'just now'
+
+
 def create_app(
     queue_manager: QueueManager,
     worker_instance: Worker,
@@ -75,6 +115,7 @@ def create_app(
 
     app = Flask(__name__)
     app.config['JSON_SORT_KEYS'] = False
+    app.jinja_env.filters['timeago'] = _timeago
 
     # Disable Flask's default logger (use our configured logger instead)
     app.logger.disabled = True
