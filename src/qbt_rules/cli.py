@@ -81,7 +81,10 @@ def get_logging_config(args, config_obj) -> dict:
     Returns:
         Dictionary with 'level' (str, uppercased), 'file' (Path, resolved
         relative to config_dir when given as a relative path), 'trace_mode'
-        (bool), 'http_access' (bool)
+        (bool), 'http_access' (bool), 'client_mode' (bool -- True for any
+        invocation other than --serve, used by setup_logging() to keep
+        console output bare in client mode while the log file still gets
+        full diagnostic detail)
     """
     level = resolve_config(
         getattr(args, 'log_level', None),
@@ -110,6 +113,7 @@ def get_logging_config(args, config_obj) -> dict:
         'file': file_path,
         'trace_mode': trace_mode,
         'http_access': http_access,
+        'client_mode': not getattr(args, 'serve', False),
     }
 
 

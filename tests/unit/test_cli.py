@@ -165,6 +165,26 @@ class TestGetLoggingConfig:
         assert config['file'] == tmp_path / 'logs' / 'qbittorrent.log'
         assert config['trace_mode'] is False
         assert config['http_access'] is False
+        assert config['client_mode'] is True
+
+    def test_client_mode_false_when_serving(self, tmp_path):
+        """--serve should mark client_mode False, so setup_logging() keeps
+        the full console format for server-mode operational output."""
+        args = Namespace(serve=True)
+        config_obj = Mock(config={}, config_dir=tmp_path)
+
+        config = get_logging_config(args, config_obj)
+
+        assert config['client_mode'] is False
+
+    def test_client_mode_true_when_not_serving(self, tmp_path):
+        """Any invocation with --serve not set is client mode."""
+        args = Namespace(serve=False)
+        config_obj = Mock(config={}, config_dir=tmp_path)
+
+        config = get_logging_config(args, config_obj)
+
+        assert config['client_mode'] is True
 
     def test_uses_config_file_values(self, tmp_path):
         """Should use config.yml values"""
