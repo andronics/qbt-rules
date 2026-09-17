@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.1] - 2026-09-17
 
+### 🐛 Bug Fixes
+- fix: CLI job-status/list-jobs attribute bugs and config error duplication
+
+### 🔧 Maintenance
+- chore: Bump version to 0.6.0
+
+
+## [0.6.1] - 2026-09-17
+
 ### Fixed
 - **`--job-status` crashed with `AttributeError`** — `job_status_command` read `args.job_id`, but argparse stores the flag's value in `args.job_status` (no explicit `dest` was set). Every invocation failed before reaching the server.
 - **`--list-jobs` crashed on any job with no context** — the jobs API returns `"context": null` explicitly rather than omitting the key, so `dict.get('context', 'none')` never fell back to its default; formatting the resulting `None` with a column-width spec raised `TypeError`.
