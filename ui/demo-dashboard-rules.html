@@ -502,7 +502,7 @@ function fmtValue(v){
 /* ======================================================================
    State
    ====================================================================== */
-const state = { ruleIdx:0, collapsedRefs:new Set(), refCounter:0 };
+const state = { ruleIdx:0, expandedRefs:new Set(), refCounter:0 };
 
 /* ======================================================================
    Tree rendering — condition nodes: leaf / $ref / {all|any|none:[...]}
@@ -529,8 +529,10 @@ function renderRefChip(refNode){
   // Per-instance collapse state, keyed by traversal order -- stable across
   // re-renders of the same rule since renderSelectedRule() resets the
   // counter and re-walks the tree in the same deterministic order each time.
+  // $refs default to collapsed (opt-in expand) since a rule can nest many of
+  // them and the point of this view is the rule's own structure first.
   const key = 'ref-' + (state.refCounter++);
-  const isCollapsed = state.collapsedRefs.has(key);
+  const isCollapsed = !state.expandedRefs.has(key);
   const summary = Array.isArray(resolved) ? `${resolved.length} action step${resolved.length===1?'':'s'}`
     : resolved ? (Object.keys(resolved)[0] + ' · ' + (resolved[Object.keys(resolved)[0]]||[]).length + ' condition' + ((resolved[Object.keys(resolved)[0]]||[]).length===1?'':'s'))
     : 'unresolved';
@@ -609,7 +611,7 @@ function renderRuleList(){
   el.querySelectorAll('.rule-card').forEach(card => {
     card.addEventListener('click', () => {
       state.ruleIdx = Number(card.dataset.idx);
-      state.collapsedRefs.clear();
+      state.expandedRefs.clear();
       renderRuleList();
       renderSelectedRule();
     });
@@ -643,7 +645,7 @@ function renderSelectedRule(){
   document.getElementById('treeWrap').querySelectorAll('[data-toggle-ref]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const key = e.currentTarget.dataset.toggleRef;
-      if(state.collapsedRefs.has(key)) state.collapsedRefs.delete(key); else state.collapsedRefs.add(key);
+      if(state.expandedRefs.has(key)) state.expandedRefs.delete(key); else state.expandedRefs.add(key);
       renderSelectedRule();
       renderYaml();
     });
