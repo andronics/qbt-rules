@@ -17,8 +17,9 @@ import yaml
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from functools import wraps
+from urllib.parse import urlparse, parse_qs
 
-from flask import Flask, request, jsonify, Response, render_template, g
+from flask import Flask, request, jsonify, Response, render_template, redirect, url_for, g
 
 from qbt_rules.queue_manager import QueueManager, JobStatus
 from qbt_rules.worker import Worker
@@ -50,7 +51,7 @@ def create_app(
         queue_manager: Queue manager instance
         worker_instance: Worker instance
         api_key: API authentication key
-        config: Loaded Config instance, used by the read-only /dashboard/rules
+        config: Loaded Config instance, used by the read-only /rules
             view. Optional (defaults to None) so existing callers that don't
             need the dashboard's rules view are unaffected; that one route
             reports itself unavailable if config wasn't provided
@@ -113,6 +114,51 @@ def require_api_key(f):
             }), 401
 
         return f(*args, **kwargs)
+
+    return decorated_function
+
+
+def _next_url_without_key() -> str:
+    """
+    Build a same-origin path+query string for the current request, with
+    any ?key= stripped out -- used as the "next" destination a rejected
+    dashboard request redirects back to after a successful login.
+
+    Deliberately path-only (no scheme/host): url_for('login', next=...)
+    embeds this in a redirect Location header, and /login later feeds it
+    straight back into another url_for()-free redirect via the login
+    form's action attribute, so there's no way for a crafted next value
+    to send a user off-site.
+    """
+    args = request.args.to_dict(flat=False)
+    args.pop('key', None)
+    query = '&'.join(f'{k}={v}' for k, vs in args.items() for v in vs)
+    return request.path + (f'?{query}' if query else '')
+
+
+def require_api_key_dashboard(f):
+    """
+    Like require_api_key, but for browser-facing dashboard routes
+
+    A scripted API client can handle a JSON 401 -- a human in a browser
+    can't do anything useful with one. On a missing or invalid key,
+    redirects to the /login form instead, carrying the originally
+    requested URL through as ?next= so a successful login lands back
+    where the user was headed.
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        key = request.args.get('key') or request.headers.get('X-API-Key')
+
+        if key and secrets.compare_digest(key, api_key_config):
+            return f(*args, **kwargs)
+
+        login_kwargs = {'next': _next_url_without_key()}
+        if key:
+            # A key was provided but it was wrong, as opposed to a first
+            # visit with no key at all -- show an error on the form.
+            login_kwargs['error'] = 1
+        return redirect(url_for('login', **login_kwargs))
 
     return decorated_function
 
@@ -449,13 +495,40 @@ def register_dashboard_routes(app: Flask):
 
     Server-rendered via Flask + Jinja2 (templates in src/qbt_rules/templates/),
     reusing the same queue/worker/config data the JSON API already exposes --
-    no new query logic. Auth reuses require_api_key via the same ?key=
-    query param the JSON API supports; every internal link carries it
-    forward so navigating between pages stays authenticated.
+    no new query logic. Lives at the site root (/, /jobs, /rules) rather
+    than under a /dashboard/ prefix, distinct from the /api/* and /metrics
+    namespaces. Auth is via require_api_key_dashboard (same ?key= query
+    param the JSON API supports, but redirects a human to /login instead
+    of a JSON 401 on failure); every internal link carries the key forward
+    so navigating between pages stays authenticated.
     """
 
-    @app.route('/dashboard', methods=['GET'])
-    @require_api_key
+    @app.route('/login', methods=['GET'])
+    def login():
+        """
+        API key entry form for browser use
+
+        Not behind require_api_key*  itself -- that would make it
+        impossible to ever reach. `next` (where to go after a successful
+        submission) is parsed down to a same-origin path + query dict
+        rather than used as a raw redirect target, so a crafted `next`
+        can't send anyone off-site: the login form's action is that path,
+        and its query params are resubmitted as hidden fields alongside
+        the newly entered key.
+        """
+        next_url = request.args.get('next') or url_for('dashboard_overview')
+        parsed = urlparse(next_url)
+        next_params = {k: v[0] for k, v in parse_qs(parsed.query).items() if k != 'key'}
+
+        return render_template(
+            'login.html',
+            next_path=parsed.path or url_for('dashboard_overview'),
+            next_params=next_params,
+            error=bool(request.args.get('error')),
+        )
+
+    @app.route('/', methods=['GET'])
+    @require_api_key_dashboard
     def dashboard_overview():
         """Dashboard home: worker/queue status + job counts by status"""
         queue_stats = queue.get_stats()
@@ -481,8 +554,8 @@ def register_dashboard_routes(app: Flask):
             rules_summary=rules_summary,
         )
 
-    @app.route('/dashboard/jobs', methods=['GET'])
-    @require_api_key
+    @app.route('/jobs', methods=['GET'])
+    @require_api_key_dashboard
     def dashboard_jobs():
         """Paginated job list, optionally filtered by status"""
         status = request.args.get('status')
@@ -503,8 +576,8 @@ def register_dashboard_routes(app: Flask):
             status=status,
         )
 
-    @app.route('/dashboard/jobs/<job_id>', methods=['GET'])
-    @require_api_key
+    @app.route('/jobs/<job_id>', methods=['GET'])
+    @require_api_key_dashboard
     def dashboard_job_detail(job_id: str):
         """Single job's full detail, including result/error if present"""
         job = queue.get_job(job_id)
@@ -519,8 +592,8 @@ def register_dashboard_routes(app: Flask):
             error_summary=error_summary,
         ), (200 if job else 404)
 
-    @app.route('/dashboard/rules', methods=['GET'])
-    @require_api_key
+    @app.route('/rules', methods=['GET'])
+    @require_api_key_dashboard
     def dashboard_rules():
         """Read-only rules.yml view, sourced from the same hot-reload-aware
         Config.get_rules() the rules engine itself uses"""
@@ -634,7 +707,7 @@ def run_server(
         """Custom Gunicorn logger that filters out health check and dashboard requests"""
 
         def access(self, resp, req, environ, request_time):
-            """Override access log to filter /api/health and /dashboard* requests"""
+            """Override access log to filter /api/health and dashboard requests"""
             # Only filter if log_http_access is False
             if not log_http_access:
                 # Skip logging for health check endpoint
@@ -644,8 +717,13 @@ def run_server(
                 # auth mechanism is a ?key= query param, and a browsing
                 # session hits many more URLs than a scripted API client
                 # typically would, so logging every one repeats the key
-                # in cleartext far more than the JSON API does
-                if environ.get('PATH_INFO', '').startswith('/dashboard'):
+                # in cleartext far more than the JSON API does. Matched by
+                # an explicit allowlist (dashboard routes live at the site
+                # root, not under a shared /dashboard/ prefix) rather than
+                # "not /api/* and not /metrics", so unrelated 404 probes
+                # (bots, scanners) still get logged as before.
+                path = environ.get('PATH_INFO', '')
+                if path == '/' or path.startswith(('/jobs', '/rules', '/login')):
                     return
                 # Skip logging for the Prometheus scrape endpoint -- polled
                 # every 15-30s by a scraper, same volume rationale as health

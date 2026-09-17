@@ -1215,7 +1215,7 @@ class TestSummarizeError:
 
 
 class TestDashboardRoutes:
-    """Test the read-only web dashboard (/dashboard*)"""
+    """Test the read-only web dashboard (/, /jobs, /rules)"""
 
     @pytest.fixture
     def mock_config(self, mocker):
@@ -1241,24 +1241,100 @@ class TestDashboardRoutes:
     # -- Auth -----------------------------------------------------------
 
     @pytest.mark.parametrize('path', [
-        '/dashboard',
-        '/dashboard/jobs',
-        '/dashboard/jobs/test-job-id-123',
-        '/dashboard/rules',
+        '/',
+        '/jobs',
+        '/jobs/test-job-id-123',
+        '/rules',
     ])
-    def test_requires_api_key(self, client, path):
-        """Every dashboard route 401s without a key, same as the JSON API"""
+    def test_missing_key_redirects_to_login(self, client, path):
+        """Every dashboard route redirects a human to /login without a key,
+        instead of the JSON API's raw 401 -- a browser can't do anything
+        useful with a 401 body."""
         response = client.get(path)
-        assert response.status_code == 401
+        assert response.status_code == 302
+        assert response.headers['Location'].startswith('/login')
+
+    def test_missing_key_redirect_preserves_destination_and_query(self, client):
+        """?next= on the login redirect should round-trip the original
+        path and non-key query params, so a login lands back where the
+        user was headed (e.g. still filtered/paginated)."""
+        from urllib.parse import urlparse, parse_qs
+
+        response = client.get('/jobs?status=failed&limit=10')
+
+        assert response.status_code == 302
+        location = response.headers['Location']
+        next_value = parse_qs(urlparse(location).query)['next'][0]
+        assert next_value == '/jobs?status=failed&limit=10'
+
+    def test_wrong_key_redirects_to_login_with_error(self, client):
+        """An invalid (not just missing) key should also redirect, with
+        ?error=1 so the login form can show a message."""
+        response = client.get('/jobs?key=totally-wrong-key')
+
+        assert response.status_code == 302
+        assert 'error=1' in response.headers['Location']
 
     @pytest.mark.parametrize('path', [
-        '/dashboard',
-        '/dashboard/jobs',
-        '/dashboard/jobs/test-job-id-123',
-        '/dashboard/rules',
+        '/',
+        '/jobs',
+        '/jobs/test-job-id-123',
+        '/rules',
     ])
     def test_accepts_query_param_key(self, client, path):
         response = client.get(f'{path}?key=test-api-key-12345')
+        assert response.status_code == 200
+
+    # -- Login form -------------------------------------------------------
+
+    def test_login_page_renders_without_a_key(self, client):
+        """/login itself must never require a key -- otherwise there's no
+        way to ever reach it."""
+        response = client.get('/login')
+
+        assert response.status_code == 200
+        assert '<form' in response.data.decode()
+
+    def test_login_page_shows_error_message(self, client):
+        response = client.get('/login?error=1')
+
+        assert 'Invalid API key' in response.data.decode()
+
+    def test_login_page_no_error_message_by_default(self, client):
+        response = client.get('/login')
+
+        assert 'Invalid API key' not in response.data.decode()
+
+    def test_login_form_targets_next_path_and_preserves_its_params(self, client):
+        """The rendered form's action should be the bare next path, with
+        its other query params carried as hidden fields (a GET form
+        submission replaces the action URL's own query string, so those
+        params would otherwise be lost on submit)."""
+        response = client.get('/login?next=%2Fjobs%3Fstatus%3Dfailed')
+        body = response.data.decode()
+
+        assert 'action="/jobs"' in body
+        assert 'name="status"' in body
+        assert 'value="failed"' in body
+
+    def test_login_form_ignores_key_in_next_query(self, client):
+        """A stray ?key= inside next's own query string shouldn't be
+        resubmitted as a hidden field -- the visible password field is the
+        only source of the key on submission."""
+        response = client.get('/login?next=%2Fjobs%3Fkey%3Dold-key%26status%3Dfailed')
+        body = response.data.decode()
+
+        assert 'value="old-key"' not in body
+        assert 'name="status"' in body
+
+    def test_login_then_resubmit_reaches_destination(self, client):
+        """End-to-end: get redirected to login, then submit the form's
+        implied request (next path + key) and land on the real page."""
+        redirected = client.get('/jobs?status=failed')
+        login_page = client.get(redirected.headers['Location'])
+        assert login_page.status_code == 200
+
+        response = client.get('/jobs?status=failed&key=test-api-key-12345')
         assert response.status_code == 200
 
     # -- Overview ---------------------------------------------------------
@@ -1269,7 +1345,7 @@ class TestDashboardRoutes:
             'completed': 35, 'failed': 3, 'cancelled': 1,
             'average_execution_time': 1.5,
         }
-        response = client.get('/dashboard?key=test-api-key-12345')
+        response = client.get('/?key=test-api-key-12345')
 
         assert response.status_code == 200
         body = response.data.decode()
@@ -1279,7 +1355,7 @@ class TestDashboardRoutes:
 
     def test_overview_shows_stopped_worker(self, client, mock_worker):
         mock_worker.get_status.return_value = {'running': False, 'last_job_completed': None}
-        response = client.get('/dashboard?key=test-api-key-12345')
+        response = client.get('/?key=test-api-key-12345')
 
         assert response.status_code == 200
         assert 'Stopped' in response.data.decode()
@@ -1288,7 +1364,7 @@ class TestDashboardRoutes:
 
     def test_jobs_list_empty_state(self, client, mock_queue):
         mock_queue.list_jobs.return_value = []
-        response = client.get('/dashboard/jobs?key=test-api-key-12345')
+        response = client.get('/jobs?key=test-api-key-12345')
 
         assert response.status_code == 200
         assert 'No jobs found' in response.data.decode()
@@ -1303,7 +1379,7 @@ class TestDashboardRoutes:
             },
         ]
         mock_queue.count_jobs.return_value = 1
-        response = client.get('/dashboard/jobs?key=test-api-key-12345')
+        response = client.get('/jobs?key=test-api-key-12345')
 
         assert response.status_code == 200
         body = response.data.decode()
@@ -1312,7 +1388,7 @@ class TestDashboardRoutes:
         assert 'badge-completed' in body
 
     def test_jobs_list_passes_status_filter_through(self, client, mock_queue):
-        client.get('/dashboard/jobs?key=test-api-key-12345&status=failed')
+        client.get('/jobs?key=test-api-key-12345&status=failed')
 
         mock_queue.list_jobs.assert_called_once_with(status='failed', limit=50, offset=0)
         mock_queue.count_jobs.assert_called_once_with(status='failed')
@@ -1321,7 +1397,7 @@ class TestDashboardRoutes:
         mock_queue.list_jobs.return_value = [{'job_id': f'job-{i}', 'status': 'completed',
                                                 'context': None, 'created_at': 'now'} for i in range(50)]
         mock_queue.count_jobs.return_value = 200
-        response = client.get('/dashboard/jobs?key=test-api-key-12345&limit=50&offset=0')
+        response = client.get('/jobs?key=test-api-key-12345&limit=50&offset=0')
 
         body = response.data.decode()
         assert 'Next' in body
@@ -1332,7 +1408,7 @@ class TestDashboardRoutes:
             {'job_id': 'job-x', 'status': 'completed', 'context': None, 'created_at': 'now'},
         ]
         mock_queue.count_jobs.return_value = 60
-        response = client.get('/dashboard/jobs?key=test-api-key-12345&limit=50&offset=50')
+        response = client.get('/jobs?key=test-api-key-12345&limit=50&offset=50')
 
         assert 'Previous' in response.data.decode()
 
@@ -1350,7 +1426,7 @@ class TestDashboardRoutes:
             'result': {'torrents_processed': 10, 'actions_executed': 3},
             'error': None,
         }
-        response = client.get('/dashboard/jobs/test-job-id-123?key=test-api-key-12345')
+        response = client.get('/jobs/test-job-id-123?key=test-api-key-12345')
 
         assert response.status_code == 200
         body = response.data.decode()
@@ -1369,7 +1445,7 @@ class TestDashboardRoutes:
             'result': None,
             'error': 'Traceback: something broke',
         }
-        response = client.get('/dashboard/jobs/test-job-id-123?key=test-api-key-12345')
+        response = client.get('/jobs/test-job-id-123?key=test-api-key-12345')
 
         assert 'something broke' in response.data.decode()
 
@@ -1400,7 +1476,7 @@ class TestDashboardRoutes:
             'result': None,
             'error': full_traceback,
         }
-        response = client.get('/dashboard/jobs/test-job-id-123?key=test-api-key-12345')
+        response = client.get('/jobs/test-job-id-123?key=test-api-key-12345')
         body = response.data.decode()
 
         assert 'qbt_rules.errors.ConnectionError: Cannot reach qBittorrent server' in body
@@ -1422,7 +1498,7 @@ class TestDashboardRoutes:
             'result': None,
             'error': 'ValueError: bad input',
         }
-        response = client.get('/dashboard/jobs/test-job-id-123?key=test-api-key-12345')
+        response = client.get('/jobs/test-job-id-123?key=test-api-key-12345')
         body = response.data.decode()
 
         assert 'ValueError: bad input' in body
@@ -1430,7 +1506,7 @@ class TestDashboardRoutes:
 
     def test_job_detail_not_found(self, client, mock_queue):
         mock_queue.get_job.return_value = None
-        response = client.get('/dashboard/jobs/nonexistent?key=test-api-key-12345')
+        response = client.get('/jobs/nonexistent?key=test-api-key-12345')
 
         assert response.status_code == 404
         assert 'not found' in response.data.decode().lower()
@@ -1439,13 +1515,13 @@ class TestDashboardRoutes:
 
     def test_rules_unavailable_without_config(self, client):
         """create_app() without config= -- the shared `app` fixture's case"""
-        response = client.get('/dashboard/rules?key=test-api-key-12345')
+        response = client.get('/rules?key=test-api-key-12345')
 
         assert response.status_code == 200
         assert 'unavailable' in response.data.decode().lower()
 
     def test_rules_renders_when_config_provided(self, client_with_config, mock_config):
-        response = client_with_config.get('/dashboard/rules?key=test-api-key-12345')
+        response = client_with_config.get('/rules?key=test-api-key-12345')
 
         assert response.status_code == 200
         body = response.data.decode()
@@ -1455,7 +1531,7 @@ class TestDashboardRoutes:
 
     def test_rules_empty_state(self, client_with_config, mock_config):
         mock_config.get_rules.return_value = []
-        response = client_with_config.get('/dashboard/rules?key=test-api-key-12345')
+        response = client_with_config.get('/rules?key=test-api-key-12345')
 
         assert response.status_code == 200
         assert 'No rules configured' in response.data.decode()
@@ -1464,9 +1540,9 @@ class TestDashboardRoutes:
 
     def test_run_server_source_filters_dashboard_paths(self):
         """run_server()'s FilteredLogger.access() should also suppress
-        /dashboard* paths, same as /api/health -- checked via source
-        inspection, matching this file's existing convention for
-        run_server()'s Gunicorn-specific internals (see
+        dashboard paths (/, /jobs, /rules, /login), same as /api/health --
+        checked via source inspection, matching this file's existing
+        convention for run_server()'s Gunicorn-specific internals (see
         TestGunicornIntegration above), since invoking a real Gunicorn
         arbiter isn't practical in a unit test."""
         from qbt_rules.server import run_server
@@ -1474,7 +1550,7 @@ class TestDashboardRoutes:
 
         source = inspect.getsource(run_server)
 
-        assert "PATH_INFO', '').startswith('/dashboard')" in source
+        assert "path.startswith(('/jobs', '/rules', '/login'))" in source
 
 
 class TestMetricsRoutes:
@@ -1528,7 +1604,7 @@ class TestMetricsRoutes:
 
     def test_metrics_scheduler_entries_from_dashboard_config(self, mock_queue, mock_worker, mocker):
         """schedule_entry_count is read from the same dashboard_config
-        global the /dashboard/rules route already uses, not a separate
+        global the /rules route already uses, not a separate
         param -- confirm it reflects config.schedule's length"""
         from qbt_rules import metrics
         metrics.init(enabled=True)
