@@ -1,0 +1,864 @@
+<!--
+  qbt-rules :: Metrics + Config/Rules YAML dashboard — concept demo (vanilla HTML/CSS/JS
+  + inline SVG, no frameworks, no external requests). Visually forked from
+  demo-rule-builder-params.html: same dark-first color system, topbar/brand treatment,
+  and — verbatim, copy-pasted CSS classes and JS colorizer — the exact same docked YAML
+  panel component (.yaml-panel/.yaml-head/.yaml-modes/.yaml-mode-btn/.yaml-body/.yline/
+  .yk/.ys/.yn/.yr/.yc/.yp), just re-tabbed per FILE ("rules.yml" / "config.yml") instead
+  of per MODE ("Source" / "Resolved").
+
+  WHAT THIS DEMO IS: a richer evolution of the real, currently-shipped, read-only
+  dashboard (src/qbt_rules/templates/dashboard.html + jobs.html + rules.html, served at
+  /dashboard) — same underlying data shapes, presented as stat tiles / small inline-SVG
+  bar visuals instead of the shipped dashboard's plain stat-grid, PLUS a new "Metrics"
+  surface built on the real /metrics Prometheus endpoint (src/qbt_rules/metrics.py) that
+  the shipped dashboard doesn't expose visually at all today (only as raw Prometheus
+  text exposition for scrapers). All field/metric names below are the real ones:
+
+    /api/stats shape        -> src/qbt_rules/server.py, `stats()` handler (~line 335)
+    Prometheus metric names -> src/qbt_rules/metrics.py (`_actions_executed`,
+                                `_job_duration`, `_scheduler_fires`, `_http_requests`,
+                                `_http_duration`, plus the on-demand state gauges
+                                `qbt_rules_queue_depth` / `qbt_rules_jobs_total` /
+                                `qbt_rules_worker_running` /
+                                `qbt_rules_worker_last_job_completed_timestamp_seconds` /
+                                `qbt_rules_scheduler_entries`)
+
+  The numbers below are MOCK but plausible/varied, formatted the way the real API
+  formats them (average_execution_time as "0.02s", timestamps as ISO-8601) — this is a
+  static concept demo, not wired to a running server.
+
+  YAML PANEL CONTENT: real excerpts, not placeholders —
+    "rules.yml" tab -> advanced-rules-example.yml (refs.vars, refs.conditions, and the
+                        first few rules of `rules:`) — the same example rule set every
+                        other ui/demo-*.html already uses, kept consistent on purpose.
+    "config.yml" tab -> config/config.default.yml, every real section verbatim (server/
+                         queue/client/qbittorrent/rules/schedule/notifications/
+                         integrations/metrics/logging/engine), trimmed of the source
+                         file's per-field env-var comments and the docker-compose
+                         example block at the end (283 lines -> ~100) for panel
+                         readability — not a re-written or invented config.
+  Both are READ-ONLY. No edit affordances, no fake "Save" button — there is no
+  write-back API for rules.yml/config.yml in the real server today, and implying one
+  here would misrepresent what the app can currently do.
+
+  JUDGMENT CALLS (documented per this file's brief):
+  - Built as ONE new page pairing "metrics dashboard" + "YAML panel for rules/config",
+    per the literal ask, rather than rebuilding the shipped dashboard's Overview/Jobs/
+    Rules pages wholesale. A top nav row (Overview / Jobs / Rules / Metrics) is shown
+    for context — only "Metrics" is live in this demo; the other three are inert stubs
+    that surface a one-line status message pointing at the real, already-shipped
+    /dashboard equivalents, so this reads as an addition to the existing dashboard
+    rather than a competing redesign of parts that already work.
+  - "Actions executed" and "HTTP requests" are per-label Prometheus counters with many
+    possible label combinations in production; shown here as a fixed, representative
+    handful of rows (top action types / top endpoints) rather than an exhaustive or
+    scrollable-infinite table, since a concept demo doesn't need to model cardinality.
+  - qbt_rules_job_duration_seconds and qbt_rules_http_request_duration_seconds are
+    Histograms (bucketed), not simple gauges — summarized here as count + average
+    rather than rendering a full bucket histogram, which would need real bucket
+    boundaries from a live scrape to be meaningful rather than decorative.
+
+  NOT part of this demo: no node canvas, no rule editing, no live data fetching, no
+  drag/drop — those are the concerns of the other demo-rule-builder*.html variants.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qbt-rules — Metrics + Config dashboard (concept demo)</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --bg-app:#0a0c11;
+    --bg-panel:#12151c;
+    --bg-panel-2:#171b25;
+    --bg-canvas:#0d1017;
+    --dot: rgba(255,255,255,.08);
+    --border:#262b38;
+    --border-strong:#3a4152;
+    --fg:#e7e9f0;
+    --fg-dim:#aab0c0;
+    --muted:#747c90;
+    --accent:#5b8cff;
+    --accent-soft:rgba(91,140,255,.16);
+    --danger:#f43f5e;
+
+    --c-all:#8b5cf6;   --c-all-bg:rgba(139,92,246,.14);
+    --c-any:#f59e0b;   --c-any-bg:rgba(245,158,11,.14);
+    --c-none:#f43f5e;  --c-none-bg:rgba(244,63,94,.14);
+    --c-leaf:#3b82f6;  --c-leaf-bg:rgba(59,130,246,.12);
+    --c-ref:#2dd4bf;   --c-ref-bg:rgba(45,212,191,.08);
+    --c-action:#22c55e;--c-action-bg:rgba(34,197,94,.12);
+
+    --yaml-key:#7dd3fc;
+    --yaml-str:#a7e08a;
+    --yaml-num:#f5b962;
+    --yaml-ref:#5eead4;
+    --yaml-comment:#5b6577;
+    --yaml-punct:#6b7280;
+
+    --radius: 10px;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Code", Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      color-scheme: light;
+      --bg-app:#eef0f4; --bg-panel:#ffffff; --bg-panel-2:#f5f6f9; --bg-canvas:#e7e9ef;
+      --dot: rgba(20,25,40,.10);
+      --border:#dbdfe8; --border-strong:#c2c8d6;
+      --fg:#161a22; --fg-dim:#454d5e; --muted:#6b7280;
+      --accent:#2f5ce0; --accent-soft:rgba(47,92,224,.12);
+      --c-all-bg:rgba(139,92,246,.12); --c-any-bg:rgba(245,158,11,.12);
+      --c-none-bg:rgba(244,63,94,.12); --c-leaf-bg:rgba(59,130,246,.10);
+      --c-ref-bg:rgba(45,212,191,.10); --c-action-bg:rgba(34,197,94,.10);
+      --yaml-comment:#8a93a6; --yaml-punct:#8a93a6;
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg-app); color:var(--fg);
+    font-family:var(--font-ui);
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  button{font-family:inherit;}
+  ::selection{background:var(--accent-soft);}
+
+  #app{ display:grid; grid-template-rows:auto 1fr auto; height:100vh; min-width:920px; }
+
+  /* ---------- topbar (verbatim from demo-rule-builder-params.html) ---------- */
+  .topbar{
+    display:flex; align-items:center; gap:1rem;
+    padding:.6rem 1rem; border-bottom:1px solid var(--border);
+    background:var(--bg-panel);
+  }
+  .brand{ display:flex; align-items:baseline; gap:.5rem; white-space:nowrap; }
+  .brand b{ font-size:.95rem; letter-spacing:.02em; }
+  .brand span{ font-size:.72rem; color:var(--muted); font-family:var(--font-mono); }
+  .rule-tabs{ display:flex; gap:.4rem; flex:1; min-width:0; }
+  .rule-tab{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2);
+    color:var(--fg-dim); border-radius:999px; padding:.4rem .85rem; font-size:.78rem;
+    cursor:pointer; display:flex; align-items:center; gap:.45rem; max-width:340px;
+  }
+  .rule-tab .ctx{ font-family:var(--font-mono); font-size:.68rem; color:var(--muted); }
+  .rule-tab:hover{ border-color:var(--border-strong); color:var(--fg); }
+  .rule-tab.active{ background:var(--accent-soft); border-color:var(--accent); color:var(--fg); }
+  .rule-tab.stub{ opacity:.55; }
+  .topbar-actions{ display:flex; gap:.4rem; align-items:center; }
+  .icon-btn{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2); color:var(--fg-dim);
+    border-radius:8px; padding:.4rem .6rem; font-size:.75rem; cursor:pointer; display:flex; gap:.35rem; align-items:center;
+  }
+  .icon-btn:hover{ color:var(--fg); border-color:var(--border-strong); }
+
+  /* ---------- workspace grid ---------- */
+  .workspace{ display:grid; grid-template-columns:1fr 420px; min-height:0; transition:grid-template-columns .18s ease; }
+  .workspace.no-yaml{ grid-template-columns:1fr 0px; }
+
+  /* ---------- dashboard content ---------- */
+  .dash{ overflow-y:auto; padding:1.1rem 1.3rem 2rem; background:var(--bg-canvas); }
+  .dash-section{ margin-bottom:1.6rem; }
+  .dash-section h3{
+    margin:0 0 .7rem; font-size:.7rem; text-transform:uppercase; letter-spacing:.09em;
+    color:var(--muted); font-weight:700; display:flex; align-items:center; gap:.5rem;
+  }
+  .dash-section h3 .src{
+    font-family:var(--font-mono); font-size:.6rem; text-transform:none; letter-spacing:0;
+    color:var(--muted); background:var(--bg-panel-2); border:1px solid var(--border);
+    border-radius:5px; padding:.08rem .4rem; font-weight:500;
+  }
+
+  .panel{
+    background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius);
+    padding:.9rem 1rem;
+  }
+
+  .stat-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(128px,1fr)); gap:.7rem; }
+  .stat-card{
+    background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius);
+    padding:.7rem .85rem; display:flex; flex-direction:column; gap:.15rem;
+  }
+  .stat-card .val{ font-size:1.5rem; font-weight:700; font-family:var(--font-mono); line-height:1.15; }
+  .stat-card .lbl{ font-size:.68rem; color:var(--muted); }
+  .stat-card .sub{ font-size:.63rem; color:var(--fg-dim); font-family:var(--font-mono); margin-top:.15rem; }
+  .stat-card.ok .val{ color:var(--c-action); }
+  .stat-card.warn .val{ color:var(--c-any); }
+  .stat-card.err .val{ color:var(--danger); }
+  .stat-card.accent .val{ color:var(--accent); }
+
+  /* jobs-by-status stacked bar */
+  .stack-bar{ display:flex; height:22px; border-radius:6px; overflow:hidden; border:1px solid var(--border); }
+  .stack-seg{ height:100%; }
+  .stack-legend{ display:flex; flex-wrap:wrap; gap:.6rem 1rem; margin-top:.6rem; }
+  .stack-legend-item{ display:flex; align-items:center; gap:.4rem; font-size:.7rem; color:var(--fg-dim); }
+  .stack-legend-dot{ width:8px; height:8px; border-radius:50%; flex:none; }
+  .stack-legend-item b{ color:var(--fg); font-family:var(--font-mono); }
+
+  /* generic labeled horizontal bar rows (actions / http endpoints) */
+  .bar-rows{ display:flex; flex-direction:column; gap:.55rem; }
+  .bar-row{ display:grid; grid-template-columns:168px 1fr 56px; align-items:center; gap:.6rem; }
+  .bar-row .rlabel{ font-family:var(--font-mono); font-size:.7rem; color:var(--fg-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bar-row .rtrack{ position:relative; height:14px; background:var(--bg-panel-2); border-radius:4px; overflow:hidden; border:1px solid var(--border); }
+  .bar-row .rfill{ position:absolute; left:0; top:0; bottom:0; border-radius:4px 0 0 4px; }
+  .bar-row .rval{ font-family:var(--font-mono); font-size:.68rem; color:var(--fg); text-align:right; }
+  .bar-row .rval .fail{ color:var(--danger); }
+
+  table.mtable{ width:100%; border-collapse:collapse; font-size:.74rem; }
+  table.mtable th, table.mtable td{ text-align:left; padding:.4rem .55rem; border-bottom:1px solid var(--border); }
+  table.mtable th{ color:var(--muted); font-weight:600; font-size:.64rem; text-transform:uppercase; letter-spacing:.05em; }
+  table.mtable tbody tr:last-child td{ border-bottom:none; }
+  table.mtable td.mono{ font-family:var(--font-mono); }
+  table.mtable td.status-2xx{ color:var(--c-action); }
+  table.mtable td.status-4xx, table.mtable td.status-5xx{ color:var(--danger); }
+
+  .metric-name-list{ display:flex; flex-direction:column; gap:.35rem; }
+  .metric-name-row{
+    display:flex; align-items:baseline; gap:.6rem; font-family:var(--font-mono); font-size:.68rem;
+    padding:.3rem .5rem; background:var(--bg-panel-2); border:1px solid var(--border); border-radius:6px;
+    flex-wrap:wrap;
+  }
+  .metric-name-row .mn{ color:var(--yaml-ref); font-weight:600; }
+  .metric-name-row .mt{
+    font-size:.6rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+    border:1px solid var(--border); border-radius:4px; padding:.05rem .35rem;
+  }
+  .metric-name-row .mh{ color:var(--fg-dim); font-size:.65rem; flex:1; min-width:200px; }
+
+  .badge{ display:inline-block; padding:.15rem .55rem; border-radius:999px; font-size:.68rem; font-weight:600; font-family:var(--font-mono); }
+  .badge.running{ background:var(--c-action-bg); color:var(--c-action); }
+  .badge.stopped{ background:rgba(244,63,94,.14); color:var(--danger); }
+
+  .stub-msg{
+    font-size:.78rem; color:var(--muted); background:var(--bg-panel); border:1px dashed var(--border-strong);
+    border-radius:var(--radius); padding:1.2rem; text-align:center; margin-top:.4rem;
+  }
+
+  /* ---------- yaml panel (verbatim classes from demo-rule-builder-params.html) ---------- */
+  .yaml-panel{ display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border); background:var(--bg-panel); overflow:hidden; }
+  .yaml-head{ display:flex; align-items:center; gap:.5rem; padding:.55rem .75rem; border-bottom:1px solid var(--border); }
+  .yaml-head .title{ font-size:.74rem; color:var(--fg-dim); font-family:var(--font-mono); flex:1; }
+  .yaml-modes{ display:flex; background:var(--bg-panel-2); border:1px solid var(--border); border-radius:7px; overflow:hidden; }
+  .yaml-mode-btn{
+    appearance:none; border:none; background:transparent; color:var(--muted); font-size:.68rem;
+    padding:.3rem .55rem; cursor:pointer; font-family:var(--font-mono);
+  }
+  .yaml-mode-btn.active{ background:var(--accent); color:#fff; }
+  .yaml-body{ flex:1; overflow:auto; padding:.7rem .5rem; }
+  .yaml-body pre{ margin:0; font-family:var(--font-mono); font-size:.72rem; line-height:1.6; }
+  .yline{ padding:0 .5rem 0 .35rem; border-radius:4px; white-space:pre; cursor:default; }
+  .yk{ color:var(--yaml-key); }
+  .ys{ color:var(--yaml-str); }
+  .yn{ color:var(--yaml-num); }
+  .yr{ color:var(--yaml-ref); font-weight:600; }
+  .yc{ color:var(--yaml-comment); font-style:italic; }
+  .yp{ color:var(--yaml-punct); }
+  .yaml-note{
+    font-size:.63rem; color:var(--muted); padding:.5rem .75rem; border-top:1px solid var(--border);
+    background:var(--bg-panel-2); line-height:1.5;
+  }
+
+  .yaml-collapsed-tab{
+    position:absolute; right:0; top:64px; writing-mode:vertical-rl; background:var(--bg-panel);
+    border:1px solid var(--border); border-right:none; border-radius:8px 0 0 8px; padding:.5rem .3rem;
+    font-size:.68rem; color:var(--muted); cursor:pointer; display:none; z-index:5;
+  }
+  .workspace.no-yaml .yaml-collapsed-tab{ display:block; }
+  .workspace.no-yaml .yaml-panel{ display:none; }
+
+  /* ---------- statusbar (verbatim) ---------- */
+  .statusbar{
+    padding:.4rem 1rem; border-top:1px solid var(--border); background:var(--bg-panel);
+    font-size:.7rem; color:var(--muted); display:flex; justify-content:space-between; gap:1rem;
+  }
+  .statusbar b{ color:var(--fg-dim); }
+
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:6px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand"><b>qbt-rules</b><span>metrics + config dashboard concept</span></div>
+    <div class="rule-tabs" id="navTabs"></div>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="btnYamlToggle" title="Toggle YAML panel">YAML ▸</button>
+    </div>
+  </header>
+
+  <div class="workspace" id="workspace" style="position:relative;">
+
+    <div class="dash" id="dash"><!-- rendered by renderDash() --></div>
+
+    <button class="yaml-collapsed-tab" id="yamlTab">YAML ▸</button>
+    <aside class="yaml-panel" id="yamlPanel">
+      <div class="yaml-head">
+        <span class="title" id="yamlFileLabel">rules.yml</span>
+        <div class="yaml-modes" id="yamlModes">
+          <button class="yaml-mode-btn active" data-file="rules">rules.yml</button>
+          <button class="yaml-mode-btn" data-file="config">config.yml</button>
+        </div>
+      </div>
+      <div class="yaml-body"><pre id="yamlOut"></pre></div>
+      <div class="yaml-note" id="yamlNote"></div>
+    </aside>
+
+  </div>
+
+  <footer class="statusbar">
+    <span id="statusLeft">Ready.</span>
+    <span id="statusRight">mock data — concept demo, not connected to a running server</span>
+  </footer>
+
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ======================================================================
+   Mock data — shapes match the REAL /api/stats and /metrics output
+   ====================================================================== */
+
+// Matches server.py's stats() handler response body exactly
+const STATS = {
+  jobs: { total: 1842, pending: 2, processing: 1, completed: 1791, failed: 39, cancelled: 9 },
+  performance: { average_execution_time: '0.87s' },
+  queue: { backend: 'SQLiteQueue', depth: 2 },
+  worker: { status: 'running', last_job_completed: '2026-09-17T15:42:11+00:00' },
+  timestamp: '2026-09-17T15:44:03.221904+00:00',
+};
+
+// Matches metrics.py's qbt_rules_actions_executed_total{action_type,result}
+const ACTIONS_EXECUTED = [
+  { action_type: 'add_tag', success: 3120, failure: 4 },
+  { action_type: 'delete_torrent', success: 891, failure: 12 },
+  { action_type: 'set_category', success: 604, failure: 1 },
+  { action_type: 'force_start', success: 388, failure: 0 },
+  { action_type: 'set_upload_limit', success: 233, failure: 0 },
+  { action_type: 'notify', success: 118, failure: 6 },
+  { action_type: 'arr_blocklist', success: 27, failure: 2 },
+];
+
+// Matches metrics.py's qbt_rules_http_requests_total{method,endpoint,status}
+const HTTP_REQUESTS = [
+  { method: 'POST', endpoint: 'execute', status: 200, count: 1842, avg_ms: 812 },
+  { method: 'GET',  endpoint: 'list_jobs', status: 200, count: 964, avg_ms: 14 },
+  { method: 'GET',  endpoint: 'job_status', status: 200, count: 731, avg_ms: 6 },
+  { method: 'GET',  endpoint: 'job_status', status: 404, count: 18, avg_ms: 4 },
+  { method: 'GET',  endpoint: 'stats', status: 200, count: 402, avg_ms: 9 },
+  { method: 'DELETE', endpoint: 'cancel_job', status: 200, count: 31, avg_ms: 11 },
+  { method: 'DELETE', endpoint: 'cancel_job', status: 400, count: 5, avg_ms: 5 },
+  { method: 'GET',  endpoint: 'health', status: 200, count: 8640, avg_ms: 1 },
+];
+
+// Matches metrics.py's qbt_rules_scheduler_fires_total{result} and qbt_rules_scheduler_entries
+const SCHEDULER = { fires_success: 214, fires_failure: 3, entries: 2 };
+
+// Raw Prometheus metric names actually exposed at /metrics (metrics.py)
+const METRIC_NAMES = [
+  { name: 'qbt_rules_actions_executed_total', type: 'counter', help: 'Total actions executed by the rules engine (excludes dry-run and idempotent skips)' },
+  { name: 'qbt_rules_job_duration_seconds', type: 'histogram', help: 'Job execution duration in seconds' },
+  { name: 'qbt_rules_scheduler_fires_total', type: 'counter', help: 'Total internal cron scheduler fires' },
+  { name: 'qbt_rules_http_requests_total', type: 'counter', help: 'Total HTTP requests' },
+  { name: 'qbt_rules_http_request_duration_seconds', type: 'histogram', help: 'HTTP request duration in seconds' },
+  { name: 'qbt_rules_queue_depth', type: 'gauge', help: 'Current pending queue depth' },
+  { name: 'qbt_rules_jobs_total', type: 'gauge', help: 'Total jobs by status' },
+  { name: 'qbt_rules_worker_running', type: 'gauge', help: 'Worker thread running (1) or not (0)' },
+  { name: 'qbt_rules_worker_last_job_completed_timestamp_seconds', type: 'gauge', help: 'Unix timestamp of the last job the worker completed' },
+  { name: 'qbt_rules_scheduler_entries', type: 'gauge', help: 'Number of configured schedule entries' },
+];
+
+const STATUS_COLOR = {
+  completed: 'var(--c-action)', pending: 'var(--c-any)', processing: 'var(--accent)',
+  failed: 'var(--danger)', cancelled: 'var(--muted)',
+};
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtNum(n){ return n.toLocaleString('en-US'); }
+
+/* ======================================================================
+   Dashboard rendering
+   ====================================================================== */
+function renderOverviewSection(){
+  const j = STATS.jobs;
+  return `
+    <div class="dash-section">
+      <h3>Overview <span class="src">/api/stats</span></h3>
+      <div class="stat-grid">
+        <div class="stat-card ${STATS.worker.status==='running'?'ok':'err'}">
+          <div class="val"><span class="badge ${STATS.worker.status}">${STATS.worker.status}</span></div>
+          <div class="lbl">Worker</div>
+        </div>
+        <div class="stat-card accent"><div class="val">${STATS.queue.backend}</div><div class="lbl">Queue backend</div></div>
+        <div class="stat-card"><div class="val">${STATS.queue.depth}</div><div class="lbl">Queue depth</div></div>
+        <div class="stat-card"><div class="val">${fmtNum(j.total)}</div><div class="lbl">Total jobs</div></div>
+        <div class="stat-card"><div class="val">${STATS.performance.average_execution_time}</div><div class="lbl">Avg execution time</div></div>
+        <div class="stat-card"><div class="val" style="font-size:.95rem">${new Date(STATS.worker.last_job_completed).toLocaleString()}</div><div class="lbl">Last job completed</div></div>
+      </div>
+    </div>`;
+}
+
+function renderJobsByStatusSection(){
+  const j = STATS.jobs;
+  const order = ['completed','pending','processing','failed','cancelled'];
+  const total = j.total || 1;
+  const segs = order.map(k => `<div class="stack-seg" style="width:${(j[k]/total*100).toFixed(2)}%; background:${STATUS_COLOR[k]}" title="${k}: ${j[k]}"></div>`).join('');
+  const legend = order.map(k => `<div class="stack-legend-item"><span class="stack-legend-dot" style="background:${STATUS_COLOR[k]}"></span>${k} <b>${fmtNum(j[k])}</b></div>`).join('');
+  return `
+    <div class="dash-section">
+      <h3>Jobs by status <span class="src">qbt_rules_jobs_total{status}</span></h3>
+      <div class="panel">
+        <div class="stack-bar">${segs}</div>
+        <div class="stack-legend">${legend}</div>
+      </div>
+    </div>`;
+}
+
+function renderActionsSection(){
+  const max = Math.max(...ACTIONS_EXECUTED.map(a => a.success + a.failure));
+  const rows = ACTIONS_EXECUTED.map(a => {
+    const total = a.success + a.failure;
+    const successPct = (a.success / max * 100).toFixed(2);
+    const failPct = (a.failure / max * 100).toFixed(2);
+    return `<div class="bar-row">
+      <div class="rlabel">${escapeHtml(a.action_type)}</div>
+      <div class="rtrack">
+        <div class="rfill" style="width:${successPct}%; background:var(--c-action)"></div>
+        <div class="rfill" style="left:${successPct}%; width:${failPct}%; background:var(--danger)"></div>
+      </div>
+      <div class="rval">${fmtNum(total)}${a.failure ? ` <span class="fail">(${a.failure} fail)</span>` : ''}</div>
+    </div>`;
+  }).join('');
+  return `
+    <div class="dash-section">
+      <h3>Actions executed <span class="src">qbt_rules_actions_executed_total{action_type,result}</span></h3>
+      <div class="panel"><div class="bar-rows">${rows}</div></div>
+    </div>`;
+}
+
+function renderHttpSection(){
+  const rows = HTTP_REQUESTS.map(r => {
+    const cls = r.status < 300 ? 'status-2xx' : (r.status < 500 ? 'status-4xx' : 'status-5xx');
+    return `<tr>
+      <td class="mono">${r.method}</td>
+      <td class="mono">${escapeHtml(r.endpoint)}</td>
+      <td class="mono ${cls}">${r.status}</td>
+      <td class="mono">${fmtNum(r.count)}</td>
+      <td class="mono">${r.avg_ms} ms</td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="dash-section">
+      <h3>HTTP requests <span class="src">qbt_rules_http_requests_total / qbt_rules_http_request_duration_seconds</span></h3>
+      <div class="panel">
+        <table class="mtable">
+          <thead><tr><th>Method</th><th>Endpoint</th><th>Status</th><th>Count</th><th>Avg duration</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderSchedulerSection(){
+  const total = SCHEDULER.fires_success + SCHEDULER.fires_failure;
+  return `
+    <div class="dash-section">
+      <h3>Scheduler <span class="src">qbt_rules_scheduler_fires_total{result} / qbt_rules_scheduler_entries</span></h3>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="val">${SCHEDULER.entries}</div><div class="lbl">Configured entries</div></div>
+        <div class="stat-card ok"><div class="val">${fmtNum(SCHEDULER.fires_success)}</div><div class="lbl">Fires — success</div></div>
+        <div class="stat-card ${SCHEDULER.fires_failure ? 'err' : ''}"><div class="val">${fmtNum(SCHEDULER.fires_failure)}</div><div class="lbl">Fires — failure</div></div>
+        <div class="stat-card"><div class="val">${total ? ((SCHEDULER.fires_success/total)*100).toFixed(1) : '0.0'}%</div><div class="lbl">Success rate</div></div>
+      </div>
+    </div>`;
+}
+
+function renderMetricNamesSection(){
+  const rows = METRIC_NAMES.map(m => `<div class="metric-name-row">
+      <span class="mn">${m.name}</span><span class="mt">${m.type}</span><span class="mh">${escapeHtml(m.help)}</span>
+    </div>`).join('');
+  return `
+    <div class="dash-section">
+      <h3>Exposed metrics <span class="src">GET /metrics — Prometheus exposition format</span></h3>
+      <div class="panel"><div class="metric-name-list">${rows}</div></div>
+    </div>`;
+}
+
+function renderDash(){
+  document.getElementById('dash').innerHTML =
+    renderOverviewSection() +
+    renderJobsByStatusSection() +
+    renderActionsSection() +
+    renderHttpSection() +
+    renderSchedulerSection() +
+    renderMetricNamesSection();
+}
+
+function renderStub(label, real){
+  document.getElementById('dash').innerHTML = `
+    <div class="dash-section">
+      <div class="stub-msg">
+        "${label}" isn't part of this concept demo — it's the real, already-shipped
+        <span style="font-family:var(--font-mono)">${real}</span> page. This demo only
+        adds the new "Metrics" view + the docked rules.yml / config.yml panel.
+      </div>
+    </div>`;
+}
+
+/* ======================================================================
+   Top nav (Overview / Jobs / Rules are stubs pointing at the real shipped
+   dashboard; Metrics is the live section this demo actually builds)
+   ====================================================================== */
+const NAV = [
+  { key:'overview', label:'Overview', real:'/dashboard' },
+  { key:'jobs',      label:'Jobs',      real:'/dashboard/jobs' },
+  { key:'rules',     label:'Rules',     real:'/dashboard/rules' },
+  { key:'metrics',   label:'Metrics',   real:null },
+];
+let activeNav = 'metrics';
+
+function renderNav(){
+  const el = document.getElementById('navTabs');
+  el.innerHTML = '';
+  NAV.forEach(n => {
+    const b = document.createElement('button');
+    b.className = 'rule-tab' + (n.key===activeNav ? ' active':'') + (n.real ? ' stub':'');
+    b.innerHTML = `${escapeHtml(n.label)}` + (n.real ? ` <span class="ctx">${n.real}</span>` : '');
+    b.addEventListener('click', () => {
+      activeNav = n.key;
+      renderNav();
+      if(n.key === 'metrics') renderDash();
+      else renderStub(n.label, n.real);
+    });
+    el.appendChild(b);
+  });
+}
+
+/* ======================================================================
+   YAML panel — same colorizer approach as demo-rule-builder-params.html's
+   colorizeYamlLine()/colorizeValue()/colorizeValuePlain(), adapted to plain
+   static line arrays (no per-node id/highlight linking needed here).
+   ====================================================================== */
+function colorizeYamlLine(text){
+  const hashIdx = text.indexOf('#');
+  let code = text, comment = '';
+  if(hashIdx >= 0){ code = text.slice(0,hashIdx); comment = text.slice(hashIdx); }
+
+  const leadMatch = code.match(/^(\s*(?:-\s*)?)/);
+  const lead = leadMatch ? leadMatch[0] : '';
+  let rest = code.slice(lead.length);
+  let out = escapeHtml(lead);
+
+  const kvMatch = rest.match(/^([A-Za-z_][\w.]*)\s*:\s*(.*)$/);
+  if(kvMatch){
+    const key = kvMatch[1], val = kvMatch[2];
+    out += `<span class="yk">${escapeHtml(key)}</span><span class="yp">:</span>` + (val ? ' ' + colorizeValue(val) : '');
+  } else if(rest.trim().startsWith('$ref:')){
+    const afterColon = rest.trim().slice(5).trim();
+    out += `<span class="yr">$ref</span><span class="yp">:</span> <span class="yr">${escapeHtml(afterColon)}</span>`;
+  } else {
+    out += colorizeValue(rest);
+  }
+  if(comment) out += `<span class="yc">${escapeHtml(comment)}</span>`;
+  return out;
+}
+function colorizeValue(v){
+  const t = v.trim();
+  if(!t) return '';
+  if(t.startsWith('$ref:')) return `<span class="yr">${escapeHtml(t)}</span>`;
+  if(/\$\{[^}]+\}/.test(t)){
+    const parts = t.split(/(\$\{[^}]+\})/g);
+    return parts.map(p => /^\$\{[^}]+\}$/.test(p) ? `<span class="yr">${escapeHtml(p)}</span>` : colorizeValuePlain(p)).join('');
+  }
+  return colorizeValuePlain(t);
+}
+function colorizeValuePlain(t){
+  if(!t) return '';
+  if(/^["'].*["']$/.test(t)) return `<span class="ys">${escapeHtml(t)}</span>`;
+  if(/^-?\d+(\.\d+)?$/.test(t)) return `<span class="yn">${escapeHtml(t)}</span>`;
+  if(/^(true|false)$/.test(t)) return `<span class="yn">${escapeHtml(t)}</span>`;
+  if(t.startsWith('[') || t.startsWith('{')) return `<span class="yp">${escapeHtml(t)}</span>`;
+  return escapeHtml(t);
+}
+function renderYamlLines(text){
+  return text.split('\n').map(line => `<div class="yline">${colorizeYamlLine(line)}</div>`).join('');
+}
+
+// Real excerpt: advanced-rules-example.yml — refs.vars, refs.conditions (trimmed to the
+// tracker/seeding/content groups), and the first 4 of its 10 `rules:` entries. The full
+// file is 473 lines; every other ui/demo-rule-builder*.html uses this same example set.
+const RULES_YML = `# Advanced qBittorrent Rules Configuration with Resolver Layer
+# Demonstrates comprehensive use of refs with 30+ reusable components and 10 complex rules
+#
+# (excerpt — full file is advanced-rules-example.yml, 473 lines, 10 rules total)
+
+refs:
+  vars:
+    min_ratio_private: 2.0          # Private trackers require higher ratios
+    min_ratio_public: 1.0           # Public trackers are more lenient
+    excellent_ratio: 5.0            # Consider this "well seeded"
+    completion_age_short: "7 days"
+    completion_age_medium: "30 days"
+    completion_age_long: "90 days"
+    large_file_bytes: 53687091200   # 50 GB
+    huge_file_bytes: 107374182400   # 100 GB
+    protected_categories:
+      - keep
+      - seedbox
+      - long-term
+      - permanent
+      - archive
+    hd_content_pattern: '(?i).*(1080p|2160p|4k|uhd|bluray|remux).*'
+    tv_show_pattern: '(?i).*(s\\d{2}e\\d{2}|season[\\s._-]*\\d+).*'
+
+  conditions:
+    private-tracker:
+      any:
+        - field: trackers.url
+          operator: contains
+          value: "privatehd.to"
+        - field: trackers.url
+          operator: contains
+          value: "torrentleech.org"
+        - field: trackers.url
+          operator: contains
+          value: "iptorrents.com"
+
+    well-seeded-private:
+      all:
+        - field: info.ratio
+          operator: ">="
+          value: \${vars.min_ratio_private}
+        - field: info.completion_on
+          operator: older_than
+          value: \${vars.completion_age_medium}
+
+    under-seeded-private:
+      all:
+        - field: info.ratio
+          operator: "<"
+          value: \${vars.min_ratio_private}
+        - field: info.state
+          operator: in
+          value:
+            - uploading
+            - stalledUP
+            - queuedUP
+
+    hd-content:
+      all:
+        - field: info.name
+          operator: matches
+          value: \${vars.hd_content_pattern}
+
+rules:
+  # Rule 1: Private Tracker Under-Seeding Emergency
+  - name: "Force seed private tracker torrents under ratio"
+    enabled: true
+    context: download-finished
+    stop_on_match: false
+    conditions:
+      - $ref: conditions.private-tracker
+      - $ref: conditions.under-seeded-private
+      - none:
+          - $ref: conditions.protected-content
+    actions:
+      - $ref: actions.force-seed-private
+
+  # Rule 2: Private Tracker Cleanup - Well Seeded
+  - name: "Cleanup well-seeded private tracker torrents"
+    enabled: true
+    context: weekly-cleanup
+    conditions:
+      - $ref: conditions.private-tracker
+      - $ref: conditions.well-seeded-private
+      - none:
+          - $ref: conditions.protected-content
+    actions:
+      - $ref: actions.safe-delete
+
+  # Rule 3: Public Tracker Quick Cleanup
+  - name: "Cleanup public tracker torrents after medium term"
+    enabled: true
+    context: weekly-cleanup
+    conditions:
+      - $ref: conditions.public-tracker
+      - $ref: conditions.well-seeded-public
+      - none:
+          - $ref: conditions.protected-content
+          - $ref: conditions.hd-content
+    actions:
+      - $ref: actions.safe-delete
+
+  # Rule 4: HD Content Auto-Organization
+  - name: "Auto-categorize and prioritize HD content from private trackers"
+    enabled: true
+    context: torrent-imported
+    stop_on_match: false
+    conditions:
+      - $ref: conditions.private-tracker
+      - $ref: conditions.hd-content
+      - any:
+          - $ref: conditions.tv-show
+          - $ref: conditions.movie
+    actions:
+      - $ref: actions.process-hd-content
+`;
+
+// config/config.default.yml, every real section verbatim, trimmed of per-field
+// env-var comments and the docker-compose example block (283 lines -> ~100)
+const CONFIG_YML = `# qbt-rules v0.4.0 - Configuration Settings
+#
+# This file contains all configuration for the qbt-rules client-server architecture.
+# For rules definitions, see rules.yml
+#
+# Configuration Resolution Order (highest to lowest priority):
+# 1. CLI flags (e.g., --server-port 5000)
+# 2. Environment variable _FILE variant (e.g., QBT_RULES_SERVER_API_KEY_FILE=/secrets/key)
+# 3. Environment variable (e.g., QBT_RULES_SERVER_PORT=5000)
+# 4. This config file
+# 5. Default values
+#
+# ALL environment variables support _FILE variants for secret management.
+
+server:
+  # Server bind address (0.0.0.0 for all interfaces, 127.0.0.1 for localhost only)
+  host: 0.0.0.0
+  # Server port
+  port: 5000
+  # API authentication key (REQUIRED - generate with: openssl rand -hex 32)
+  api_key: your-secure-api-key-here-generate-a-random-key
+  # Gunicorn worker processes (1 is sufficient for home use)
+  workers: 1
+
+queue:
+  # Queue backend: 'sqlite' (default) or 'redis'
+  backend: sqlite
+  # SQLite database path (only used when backend=sqlite)
+  sqlite_path: /config/qbt-rules.db
+  # Redis connection URL (only used when backend=redis)
+  # redis_url: redis://localhost:6379/0
+  # Job retention period - how long to keep completed/failed jobs
+  cleanup_after: 7d
+
+client:
+  # Server URL for client to connect to
+  server_url: http://localhost:5000
+  # API key for client authentication (must match server.api_key)
+  api_key: your-secure-api-key-here-generate-a-random-key
+
+qbittorrent:
+  # qBittorrent Web UI URL
+  host: http://localhost:8080
+  # qBittorrent Web UI username
+  username: admin
+  # qBittorrent Web UI password
+  password: adminpass
+
+rules:
+  # Path to rules file
+  file: /config/rules.yml
+
+# SCHEDULE CONFIGURATION (optional) -- internal cron scheduler, enqueues a job for
+# each entry when its cron expression fires. Uncomment and customize:
+#
+# schedule:
+#   - cron: "*/30 * * * *"   # Every 30 minutes
+#     context: cron
+#   - cron: "0 3 * * *"      # Daily at 3 AM
+#     context: nightly
+
+notifications:
+  # Default webhook URL used when a notify action omits params.url
+  # webhook_url: https://discord.com/api/webhooks/your-webhook-here
+  # Default service used when a notify action omits params.service
+  # One of: discord, slack, ntfy, generic
+  service: generic
+
+# INTEGRATIONS CONFIGURATION (optional) -- Sonarr/Radarr for the "arr_blocklist" action.
+# Uncomment and customize the service(s) you use:
+#
+# integrations:
+#   sonarr:
+#     url: http://sonarr:8989
+#     api_key: your-sonarr-api-key-here
+#   radarr:
+#     url: http://radarr:7878
+#     api_key: your-radarr-api-key-here
+
+metrics:
+  # Enable the /metrics endpoint and internal instrumentation
+  enabled: false
+  # Directory used by prometheus_client's multiprocess mode
+  multiproc_dir: /tmp/qbt-rules-metrics
+
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: INFO
+  # Log file path (relative to CONFIG_DIR or absolute)
+  file: /config/qbt-rules.log
+  # Trace mode: Include module/function/line numbers in logs (for debugging)
+  trace_mode: false
+  # Log HTTP access requests (including health checks)
+  http_access: false
+
+engine:
+  # Dry-run mode: Test rules without making changes
+  # Note: Use --dry-run CLI flag instead (preferred)
+  dry_run: false
+`;
+
+const YAML_FILES = {
+  rules:  { label: 'rules.yml',  text: RULES_YML,  note: 'Excerpt of advanced-rules-example.yml (473 lines, 10 rules total) — the same example rule set used by every other ui/demo-rule-builder*.html.' },
+  config: { label: 'config.yml', text: CONFIG_YML, note: 'Every real section of config/config.default.yml verbatim (the actual shipped default), trimmed of per-field env-var comments and the trailing docker-compose example for panel readability.' },
+};
+let activeYamlFile = 'rules';
+
+function renderYamlPanel(){
+  const f = YAML_FILES[activeYamlFile];
+  document.getElementById('yamlFileLabel').textContent = f.label;
+  document.getElementById('yamlOut').innerHTML = renderYamlLines(f.text);
+  document.getElementById('yamlNote').textContent = f.note;
+}
+
+document.querySelectorAll('.yaml-mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    activeYamlFile = btn.dataset.file;
+    document.querySelectorAll('.yaml-mode-btn').forEach(b => b.classList.toggle('active', b===btn));
+    renderYamlPanel();
+  });
+});
+
+/* ---- YAML panel collapse/expand (same pattern as demo-rule-builder-params.html) ---- */
+function toggleYamlPanel(){
+  const ws = document.getElementById('workspace');
+  const collapsed = ws.classList.toggle('no-yaml');
+  document.getElementById('btnYamlToggle').textContent = collapsed ? 'YAML ◂' : 'YAML ▸';
+}
+document.getElementById('btnYamlToggle').addEventListener('click', toggleYamlPanel);
+document.getElementById('yamlTab').addEventListener('click', toggleYamlPanel);
+
+/* ======================================================================
+   Init
+   ====================================================================== */
+renderNav();
+renderDash();
+renderYamlPanel();
+document.getElementById('statusLeft').textContent =
+  `Stats as of ${new Date(STATS.timestamp).toLocaleString()} · worker ${STATS.worker.status} · queue depth ${STATS.queue.depth}`;
+
+})();
+</script>
+</body>
+</html>
