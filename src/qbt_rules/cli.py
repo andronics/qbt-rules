@@ -534,7 +534,7 @@ def list_jobs_command(args, config_obj):
             for job in jobs:
                 logger.info(
                     f"{job['job_id']:<38} {job['status']:<12} "
-                    f"{job.get('context', 'none'):<15} {job['created_at']}"
+                    f"{job.get('context') or 'none':<15} {job['created_at']}"
                 )
 
         else:
@@ -551,7 +551,7 @@ def job_status_command(args, config_obj):
     server_url = client_config['server_url'].rstrip('/')
     api_key = client_config['api_key']
 
-    job_id = args.job_id
+    job_id = args.job_status
 
     try:
         response = requests.get(
@@ -566,8 +566,8 @@ def job_status_command(args, config_obj):
             logger.info(f"\nJob Details:")
             logger.info(f"  Job ID: {job['job_id']}")
             logger.info(f"  Status: {job['status']}")
-            logger.info(f"  Context: {job.get('context', 'none')}")
-            logger.info(f"  Hash: {job.get('hash', 'all')}")
+            logger.info(f"  Context: {job.get('context') or 'none'}")
+            logger.info(f"  Hash: {job.get('hash') or 'all'}")
             logger.info(f"  Created: {job['created_at']}")
             logger.info(f"  Started: {job['started_at'] or 'not started'}")
             logger.info(f"  Completed: {job['completed_at'] or 'not completed'}")

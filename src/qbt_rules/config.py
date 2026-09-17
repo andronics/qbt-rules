@@ -80,7 +80,7 @@ def copy_default_if_missing(target_path: Path, default_filename: str) -> bool:
 
         return True
     except Exception as e:
-        print(f"WARNING: Failed to copy default config: {e}", file=sys.stderr)
+        print(f"WARNING: Failed to copy default config to {target_path}: {e}", file=sys.stderr)
         return False
 
 
@@ -376,6 +376,8 @@ def load_yaml_file(file_path: Path) -> Dict[str, Any]:
 
         return content
 
+    except ConfigurationError:
+        raise
     except yaml.YAMLError as e:
         raise ConfigurationError(
             str(file_path),

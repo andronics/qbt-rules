@@ -1138,7 +1138,7 @@ class TestJobStatusCommand:
         mock_get.return_value = mock_response
 
         args = Namespace(
-            job_id='job-123',
+            job_status='job-123',
             client_server_url='http://localhost:5000',
             client_api_key='test-key'
         )
@@ -1158,7 +1158,7 @@ class TestJobStatusCommand:
         mock_get.return_value = mock_response
 
         args = Namespace(
-            job_id='nonexistent',
+            job_status='nonexistent',
             client_server_url='http://localhost:5000',
             client_api_key='test-key'
         )
@@ -1177,7 +1177,7 @@ class TestJobStatusCommand:
         mock_get.side_effect = Exception("Network error")
 
         args = Namespace(
-            job_id='job-123',
+            job_status='job-123',
             client_server_url='http://localhost:5000',
             client_api_key='test-key'
         )
@@ -1205,7 +1205,7 @@ class TestJobStatusCommand:
         mock_get.return_value = mock_response
 
         args = Namespace(
-            job_id='job-123',
+            job_status='job-123',
             client_server_url='http://localhost:5000',
             client_api_key='test-key'
         )
@@ -1473,7 +1473,7 @@ class TestCommandEdgeCases:
         mock_get.return_value = mock_response
 
         args = Namespace(
-            job_id='job-123',
+            job_status='job-123',
             client_server_url='http://localhost:5000',
             client_api_key='test-key'
         )
