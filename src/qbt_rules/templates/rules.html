@@ -36,13 +36,20 @@
 
 {% macro render_condition_node(node) %}
   {% if node is mapping and (node.all is defined or node.any is defined or node.none is defined) %}
-    {% set op = 'all' if node.all is defined else ('any' if node.any is defined else 'none') %}
-    <div class="tnode gate op-{{ op }}">
-      <div class="gate-head">{{ op.upper() }} <span class="gate-label">({{ node[op]|length }} condition{{ '' if node[op]|length == 1 else 's' }})</span></div>
-      <div class="tree-children">
-        {% for child in node[op] %}{{ render_condition_node(child) }}{% endfor %}
+    {# A conditions dict can carry more than one of all/any/none as sibling
+       keys at once (e.g. both `all:` and `none:`) -- engine.py evaluates
+       every key present and ANDs them together, so every present key must
+       be rendered as its own gate here too, not just the first one found. #}
+    {% for op in ['all', 'any', 'none'] %}
+      {% if node[op] is defined %}
+      <div class="tnode gate op-{{ op }}">
+        <div class="gate-head">{{ op.upper() }} <span class="gate-label">({{ node[op]|length }} condition{{ '' if node[op]|length == 1 else 's' }})</span></div>
+        <div class="tree-children">
+          {% for child in node[op] %}{{ render_condition_node(child) }}{% endfor %}
+        </div>
       </div>
-    </div>
+      {% endif %}
+    {% endfor %}
   {% elif node is mapping and node.field is defined %}
     <div class="tnode leaf">
       <span class="leaf-field">{{ node.field }}</span>

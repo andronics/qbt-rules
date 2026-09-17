@@ -1536,6 +1536,32 @@ class TestDashboardRoutes:
         assert response.status_code == 200
         assert 'No rules configured' in response.data.decode()
 
+    def test_rules_condition_tree_renders_all_sibling_gates(self, client_with_config, mock_config):
+        """A conditions dict can carry more than one of all/any/none as
+        sibling keys at once -- engine.py ANDs every key present, e.g. a
+        rule with both `all:` and `none:` at the top level. The tree
+        render must show every present gate, not just the first one it
+        finds (regression: originally picked one via an if/elif chain,
+        silently dropping the others)."""
+        mock_config.get_rules.return_value = [{
+            'name': 'Multi-gate rule',
+            'enabled': True,
+            'context': None,
+            'stop_on_match': False,
+            'conditions': {
+                'all': [{'field': 'info.state', 'operator': 'in', 'value': ['stalledDL']}],
+                'none': [{'any': [{'field': 'info.category', 'operator': 'in', 'value': ['keep']}]}],
+            },
+            'actions': [{'type': 'stop'}],
+        }]
+        response = client_with_config.get('/rules?key=test-api-key-12345')
+        body = response.data.decode()
+
+        assert 'tnode gate op-all' in body
+        assert 'tnode gate op-none' in body
+        assert 'tnode gate op-any' in body
+        assert 'info.category' in body
+
     # -- Access log filtering -------------------------------------------
 
     def test_run_server_source_filters_dashboard_paths(self):
