@@ -98,7 +98,7 @@ class TestSetupLogging:
         setup_logging(_logging_config(level="WARNING", file=log_file))
 
         root_logger = logging.getLogger()
-        console_handlers = [h for h in root_logger.handlers if isinstance(h, logging.StreamHandler) and h.stream == sys.stdout]
+        console_handlers = [h for h in root_logger.handlers if isinstance(h, logging.StreamHandler) and h.stream == sys.stderr]
         assert len(console_handlers) >= 1
 
     def test_clears_existing_handlers(self, tmp_path):
@@ -127,7 +127,7 @@ class TestSetupLogging:
         # Root logger is always DEBUG
         assert root_logger.level == logging.DEBUG
 
-        # Console handler should have DEBUG level (stream is stdout, not a file)
+        # Console handler should have DEBUG level (stream is stderr, not a file)
         console_handlers = [h for h in root_logger.handlers
                            if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)]
         assert len(console_handlers) > 0
@@ -143,7 +143,7 @@ class TestSetupLogging:
         # Root logger is always DEBUG
         assert root_logger.level == logging.DEBUG
 
-        # Console handler should have ERROR level (stream is stdout, not a file)
+        # Console handler should have ERROR level (stream is stderr, not a file)
         console_handlers = [h for h in root_logger.handlers
                            if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)]
         assert len(console_handlers) > 0

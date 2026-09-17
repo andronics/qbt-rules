@@ -204,6 +204,15 @@ def create_parser() -> argparse.ArgumentParser:
         metavar="NUM"
     )
 
+    parser.add_argument(
+        '--output',
+        choices=['table', 'json'],
+        default='table',
+        help='Output format for data-display commands: --list-jobs, --job-status, '
+             '--stats, --cancel-job, --list-rules (default: table)',
+        metavar="FORMAT"
+    )
+
     # Utility arguments
     parser.add_argument(
         '--version',
@@ -267,6 +276,9 @@ Examples:
 
     # Get server statistics
     qbt-rules --stats
+
+    # List jobs as JSON (for scripting)
+    qbt-rules --list-jobs --output json
 
   Utility Commands:
     # Validate configuration
@@ -410,17 +422,21 @@ def handle_utility_args(args: argparse.Namespace, config) -> bool:
 
     # Handle --list-rules
     if args.list_rules:
+        from qbt_rules import cli_ui
+
         rules = config.get_rules()
+        output_format = getattr(args, 'output', 'table')
+
+        if output_format == 'json':
+            cli_ui.print_json(rules)
+            return True
 
         if not rules:
-            logger.info("No rules defined in rules.yml")
+            cli_ui.print_message("No rules defined in rules.yml")
             return True
 
         # Rules execute in file order (no sorting)
-        logger.info(f"\nRules ({len(rules)} total, execute in file order):\n")
-        logger.info(f"{'#':<5} {'Enabled':<10} {'Stop':<8} {'Context':<15} {'Name'}")
-        logger.info("-" * 80)
-
+        rows = []
         for index, rule in enumerate(rules, 1):
             enabled = '✓' if rule.get('enabled', True) else '✗'
             stop = '✓' if rule.get('stop_on_match', False) else '-'
@@ -432,9 +448,13 @@ def handle_utility_args(args: argparse.Namespace, config) -> bool:
 
             name = rule.get('name', 'Unnamed')
 
-            logger.info(f"{index:<5} {enabled:<10} {stop:<8} {context_filter:<15} {name}")
+            rows.append([index, enabled, stop, context_filter, name])
 
-        logger.info("")
+        cli_ui.print_table(
+            headers=['#', 'Enabled', 'Stop', 'Context', 'Name'],
+            rows=rows,
+            title=f"Rules ({len(rules)} total, execute in file order):"
+        )
         return True
 
     return False

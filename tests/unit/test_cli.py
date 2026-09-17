@@ -1033,9 +1033,9 @@ class TestWaitForJob:
 class TestListJobsCommand:
     """Test list_jobs_command() function"""
 
-    @patch('qbt_rules.cli.logger')
+    @patch('qbt_rules.cli.cli_ui')
     @patch('qbt_rules.cli.requests.get')
-    def test_lists_jobs_successfully(self, mock_get, mock_logger):
+    def test_lists_jobs_successfully(self, mock_get, mock_cli_ui):
         """Should list jobs from server"""
         mock_response = Mock()
         mock_response.status_code = 200
@@ -1061,6 +1061,7 @@ class TestListJobsCommand:
         args = Namespace(
             status_filter=None,
             limit=20,
+            output='table',
             client_server_url='http://localhost:5000',
             client_api_key='test-key'
         )
@@ -1073,9 +1074,45 @@ class TestListJobsCommand:
         call_args = mock_get.call_args
         assert 'http://localhost:5000/api/jobs' in call_args[0][0]
 
-    @patch('qbt_rules.cli.logger')
+        # Verify table was rendered with the expected columns and rows
+        mock_cli_ui.print_table.assert_called_once()
+        _, kwargs = mock_cli_ui.print_table.call_args
+        assert kwargs['headers'] == ['Job ID', 'Status', 'Context', 'Created']
+        assert kwargs['rows'] == [
+            ['job-1', 'completed', 'adhoc-run', '2024-01-01T00:00:00Z'],
+            ['job-2', 'pending', 'automatic', '2024-01-01T01:00:00Z'],
+        ]
+
+    @patch('qbt_rules.cli.cli_ui')
     @patch('qbt_rules.cli.requests.get')
-    def test_handles_no_jobs(self, mock_get, mock_logger):
+    def test_lists_jobs_as_json(self, mock_get, mock_cli_ui):
+        """Should print the raw API response as JSON when --output json is set"""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        response_data = {
+            'total': 1,
+            'jobs': [{'job_id': 'job-1', 'status': 'completed', 'context': None, 'created_at': '2024-01-01T00:00:00Z'}]
+        }
+        mock_response.json.return_value = response_data
+        mock_get.return_value = mock_response
+
+        args = Namespace(
+            status_filter=None,
+            limit=20,
+            output='json',
+            client_server_url='http://localhost:5000',
+            client_api_key='test-key'
+        )
+        config_obj = Mock(config={})
+
+        list_jobs_command(args, config_obj)
+
+        mock_cli_ui.print_json.assert_called_once_with(response_data)
+        mock_cli_ui.print_table.assert_not_called()
+
+    @patch('qbt_rules.cli.cli_ui')
+    @patch('qbt_rules.cli.requests.get')
+    def test_handles_no_jobs(self, mock_get, mock_cli_ui):
         """Should handle empty job list"""
         mock_response = Mock()
         mock_response.status_code = 200
@@ -1086,6 +1123,7 @@ class TestListJobsCommand:
         mock_get.return_value = mock_response
 
         args = Namespace(
+            output='table',
             client_server_url='http://localhost:5000',
             client_api_key='test-key'
         )
@@ -1093,8 +1131,8 @@ class TestListJobsCommand:
 
         list_jobs_command(args, config_obj)
 
-        # Verify "No jobs found" was logged
-        assert any('No jobs found' in str(call) for call in mock_logger.info.call_args_list)
+        mock_cli_ui.print_message.assert_called_once_with("No jobs found")
+        mock_cli_ui.print_table.assert_not_called()
 
     @patch('qbt_rules.cli.logger')
     @patch('qbt_rules.cli.sys.exit')
@@ -1117,9 +1155,9 @@ class TestListJobsCommand:
 class TestJobStatusCommand:
     """Test job_status_command() function"""
 
-    @patch('qbt_rules.cli.logger')
+    @patch('qbt_rules.cli.cli_ui')
     @patch('qbt_rules.cli.requests.get')
-    def test_gets_job_status(self, mock_get, mock_logger):
+    def test_gets_job_status(self, mock_get, mock_cli_ui):
         """Should get job status from server"""
         mock_response = Mock()
         mock_response.status_code = 200
@@ -1139,6 +1177,7 @@ class TestJobStatusCommand:
 
         args = Namespace(
             job_status='job-123',
+            output='table',
             client_server_url='http://localhost:5000',
             client_api_key='test-key'
         )
@@ -1148,6 +1187,38 @@ class TestJobStatusCommand:
 
         # Verify request was made
         mock_get.assert_called_once()
+
+        # Verify job details and result sections were rendered
+        assert mock_cli_ui.print_kv_section.call_count == 2
+        details_call, result_call = mock_cli_ui.print_kv_section.call_args_list
+        assert details_call.args[0] == "Job Details:"
+        assert ("Job ID", "job-123") in details_call.args[1]
+        assert ("Context", "adhoc-run") in details_call.args[1]
+        assert result_call.args[0] == "Result:"
+        assert result_call.args[1] == [("torrents_processed", 10)]
+
+    @patch('qbt_rules.cli.cli_ui')
+    @patch('qbt_rules.cli.requests.get')
+    def test_gets_job_status_as_json(self, mock_get, mock_cli_ui):
+        """Should print the raw API response as JSON when --output json is set"""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        job_data = {'job_id': 'job-123', 'status': 'completed'}
+        mock_response.json.return_value = job_data
+        mock_get.return_value = mock_response
+
+        args = Namespace(
+            job_status='job-123',
+            output='json',
+            client_server_url='http://localhost:5000',
+            client_api_key='test-key'
+        )
+        config_obj = Mock(config={})
+
+        job_status_command(args, config_obj)
+
+        mock_cli_ui.print_json.assert_called_once_with(job_data)
+        mock_cli_ui.print_kv_section.assert_not_called()
 
     @patch('qbt_rules.cli.logger')
     @patch('qbt_rules.cli.requests.get')
@@ -1187,9 +1258,9 @@ class TestJobStatusCommand:
 
         mock_exit.assert_called_once_with(1)
 
-    @patch('qbt_rules.cli.logger')
+    @patch('qbt_rules.cli.cli_ui')
     @patch('qbt_rules.cli.requests.get')
-    def test_displays_job_with_error(self, mock_get, mock_logger):
+    def test_displays_job_with_error(self, mock_get, mock_cli_ui):
         """Should display job with error"""
         mock_response = Mock()
         mock_response.status_code = 200
@@ -1206,6 +1277,7 @@ class TestJobStatusCommand:
 
         args = Namespace(
             job_status='job-123',
+            output='table',
             client_server_url='http://localhost:5000',
             client_api_key='test-key'
         )
@@ -1213,16 +1285,17 @@ class TestJobStatusCommand:
 
         job_status_command(args, config_obj)
 
-        # Verify error was logged
-        assert any('Error' in str(call) or 'error' in str(call) for call in mock_logger.info.call_args_list)
+        # Verify the error detail was printed
+        mock_cli_ui.print_message.assert_called_once()
+        assert 'Connection timeout' in mock_cli_ui.print_message.call_args.args[0]
 
 
 class TestCancelJobCommand:
     """Test cancel_job_command() function"""
 
-    @patch('qbt_rules.cli.logger')
+    @patch('qbt_rules.cli.cli_ui')
     @patch('qbt_rules.cli.requests.delete')
-    def test_cancels_job(self, mock_delete, mock_logger):
+    def test_cancels_job(self, mock_delete, mock_cli_ui):
         """Should cancel job on server"""
         mock_response = Mock()
         mock_response.status_code = 200
@@ -1230,6 +1303,7 @@ class TestCancelJobCommand:
 
         args = Namespace(
             cancel_job_id='job-123',
+            output='table',
             client_server_url='http://localhost:5000',
             client_api_key='test-key'
         )
@@ -1239,8 +1313,31 @@ class TestCancelJobCommand:
 
         # Verify request was made
         mock_delete.assert_called_once()
-        # Verify success was logged
-        assert any('Job cancelled' in str(call) for call in mock_logger.info.call_args_list)
+        # Verify success was announced
+        mock_cli_ui.print_message.assert_called_once_with("✓ Job cancelled: job-123")
+
+    @patch('qbt_rules.cli.cli_ui')
+    @patch('qbt_rules.cli.requests.delete')
+    def test_cancels_job_as_json(self, mock_delete, mock_cli_ui):
+        """Should print the raw API response as JSON when --output json is set"""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        response_data = {'job_id': 'job-123', 'status': 'cancelled', 'message': 'Job cancelled successfully'}
+        mock_response.json.return_value = response_data
+        mock_delete.return_value = mock_response
+
+        args = Namespace(
+            cancel_job_id='job-123',
+            output='json',
+            client_server_url='http://localhost:5000',
+            client_api_key='test-key'
+        )
+        config_obj = Mock(config={})
+
+        cancel_job_command(args, config_obj)
+
+        mock_cli_ui.print_json.assert_called_once_with(response_data)
+        mock_cli_ui.print_message.assert_not_called()
 
     @patch('qbt_rules.cli.logger')
     @patch('qbt_rules.cli.requests.delete')
@@ -1307,13 +1404,13 @@ class TestCancelJobCommand:
 class TestStatsCommand:
     """Test stats_command() function"""
 
-    @patch('qbt_rules.cli.logger')
+    @patch('qbt_rules.cli.cli_ui')
     @patch('qbt_rules.cli.requests.get')
-    def test_gets_stats(self, mock_get, mock_logger):
+    def test_gets_stats(self, mock_get, mock_cli_ui):
         """Should get server stats"""
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        stats_data = {
             'jobs': {
                 'total': 100,
                 'pending': 5,
@@ -1334,9 +1431,11 @@ class TestStatsCommand:
                 'last_job_completed': '2024-01-01T00:00:00Z'
             }
         }
+        mock_response.json.return_value = stats_data
         mock_get.return_value = mock_response
 
         args = Namespace(
+            output='table',
             client_server_url='http://localhost:5000',
             client_api_key='test-key'
         )
@@ -1346,8 +1445,40 @@ class TestStatsCommand:
 
         # Verify request was made
         mock_get.assert_called_once()
-        # Verify stats were logged
-        assert mock_logger.info.called
+
+        # Verify all four sections were rendered
+        assert mock_cli_ui.print_kv_section.call_count == 4
+        titles = [c.args[0] for c in mock_cli_ui.print_kv_section.call_args_list]
+        assert titles == ["Jobs:", "Performance:", "Queue:", "Worker:"]
+        jobs_call = mock_cli_ui.print_kv_section.call_args_list[0]
+        assert ("Total", 100) in jobs_call.args[1]
+
+    @patch('qbt_rules.cli.cli_ui')
+    @patch('qbt_rules.cli.requests.get')
+    def test_gets_stats_as_json(self, mock_get, mock_cli_ui):
+        """Should print the raw API response as JSON when --output json is set"""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        stats_data = {
+            'jobs': {'total': 100, 'pending': 5, 'processing': 1, 'completed': 90, 'failed': 3, 'cancelled': 1},
+            'performance': {'average_execution_time': 2.5},
+            'queue': {'backend': 'SQLite', 'depth': 5},
+            'worker': {'status': 'idle', 'last_job_completed': '2024-01-01T00:00:00Z'}
+        }
+        mock_response.json.return_value = stats_data
+        mock_get.return_value = mock_response
+
+        args = Namespace(
+            output='json',
+            client_server_url='http://localhost:5000',
+            client_api_key='test-key'
+        )
+        config_obj = Mock(config={})
+
+        stats_command(args, config_obj)
+
+        mock_cli_ui.print_json.assert_called_once_with(stats_data)
+        mock_cli_ui.print_kv_section.assert_not_called()
 
     @patch('qbt_rules.cli.logger')
     @patch('qbt_rules.cli.requests.get')

@@ -123,6 +123,25 @@ class TestCreateParser:
         args = parser.parse_args([])
         assert args.trace is False
 
+    def test_parser_has_output_argument(self):
+        """Parser includes --output argument."""
+        parser = create_parser()
+        args = parser.parse_args(['--output', 'json'])
+        assert args.output == 'json'
+
+    def test_parser_output_choices(self):
+        """Parser --output accepts valid choices."""
+        parser = create_parser()
+        for output_format in ['table', 'json']:
+            args = parser.parse_args(['--output', output_format])
+            assert args.output == output_format
+
+    def test_parser_output_default_table(self):
+        """Parser --output defaults to 'table'."""
+        parser = create_parser()
+        args = parser.parse_args([])
+        assert args.output == 'table'
+
     def test_parser_has_validate_argument(self):
         """Parser includes --validate argument."""
         parser = create_parser()
@@ -442,6 +461,7 @@ class TestHandleUtilityArgs:
         args = Mock()
         args.validate = False
         args.list_rules = True
+        args.output = 'table'
 
         mock_config = Mock()
         mock_config.get_rules.return_value = []
@@ -450,11 +470,13 @@ class TestHandleUtilityArgs:
 
         assert result is True
 
-    def test_list_rules_displays_rules(self):
+    @patch('qbt_rules.cli_ui.print_table')
+    def test_list_rules_displays_rules(self, mock_print_table):
         """list_rules displays all rules."""
         args = Mock()
         args.validate = False
         args.list_rules = True
+        args.output = 'table'
 
         mock_config = Mock()
         mock_config.get_rules.return_value = [
@@ -472,11 +494,18 @@ class TestHandleUtilityArgs:
         # Should call get_rules
         mock_config.get_rules.assert_called_once()
 
-    def test_list_rules_with_enabled_status(self):
+        mock_print_table.assert_called_once()
+        _, kwargs = mock_print_table.call_args
+        assert kwargs['headers'] == ['#', 'Enabled', 'Stop', 'Context', 'Name']
+        assert kwargs['rows'] == [[1, '✓', '-', 'any', 'Test Rule']]
+
+    @patch('qbt_rules.cli_ui.print_table')
+    def test_list_rules_with_enabled_status(self, mock_print_table):
         """list_rules shows enabled status."""
         args = Mock()
         args.validate = False
         args.list_rules = True
+        args.output = 'table'
 
         mock_config = Mock()
         mock_config.get_rules.return_value = [
@@ -486,30 +515,42 @@ class TestHandleUtilityArgs:
 
         handle_utility_args(args, mock_config)
 
-        # Should process both rules
+        # Should process both rules, marking enabled/disabled correctly
+        _, kwargs = mock_print_table.call_args
+        assert kwargs['rows'][0][1] == '✓'
+        assert kwargs['rows'][1][1] == '✗'
 
-    def test_list_rules_with_context_filter(self):
+    @patch('qbt_rules.cli_ui.print_table')
+    def test_list_rules_with_context_filter(self, mock_print_table):
         """list_rules shows trigger filter."""
         args = Mock()
         args.validate = False
         args.list_rules = True
+        args.output = 'table'
 
         mock_config = Mock()
         mock_config.get_rules.return_value = [
-            {'name': 'Manual Rule', 'enabled': True, 'conditions': {'trigger': 'adhoc-run'}, 'actions': []},
-            {'name': 'Multi Context', 'enabled': True, 'conditions': {'trigger': ['adhoc-run', 'weekly-cleanup']}, 'actions': []},
+            {'name': 'Single Context', 'enabled': True, 'context': 'adhoc-run', 'conditions': {}, 'actions': []},
+            {'name': 'Multi Context', 'enabled': True, 'context': ['adhoc-run', 'weekly-cleanup'], 'conditions': {}, 'actions': []},
             {'name': 'No Context', 'enabled': True, 'conditions': {}, 'actions': []},
         ]
 
         handle_utility_args(args, mock_config)
 
-        # Should process all rules
+        # Single context passes through; list contexts join with commas;
+        # missing context defaults to 'any'
+        _, kwargs = mock_print_table.call_args
+        assert kwargs['rows'][0][3] == 'adhoc-run'
+        assert kwargs['rows'][1][3] == 'adhoc-run,weekly-cleanup'
+        assert kwargs['rows'][2][3] == 'any'
 
-    def test_list_rules_with_unnamed_rule(self):
+    @patch('qbt_rules.cli_ui.print_table')
+    def test_list_rules_with_unnamed_rule(self, mock_print_table):
         """list_rules handles rules with no name."""
         args = Mock()
         args.validate = False
         args.list_rules = True
+        args.output = 'table'
 
         mock_config = Mock()
         mock_config.get_rules.return_value = [
@@ -518,20 +559,41 @@ class TestHandleUtilityArgs:
 
         handle_utility_args(args, mock_config)
 
-        # Should handle unnamed rule gracefully
+        # Should handle unnamed rule gracefully, defaulting to 'Unnamed'
+        _, kwargs = mock_print_table.call_args
+        assert kwargs['rows'][0][4] == 'Unnamed'
 
-    def test_list_rules_with_empty_list(self):
+    @patch('qbt_rules.cli_ui.print_message')
+    def test_list_rules_with_empty_list(self, mock_print_message):
         """list_rules handles empty rules list."""
         args = Mock()
         args.validate = False
         args.list_rules = True
+        args.output = 'table'
 
         mock_config = Mock()
         mock_config.get_rules.return_value = []
 
         handle_utility_args(args, mock_config)
 
-        # Should complete without error
+        # Should print an empty-state message, not a table
+        mock_print_message.assert_called_once_with("No rules defined in rules.yml")
+
+    @patch('qbt_rules.cli_ui.print_json')
+    def test_list_rules_as_json(self, mock_print_json):
+        """list_rules prints raw rule dicts as JSON when --output json is set."""
+        args = Mock()
+        args.validate = False
+        args.list_rules = True
+        args.output = 'json'
+
+        rules = [{'name': 'Test Rule', 'enabled': True, 'conditions': {}, 'actions': []}]
+        mock_config = Mock()
+        mock_config.get_rules.return_value = rules
+
+        handle_utility_args(args, mock_config)
+
+        mock_print_json.assert_called_once_with(rules)
 
     def test_validate_warns_on_rule_with_no_conditions(self, caplog):
         """Validate warns when a rule has no conditions."""

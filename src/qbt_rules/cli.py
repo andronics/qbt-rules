@@ -21,6 +21,7 @@ from qbt_rules.config import load_config, resolve_config, parse_int, parse_bool,
 from qbt_rules.api import QBittorrentAPI
 from qbt_rules.errors import handle_errors
 from qbt_rules.logging import setup_logging, get_logger
+from qbt_rules import cli_ui
 
 logger = None  # Set after logging is configured
 
@@ -507,6 +508,7 @@ def list_jobs_command(args, config_obj):
 
     status_filter = getattr(args, 'status_filter', None)
     limit = getattr(args, 'limit', 20)
+    output_format = getattr(args, 'output', 'table')
 
     try:
         response = requests.get(
@@ -523,19 +525,22 @@ def list_jobs_command(args, config_obj):
             data = response.json()
             jobs = data['jobs']
 
-            if not jobs:
-                logger.info("No jobs found")
+            if output_format == 'json':
+                cli_ui.print_json(data)
                 return
 
-            logger.info(f"\nJobs (showing {len(jobs)} of {data['total']} total):\n")
-            logger.info(f"{'Job ID':<38} {'Status':<12} {'Context':<15} {'Created'}")
-            logger.info("-" * 100)
+            if not jobs:
+                cli_ui.print_message("No jobs found")
+                return
 
-            for job in jobs:
-                logger.info(
-                    f"{job['job_id']:<38} {job['status']:<12} "
-                    f"{job.get('context') or 'none':<15} {job['created_at']}"
-                )
+            cli_ui.print_table(
+                headers=['Job ID', 'Status', 'Context', 'Created'],
+                rows=[
+                    [job['job_id'], job['status'], job.get('context') or 'none', job['created_at']]
+                    for job in jobs
+                ],
+                title=f"Jobs (showing {len(jobs)} of {data['total']} total):"
+            )
 
         else:
             logger.error(f"Server error: {response.status_code}")
@@ -552,6 +557,7 @@ def job_status_command(args, config_obj):
     api_key = client_config['api_key']
 
     job_id = args.job_status
+    output_format = getattr(args, 'output', 'table')
 
     try:
         response = requests.get(
@@ -563,23 +569,25 @@ def job_status_command(args, config_obj):
         if response.status_code == 200:
             job = response.json()
 
-            logger.info(f"\nJob Details:")
-            logger.info(f"  Job ID: {job['job_id']}")
-            logger.info(f"  Status: {job['status']}")
-            logger.info(f"  Context: {job.get('context') or 'none'}")
-            logger.info(f"  Hash: {job.get('hash') or 'all'}")
-            logger.info(f"  Created: {job['created_at']}")
-            logger.info(f"  Started: {job['started_at'] or 'not started'}")
-            logger.info(f"  Completed: {job['completed_at'] or 'not completed'}")
+            if output_format == 'json':
+                cli_ui.print_json(job)
+                return
+
+            cli_ui.print_kv_section("Job Details:", [
+                ("Job ID", job['job_id']),
+                ("Status", job['status']),
+                ("Context", job.get('context') or 'none'),
+                ("Hash", job.get('hash') or 'all'),
+                ("Created", job['created_at']),
+                ("Started", job['started_at'] or 'not started'),
+                ("Completed", job['completed_at'] or 'not completed'),
+            ])
 
             if job.get('result'):
-                logger.info(f"\n  Result:")
-                for key, value in job['result'].items():
-                    logger.info(f"    {key}: {value}")
+                cli_ui.print_kv_section("Result:", list(job['result'].items()), indent=2)
 
             if job.get('error'):
-                logger.info(f"\n  Error:")
-                logger.info(f"    {job['error']}")
+                cli_ui.print_message(f"\n  Error:\n    {job['error']}")
 
         elif response.status_code == 404:
             logger.error(f"Job not found: {job_id}")
@@ -598,6 +606,7 @@ def cancel_job_command(args, config_obj):
     api_key = client_config['api_key']
 
     job_id = args.cancel_job_id
+    output_format = getattr(args, 'output', 'table')
 
     try:
         response = requests.delete(
@@ -607,7 +616,10 @@ def cancel_job_command(args, config_obj):
         )
 
         if response.status_code == 200:
-            logger.info(f"✓ Job cancelled: {job_id}")
+            if output_format == 'json':
+                cli_ui.print_json(response.json())
+            else:
+                cli_ui.print_message(f"✓ Job cancelled: {job_id}")
         elif response.status_code == 400:
             error = response.json()
             logger.error(f"Cannot cancel job: {error['message']}")
@@ -627,6 +639,8 @@ def stats_command(args, config_obj):
     server_url = client_config['server_url'].rstrip('/')
     api_key = client_config['api_key']
 
+    output_format = getattr(args, 'output', 'table')
+
     try:
         response = requests.get(
             f"{server_url}/api/stats",
@@ -637,26 +651,34 @@ def stats_command(args, config_obj):
         if response.status_code == 200:
             stats = response.json()
 
-            logger.info(f"\nServer Statistics:")
-            logger.info(f"\n  Jobs:")
-            logger.info(f"    Total: {stats['jobs']['total']}")
-            logger.info(f"    Pending: {stats['jobs']['pending']}")
-            logger.info(f"    Processing: {stats['jobs']['processing']}")
-            logger.info(f"    Completed: {stats['jobs']['completed']}")
-            logger.info(f"    Failed: {stats['jobs']['failed']}")
-            logger.info(f"    Cancelled: {stats['jobs']['cancelled']}")
+            if output_format == 'json':
+                cli_ui.print_json(stats)
+                return
 
-            logger.info(f"\n  Performance:")
-            avg_time = stats['performance']['average_execution_time']
-            logger.info(f"    Average execution time: {avg_time or 'N/A'}")
+            cli_ui.print_message("\nServer Statistics:")
 
-            logger.info(f"\n  Queue:")
-            logger.info(f"    Backend: {stats['queue']['backend']}")
-            logger.info(f"    Depth: {stats['queue']['depth']}")
+            cli_ui.print_kv_section("Jobs:", [
+                ("Total", stats['jobs']['total']),
+                ("Pending", stats['jobs']['pending']),
+                ("Processing", stats['jobs']['processing']),
+                ("Completed", stats['jobs']['completed']),
+                ("Failed", stats['jobs']['failed']),
+                ("Cancelled", stats['jobs']['cancelled']),
+            ], indent=2)
 
-            logger.info(f"\n  Worker:")
-            logger.info(f"    Status: {stats['worker']['status']}")
-            logger.info(f"    Last job completed: {stats['worker']['last_job_completed'] or 'never'}")
+            cli_ui.print_kv_section("Performance:", [
+                ("Average execution time", stats['performance']['average_execution_time'] or 'N/A'),
+            ], indent=2)
+
+            cli_ui.print_kv_section("Queue:", [
+                ("Backend", stats['queue']['backend']),
+                ("Depth", stats['queue']['depth']),
+            ], indent=2)
+
+            cli_ui.print_kv_section("Worker:", [
+                ("Status", stats['worker']['status']),
+                ("Last job completed", stats['worker']['last_job_completed'] or 'never'),
+            ], indent=2)
 
         else:
             logger.error(f"Server error: {response.status_code}")

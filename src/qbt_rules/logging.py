@@ -44,8 +44,10 @@ def setup_logging(logging_config: Dict[str, Any]):
         print(f"Cannot setup file logging: {e}", file=sys.stderr)
         print(f"Continuing with console-only logging", file=sys.stderr)
 
-    # Console handler (always works)
-    console_handler = logging.StreamHandler(sys.stdout)
+    # Console handler (always works) -- stderr, not stdout, so diagnostic
+    # logging never contaminates stdout data output (tables/JSON) from the
+    # cli_ui layer, keeping --output json pipeable
+    console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setLevel(getattr(logging, log_level))
     console_formatter = logging.Formatter(log_format, datefmt=DATE_FORMAT)
     console_handler.setFormatter(console_formatter)
