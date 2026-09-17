@@ -1404,6 +1404,25 @@ class TestDashboardRoutes:
         assert '35' in body  # completed count, "Jobs by status"
         assert __version__ in body  # topbar brand, every dashboard page
 
+    def test_overview_rules_summary_names_link_to_rules_page_anchor(self, client_with_config, mock_config):
+        """Each rule name in the overview's Rules summary table should
+        link to that same rule's card on /rules, addressed by the
+        1-based index rules.html gives each <details id="rule-N">."""
+        response = client_with_config.get('/?key=test-api-key-12345')
+        body = response.data.decode()
+
+        assert '/rules?key=test-api-key-12345#rule-1' in body
+        assert '/rules?key=test-api-key-12345#rule-2' in body
+
+    def test_rules_page_details_have_matching_anchor_ids(self, client_with_config):
+        """The /rules page's rule cards must expose the #rule-N ids the
+        overview's summary links target."""
+        response = client_with_config.get('/rules?key=test-api-key-12345')
+        body = response.data.decode()
+
+        assert 'id="rule-1"' in body
+        assert 'id="rule-2"' in body
+
     @pytest.mark.parametrize('path', ['/', '/jobs', '/rules'])
     def test_version_appears_in_topbar_on_every_page(self, client, path):
         """version is injected via a context processor (base.html's shared

@@ -81,7 +81,7 @@
   {% elif rules %}
   <p class="muted">{{ rules|length }} rule{{ '' if rules|length == 1 else 's' }}, executed top to bottom in the order listed below.</p>
   {% for rule, rule_yaml in rules_with_yaml %}
-  <details class="card rule-card">
+  <details class="card rule-card" id="rule-{{ loop.index }}">
     <summary>
       <span class="rc-idx">#{{ loop.index }}</span>
       <span class="rc-name">{{ rule.name }}</span>
@@ -117,4 +117,17 @@
   <p class="empty">No rules configured.</p>
   {% endif %}
 </div>
+
+<script>
+  // Deep-linking from Rules summary (dashboard.html) uses #rule-<index>;
+  // <details> doesn't auto-open just because it's the fragment target, so
+  // open it and scroll it into view explicitly.
+  if (location.hash) {
+    var target = document.querySelector(location.hash);
+    if (target && target.tagName === 'DETAILS') {
+      target.open = true;
+      target.scrollIntoView();
+    }
+  }
+</script>
 {% endblock %}

@@ -49,7 +49,7 @@
     <tbody>
       {% for rule in rules_summary.rules %}
       <tr>
-        <td>{{ rule.name }}</td>
+        <td><a href="{{ url_for('dashboard_rules', key=api_key) }}#rule-{{ loop.index }}">{{ rule.name }}</a></td>
         <td>{{ 'Yes' if rule.get('enabled', True) else 'No' }}</td>
         <td>{{ rule.context or '(any)' }}</td>
       </tr>
