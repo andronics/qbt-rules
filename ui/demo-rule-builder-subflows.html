@@ -1,0 +1,1288 @@
+<!--
+  qbt-rules :: Visual Rule Builder — SUBFLOWS variant (vanilla HTML/CSS/JS + inline SVG, no frameworks).
+  Forked from demo-rule-builder.html. Same app shell / design tokens / color system, but the canvas
+  paradigm is completely different: instead of flattening a rule's whole condition tree + action
+  pipeline onto one giant pannable canvas with inline-expanding $ref chips, every composite node
+  (an all/any/none condition group OR a $ref-resolved condition/action sequence) is a real ReactFlow-
+  style SUBFLOW:
+    - COLLAPSED, it's a single compact "portal" card on its parent's canvas — double-border, a small
+      ⤢ zoom badge in the corner, one summary line ("ANY · 5 conditions", "$ref · N steps") — visually
+      distinct from TERMINAL cards (single border: condition leaves, action steps), which read as
+      dead-ends at a glance.
+    - EXPANDED, you don't reveal it inline — you double-click it (or click its ⤢ badge) to *enter* it
+      as its own dedicated mini-canvas, exactly like double-clicking into a ReactFlow group node. A
+      breadcrumb strip at the top of the canvas ("Rule 10 › ANY › ALL › $ref: conditions.private-
+      tracker") tracks the nesting path, each crumb is a jump target, and a "⤴ Up one level" control
+      zooms back out one hop at a time.
+  Condition groups render as a vertical list on a colored "rail" (all/any/none tinted per the same
+  --c-all/--c-any/--c-none tokens as the baseline); action sequences render as a vertical chain with
+  the baseline's animated flow edges, since order matters for actions but not for condition siblings.
+  A "View: Nested / Flattened" toggle in the topbar swaps to a secondary read-only outline mode that
+  renders the ENTIRE tree indented on one screen (à la the baseline's single-canvas approach) so you
+  can compare "drill-down" against "everything at once" directly.
+  Preloaded with Rule 1 and Rule 9 from the baseline (same rules, same YAML), PLUS Rule 10 ("Long-
+  Term Archive Protection") from advanced-rules-example.yml, added specifically because its condition
+  tree is genuinely four levels deep (any → all → $ref → leaves) and makes the drill-down navigation
+  demonstrate real value instead of a shallow toy hierarchy. Live YAML preview (Source/Resolved) stays
+  in sync with wherever you are in the tree, and clicking a YAML line jumps the canvas straight to the
+  subflow level that contains it — this is a deep-link, not just a highlight.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qbt-rules — Rule Builder (subflows concept)</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --bg-app:#0a0c11;
+    --bg-panel:#12151c;
+    --bg-panel-2:#171b25;
+    --bg-canvas:#0d1017;
+    --dot: rgba(255,255,255,.08);
+    --border:#262b38;
+    --border-strong:#3a4152;
+    --fg:#e7e9f0;
+    --fg-dim:#aab0c0;
+    --muted:#747c90;
+    --accent:#5b8cff;
+    --accent-soft:rgba(91,140,255,.16);
+    --danger:#f43f5e;
+
+    --c-all:#8b5cf6;   --c-all-bg:rgba(139,92,246,.14);
+    --c-any:#f59e0b;   --c-any-bg:rgba(245,158,11,.14);
+    --c-none:#f43f5e;  --c-none-bg:rgba(244,63,94,.14);
+    --c-leaf:#3b82f6;  --c-leaf-bg:rgba(59,130,246,.12);
+    --c-ref:#2dd4bf;   --c-ref-bg:rgba(45,212,191,.08);
+    --c-action:#22c55e;--c-action-bg:rgba(34,197,94,.12);
+
+    --yaml-key:#7dd3fc;
+    --yaml-str:#a7e08a;
+    --yaml-num:#f5b962;
+    --yaml-ref:#5eead4;
+    --yaml-comment:#5b6577;
+    --yaml-punct:#6b7280;
+
+    --radius: 10px;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Code", Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      color-scheme: light;
+      --bg-app:#eef0f4; --bg-panel:#ffffff; --bg-panel-2:#f5f6f9; --bg-canvas:#e7e9ef;
+      --dot: rgba(20,25,40,.10);
+      --border:#dbdfe8; --border-strong:#c2c8d6;
+      --fg:#161a22; --fg-dim:#454d5e; --muted:#6b7280;
+      --accent:#2f5ce0; --accent-soft:rgba(47,92,224,.12);
+      --c-all-bg:rgba(139,92,246,.12); --c-any-bg:rgba(245,158,11,.12);
+      --c-none-bg:rgba(244,63,94,.12); --c-leaf-bg:rgba(59,130,246,.10);
+      --c-ref-bg:rgba(45,212,191,.10); --c-action-bg:rgba(34,197,94,.10);
+      --yaml-comment:#8a93a6; --yaml-punct:#8a93a6;
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg-app); color:var(--fg);
+    font-family:var(--font-ui);
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  button{font-family:inherit;}
+  code{ font-family:var(--font-mono); background:var(--bg-panel-2); padding:.05rem .3rem; border-radius:4px; }
+  ::selection{background:var(--accent-soft);}
+
+  #app{ display:grid; grid-template-rows:auto 1fr auto; height:100vh; min-width:920px; }
+
+  /* ---------- topbar ---------- */
+  .topbar{
+    display:flex; align-items:center; gap:1rem;
+    padding:.6rem 1rem; border-bottom:1px solid var(--border);
+    background:var(--bg-panel);
+  }
+  .brand{ display:flex; align-items:baseline; gap:.5rem; white-space:nowrap; }
+  .brand b{ font-size:.95rem; letter-spacing:.02em; }
+  .brand span{ font-size:.72rem; color:var(--muted); font-family:var(--font-mono); }
+  .rule-tabs{ display:flex; gap:.4rem; flex:1; min-width:0; flex-wrap:wrap; }
+  .rule-tab{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2);
+    color:var(--fg-dim); border-radius:999px; padding:.4rem .85rem; font-size:.78rem;
+    cursor:pointer; display:flex; align-items:center; gap:.45rem; max-width:340px;
+  }
+  .rule-tab .ctx{ font-family:var(--font-mono); font-size:.68rem; color:var(--muted); }
+  .rule-tab:hover{ border-color:var(--border-strong); color:var(--fg); }
+  .rule-tab.active{ background:var(--accent-soft); border-color:var(--accent); color:var(--fg); }
+  .topbar-actions{ display:flex; gap:.4rem; align-items:center; }
+  .icon-btn{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2); color:var(--fg-dim);
+    border-radius:8px; padding:.4rem .6rem; font-size:.75rem; cursor:pointer; display:flex; gap:.35rem; align-items:center;
+    white-space:nowrap;
+  }
+  .icon-btn:hover{ color:var(--fg); border-color:var(--border-strong); }
+  .icon-btn.on{ color:var(--accent); border-color:var(--accent); background:var(--accent-soft); }
+
+  /* ---------- workspace grid ---------- */
+  .workspace{ display:grid; grid-template-columns:230px 1fr 360px; min-height:0; transition:grid-template-columns .18s ease; }
+  .workspace.no-yaml{ grid-template-columns:230px 1fr 0px; }
+
+  /* ---------- palette / legend / inspector rail ---------- */
+  .palette{
+    background:var(--bg-panel); border-right:1px solid var(--border);
+    padding:.85rem .7rem; overflow-y:auto; display:flex; flex-direction:column; gap:1.1rem;
+  }
+  .pal-group h4{
+    margin:0 0 .5rem 2px; font-size:.68rem; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--muted); font-weight:700;
+  }
+  .pal-hint{ font-size:.7rem; color:var(--fg-dim); line-height:1.5; }
+  .pal-hint b{ color:var(--fg); }
+
+  .legend{ display:flex; flex-direction:column; gap:.55rem; }
+  .legend-row{ display:flex; align-items:flex-start; gap:.5rem; font-size:.7rem; color:var(--fg-dim); line-height:1.4; }
+  .legend-swatch{ width:22px; height:16px; border-radius:5px; flex:none; margin-top:1px; }
+  .legend-swatch.portal{ border:2.5px double var(--muted); background:transparent; }
+  .legend-swatch.terminal{ border:1.5px solid var(--muted); background:transparent; }
+  .legend-row b{ color:var(--fg); }
+
+  .legend-mini{ display:flex; flex-direction:column; gap:.3rem; margin-top:.2rem; }
+  .legend-mini-row{ display:flex; align-items:center; gap:.45rem; font-size:.68rem; color:var(--fg-dim); }
+  .legend-mini .dot{ width:9px; height:9px; border-radius:50%; flex:none; }
+  .legend-mini .ln{ width:16px; height:0; border-top:2px solid; opacity:.9; flex:none; }
+
+  /* ---------- canvas ---------- */
+  .canvas-wrap{
+    position:relative; overflow:hidden; background:var(--bg-canvas); cursor:grab;
+  }
+  .canvas-wrap.panning{ cursor:grabbing; }
+  #world{ position:absolute; left:0; top:0; transform-origin:0 0; will-change:transform; }
+  .bg-dots{
+    position:absolute; left:-4000px; top:-4000px; width:10000px; height:10000px;
+    background-image:radial-gradient(circle, var(--dot) 1.4px, transparent 1.4px);
+    background-size:26px 26px;
+  }
+  svg.edges-svg{ position:absolute; left:0; top:0; overflow:visible; }
+  .edge{ fill:none; stroke-linejoin:round; stroke-linecap:round; }
+  .edge-cond{ stroke:var(--border-strong); stroke-width:1.75; }
+  .edge-flow{ stroke:var(--c-action); stroke-width:2.5; stroke-dasharray:7 6; animation:flowdash .7s linear infinite; }
+  @keyframes flowdash{ to{ stroke-dashoffset:-52; } }
+  .mk-cond{ fill:var(--border-strong); }
+  .mk-flow{ fill:var(--c-action); }
+
+  .nodes-layer{ position:absolute; left:0; top:0; }
+  .node{
+    position:absolute; border-radius:10px; background:var(--bg-panel);
+    box-shadow:0 1px 2px rgba(0,0,0,.25), 0 6px 16px rgba(0,0,0,.18);
+    user-select:none;
+  }
+
+  /* header/banner node (rule overview only, informational, not draggable) */
+  .node.k-header{
+    background:linear-gradient(180deg, var(--bg-panel), var(--bg-panel-2));
+    border:1px solid var(--border);
+    padding:.85rem 1.1rem; cursor:default;
+  }
+  .hdr-bar{ position:absolute; left:0; top:0; right:0; height:4px; border-radius:10px 10px 0 0;
+    background:linear-gradient(90deg, var(--c-all), var(--c-any), var(--c-action)); }
+  .hdr-title{ font-size:1.02rem; font-weight:700; margin:.35rem 0 .5rem; }
+  .hdr-badges{ display:flex; gap:.4rem; flex-wrap:wrap; }
+  .pill{
+    font-family:var(--font-mono); font-size:.68rem; padding:.22rem .55rem; border-radius:999px;
+    border:1px solid var(--border); color:var(--fg-dim); background:var(--bg-app);
+  }
+  .pill.on{ color:#22c55e; border-color:#22c55e55; background:rgba(34,197,94,.12); cursor:pointer; }
+  .pill.trigger{ color:var(--accent); border-color:var(--accent); background:var(--accent-soft); }
+  .pill.stop{ color:var(--danger); border-color:var(--danger); background:rgba(244,63,94,.1); }
+
+  /* generic level card (condition rail item / action chain item) */
+  .lvl-card{
+    position:absolute; border-radius:12px; padding:.5rem .75rem; cursor:pointer;
+    display:flex; align-items:center; gap:.6rem;
+    transition:box-shadow .12s, transform .12s, opacity .15s;
+  }
+  .lvl-card.terminal{ border:1.5px solid var(--card-color, var(--border-strong)); background:var(--card-bg, var(--bg-panel)); }
+  .lvl-card.portal{ border:3px double var(--card-color, var(--c-ref)); background:var(--card-bg, var(--bg-panel)); }
+  .lvl-card.portal:hover{ transform:translateY(-2px); box-shadow:0 0 0 1.5px var(--card-color,var(--c-ref)), 0 10px 22px rgba(0,0,0,.32); }
+  .lvl-card.terminal:hover{ box-shadow:0 0 0 1px var(--card-color,var(--border-strong)), 0 4px 12px rgba(0,0,0,.25); }
+  .lvl-card.selected{ outline:2px solid var(--accent); outline-offset:3px; }
+  .lvl-card .portal-badge{
+    position:absolute; top:-10px; right:-10px; width:22px; height:22px; border-radius:50%;
+    background:var(--card-color,var(--c-ref)); color:#04140a; font-size:.78rem; font-weight:800;
+    display:flex; align-items:center; justify-content:center; box-shadow:0 1px 4px rgba(0,0,0,.45);
+    cursor:pointer; line-height:1;
+  }
+  .lvl-card .portal-badge:hover{ filter:brightness(1.18); }
+  .handle-mini{ position:absolute; width:7px; height:7px; border-radius:50%; background:var(--bg-app); border:1.5px solid var(--muted); pointer-events:none; }
+  .handle-mini.l{ left:-5px; top:50%; transform:translateY(-50%); }
+  .handle-mini.r{ right:-5px; top:50%; transform:translateY(-50%); }
+
+  .gate-badge{ font-family:var(--font-mono); font-weight:800; font-size:.72rem; letter-spacing:.06em; display:flex; align-items:center; gap:.3rem; }
+  .gicon{ width:14px; height:14px; }
+  .portal-sub{ font-size:.66rem; color:var(--muted); margin-top:.1rem; }
+  .ref-eyebrow{ font-family:var(--font-mono); font-size:.6rem; color:var(--c-ref); letter-spacing:.08em; }
+  .ref-path{ font-family:var(--font-mono); font-size:.73rem; color:var(--fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  .lvl-card-body{ min-width:0; flex:1; display:flex; flex-direction:column; gap:.1rem; justify-content:center; }
+  .leaf-field{ font-family:var(--font-mono); font-size:.72rem; color:var(--c-leaf); }
+  .leaf-field b{ color:var(--fg); font-weight:600; }
+  .leaf-value{ font-family:var(--font-mono); font-size:.71rem; color:var(--fg-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  .act-step{
+    flex:none; width:22px; height:22px; border-radius:50%; background:var(--c-action); color:#04140a;
+    font-size:.68rem; font-weight:800; display:flex; align-items:center; justify-content:center; font-family:var(--font-mono);
+  }
+  .act-type{ font-family:var(--font-mono); font-size:.75rem; font-weight:700; color:var(--fg); }
+  .act-params{ font-family:var(--font-mono); font-size:.66rem; color:var(--fg-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* rule-overview portal cards (bigger) */
+  .overview-card{ width:340px; height:122px; padding:1rem 1.1rem; flex-direction:column; align-items:flex-start; justify-content:center; }
+  .overview-card .ov-title{ font-family:var(--font-mono); font-weight:800; font-size:.8rem; letter-spacing:.05em; color:var(--card-color); }
+  .overview-card .ov-sub{ font-size:.74rem; color:var(--fg-dim); margin-top:.35rem; }
+  .overview-card .ov-hint{ font-size:.64rem; color:var(--muted); margin-top:.55rem; line-height:1.4; }
+
+  /* breadcrumb strip */
+  .crumb-bar{
+    position:absolute; left:0; right:0; top:0; z-index:8; display:flex; align-items:center; gap:.35rem;
+    padding:.5rem .7rem; background:linear-gradient(180deg, var(--bg-panel) 78%, transparent);
+    border-bottom:1px solid var(--border); flex-wrap:wrap;
+  }
+  .crumb-btn{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2); color:var(--fg-dim);
+    border-radius:999px; padding:.28rem .68rem; font-size:.7rem; font-family:var(--font-mono); cursor:pointer;
+    white-space:nowrap; max-width:260px; overflow:hidden; text-overflow:ellipsis;
+  }
+  .crumb-btn:hover:not(.current){ color:var(--fg); border-color:var(--border-strong); }
+  .crumb-btn.current{ background:var(--accent-soft); border-color:var(--accent); color:var(--fg); cursor:default; }
+  .crumb-sep{ color:var(--muted); font-size:.72rem; }
+  .crumb-up{ margin-left:auto; color:var(--accent); border-color:var(--accent); }
+
+  /* level banner (below crumb bar, describes current subflow) */
+  .level-banner{
+    position:absolute; left:0; right:0; top:41px; z-index:7; display:flex; align-items:center; gap:.5rem;
+    padding:.4rem .9rem; font-size:.71rem; color:var(--fg-dim); background:var(--bg-canvas);
+    border-bottom:1px dashed var(--border);
+  }
+  .level-banner .dot{ width:8px; height:8px; border-radius:50%; flex:none; }
+  .level-banner b{ color:var(--fg); }
+
+  /* corner UI: pan/zoom controls */
+  .controls-bl{ position:absolute; left:14px; bottom:14px; display:flex; flex-direction:column; gap:5px; z-index:9; }
+  .ctl-btn{
+    width:30px; height:30px; border-radius:8px; border:1px solid var(--border); background:var(--bg-panel);
+    color:var(--fg-dim); cursor:pointer; font-size:.95rem; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 2px 6px rgba(0,0,0,.25);
+  }
+  .ctl-btn:hover{ color:var(--fg); border-color:var(--border-strong); }
+  .ctl-zoom{ font-family:var(--font-mono); font-size:.62rem; color:var(--muted); text-align:center; padding:2px 0; }
+
+  .canvas-hint{
+    position:absolute; right:14px; bottom:14px; z-index:9; font-size:.66rem; color:var(--muted);
+    background:var(--bg-panel); border:1px solid var(--border); padding:.4rem .65rem; border-radius:8px;
+    font-family:var(--font-mono); max-width:320px; pointer-events:none; line-height:1.5;
+  }
+
+  /* flattened-tree mode rows */
+  .flat-row{
+    position:absolute; padding:.32rem .6rem; border-radius:6px; font-family:var(--font-mono);
+    font-size:.72rem; white-space:nowrap; cursor:pointer; background:transparent;
+  }
+  .flat-row:hover{ background:var(--bg-panel-2); }
+  .flat-row.flat-section{ font-family:var(--font-ui); font-size:.68rem; text-transform:uppercase; letter-spacing:.09em; color:var(--muted); cursor:default; margin-top:.4rem; }
+  .flat-row.flat-section:hover{ background:transparent; }
+  .flat-row.flat-gate{ color:var(--fg); }
+  .flat-row .flat-op{ font-weight:800; letter-spacing:.05em; }
+  .flat-row.flat-leaf{ color:var(--c-leaf); }
+  .flat-row.flat-leaf .flat-val{ color:var(--fg-dim); margin-left:.5rem; }
+  .flat-row.flat-ref{ color:var(--c-ref); border:1px dashed var(--c-ref); border-radius:6px; }
+  .flat-row.flat-action{ color:var(--c-action); }
+  .flat-row.flat-action .flat-step-n{ display:inline-block; width:16px; height:16px; border-radius:50%; background:var(--c-action); color:#04140a; font-size:.6rem; text-align:center; line-height:16px; margin-right:.35rem; }
+  .flat-row.selected{ outline:2px solid var(--accent); outline-offset:2px; }
+
+  /* ---------- inspector ---------- */
+  .inspector{ border-top:1px solid var(--border); padding-top:.75rem; margin-top:auto; display:flex; flex-direction:column; gap:.45rem; }
+  .inspector h4{ margin:0; font-size:.68rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+  .insp-kind{ font-family:var(--font-mono); font-size:.7rem; padding:.15rem .4rem; border-radius:5px; display:inline-block; width:fit-content; }
+  .insp-field label{ display:block; font-size:.65rem; color:var(--muted); margin-bottom:2px; }
+  .insp-field input{
+    width:100%; font-family:var(--font-mono); font-size:.72rem; background:var(--bg-panel-2);
+    border:1px solid var(--border); border-radius:6px; color:var(--fg); padding:.32rem .4rem;
+  }
+  .insp-field input:focus{ outline:1.5px solid var(--accent); border-color:var(--accent); }
+  .insp-empty{ font-size:.72rem; color:var(--muted); line-height:1.5; }
+  .insp-note{ font-size:.65rem; color:var(--muted); line-height:1.5; background:var(--bg-panel-2); border-radius:6px; padding:.45rem .55rem; }
+  .insp-note b{ color:var(--fg-dim); }
+
+  /* ---------- yaml panel ---------- */
+  .yaml-panel{ display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border); background:var(--bg-panel); overflow:hidden; }
+  .yaml-head{ display:flex; align-items:center; gap:.5rem; padding:.55rem .75rem; border-bottom:1px solid var(--border); }
+  .yaml-head .title{ font-size:.74rem; color:var(--fg-dim); font-family:var(--font-mono); flex:1; }
+  .yaml-modes{ display:flex; background:var(--bg-panel-2); border:1px solid var(--border); border-radius:7px; overflow:hidden; }
+  .yaml-mode-btn{ appearance:none; border:none; background:transparent; color:var(--muted); font-size:.68rem; padding:.3rem .55rem; cursor:pointer; font-family:var(--font-mono); }
+  .yaml-mode-btn.active{ background:var(--accent); color:#fff; }
+  .yaml-body{ flex:1; overflow:auto; padding:.7rem .5rem; }
+  .yaml-body pre{ margin:0; font-family:var(--font-mono); font-size:.735rem; line-height:1.62; }
+  .yline{ padding:0 .5rem 0 .35rem; border-radius:4px; white-space:pre; cursor:pointer; }
+  .yline:hover{ background:var(--bg-panel-2); }
+  .yline.hl{ background:var(--accent-soft); box-shadow:inset 2px 0 0 var(--accent); }
+  .yk{ color:var(--yaml-key); }
+  .ys{ color:var(--yaml-str); }
+  .yn{ color:var(--yaml-num); }
+  .yr{ color:var(--yaml-ref); font-weight:600; }
+  .yc{ color:var(--yaml-comment); font-style:italic; }
+  .yp{ color:var(--yaml-punct); }
+
+  .yaml-collapsed-tab{
+    position:absolute; right:0; top:64px; writing-mode:vertical-rl; background:var(--bg-panel);
+    border:1px solid var(--border); border-right:none; border-radius:8px 0 0 8px; padding:.5rem .3rem;
+    font-size:.68rem; color:var(--muted); cursor:pointer; display:none; z-index:5;
+  }
+  .workspace.no-yaml .yaml-collapsed-tab{ display:block; }
+  .workspace.no-yaml .yaml-panel{ display:none; }
+
+  /* ---------- statusbar ---------- */
+  .statusbar{
+    padding:.4rem 1rem; border-top:1px solid var(--border); background:var(--bg-panel);
+    font-size:.7rem; color:var(--muted); display:flex; justify-content:space-between; gap:1rem;
+  }
+  .statusbar b{ color:var(--fg-dim); }
+
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:6px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-and" viewBox="0 0 14 14"><path d="M2 2 H7 A5 5 0 0 1 7 12 H2 Z" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-any" viewBox="0 0 14 14"><path d="M2 2 Q6 2 11 7 Q6 12 2 12 Q4.5 7 2 2 Z" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-none" viewBox="0 0 14 14"><path d="M2 2 L2 12 L10 7 Z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="7" r="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <marker id="mk-cond" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-cond" d="M0,0 L8,4 L0,8 Z"/></marker>
+    <marker id="mk-flow" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-flow" d="M0,0 L8,4 L0,8 Z"/></marker>
+  </defs>
+</svg>
+
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand"><b>qbt-rules</b><span>rule builder — subflows concept</span></div>
+    <div class="rule-tabs" id="ruleTabs"></div>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="btnViewMode" title="Toggle nested drill-down vs flattened tree">View: Nested ⇄ Flat</button>
+      <button class="icon-btn" id="btnYamlToggle" title="Toggle YAML panel">YAML ▸</button>
+    </div>
+  </header>
+
+  <div class="workspace" id="workspace">
+
+    <aside class="palette" id="palette">
+      <div class="pal-group">
+        <h4>How this view works</h4>
+        <div class="pal-hint">
+          Every <b>all / any / none</b> group and every <b>$ref</b> is a collapsible <b>subflow</b>.
+          Double-click a card — or click its <b>⤢</b> badge — to zoom into it as its own mini-canvas.
+          Use the breadcrumb strip at the top of the canvas (or <b>⤴ Up one level</b>) to back out.
+        </div>
+      </div>
+
+      <div class="pal-group legend">
+        <h4>Node language</h4>
+        <div class="legend-row">
+          <span class="legend-swatch portal" style="border-color:var(--c-ref)"></span>
+          <span><b>Portal</b> — double border + ⤢ badge. A group or $ref that contains more nodes. Click to enter.</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-swatch terminal" style="border-color:var(--c-leaf)"></span>
+          <span><b>Terminal</b> — single border, no badge. A leaf condition or a single action step. Nothing further inside.</span>
+        </div>
+        <div class="legend-mini">
+          <div class="legend-mini-row"><span class="dot" style="background:var(--c-all)"></span>ALL — every child must match</div>
+          <div class="legend-mini-row"><span class="dot" style="background:var(--c-any)"></span>ANY — at least one child matches</div>
+          <div class="legend-mini-row"><span class="dot" style="background:var(--c-none)"></span>NONE — no child may match</div>
+          <div class="legend-mini-row"><span class="dot" style="background:var(--c-leaf)"></span>condition leaf (terminal)</div>
+          <div class="legend-mini-row"><span class="dot" style="background:var(--c-ref)"></span>$ref — reusable subflow (portal)</div>
+          <div class="legend-mini-row"><span class="dot" style="background:var(--c-action)"></span>action step (terminal)</div>
+          <div class="legend-mini-row"><span class="ln" style="border-color:var(--border-strong)"></span>rail — sibling conditions (unordered)</div>
+          <div class="legend-mini-row"><span class="ln" style="border-color:var(--c-action)"></span>flow — ordered action chain (animated)</div>
+        </div>
+      </div>
+
+      <div class="inspector" id="inspector">
+        <h4>Inspector</h4>
+        <div id="inspBody"><div class="insp-empty">Click any card to inspect it. Double-click a card with a ⤢ badge (or click the badge) to drill into its subflow.</div></div>
+      </div>
+    </aside>
+
+    <div class="canvas-wrap" id="canvasWrap">
+      <div class="crumb-bar" id="crumbBar"></div>
+      <div class="level-banner" id="levelBanner"></div>
+      <div id="world">
+        <div class="bg-dots"></div>
+        <svg class="edges-svg" id="edgesSvg" width="3600" height="2200"></svg>
+        <div class="nodes-layer" id="nodesLayer"></div>
+      </div>
+      <div class="controls-bl">
+        <button class="ctl-btn" id="btnZoomIn" title="Zoom in">+</button>
+        <div class="ctl-zoom" id="zoomReadout">100%</div>
+        <button class="ctl-btn" id="btnZoomOut" title="Zoom out">−</button>
+        <button class="ctl-btn" id="btnFit" title="Fit view">⤢</button>
+      </div>
+      <div class="canvas-hint" id="canvasHint">drag canvas to pan · wheel to zoom · click a card to inspect · double-click (or ⤢) a portal card to enter its subflow</div>
+    </div>
+
+    <button class="yaml-collapsed-tab" id="yamlTab">YAML ▸</button>
+    <aside class="yaml-panel" id="yamlPanel">
+      <div class="yaml-head">
+        <span class="title" id="yamlFileLabel">config/rules.yml</span>
+        <div class="yaml-modes">
+          <button class="yaml-mode-btn active" data-mode="source">Source</button>
+          <button class="yaml-mode-btn" data-mode="resolved">Resolved</button>
+        </div>
+      </div>
+      <div class="yaml-body"><pre id="yamlOut"></pre></div>
+    </aside>
+
+  </div>
+
+  <footer class="statusbar">
+    <span id="statusLeft">Ready.</span>
+    <span id="statusRight"><b>advanced-rules-example.yml</b> — subflow / drill-down navigation concept, not a production editor</span>
+  </footer>
+
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ======================================================================
+   Tree data model
+   kinds: 'gate' (all/any/none, children[]) | 'leaf-cond' (terminal)
+        | 'ref-cond' (path + resolved gate, portal)
+        | 'action-seq' (label + steps[]) | 'action-step' (terminal)
+        | 'ref-action' (path + resolved action-seq, portal)
+   ====================================================================== */
+function GATE(id,op,children){ return {id,kind:'gate',op,children}; }
+function LEAF(id,field,operator,value){ return {id,kind:'leaf-cond',field,operator,value}; }
+function REFCOND(id,path,resolved){ return {id,kind:'ref-cond',path,resolved}; }
+function ACTIONSEQ(id,label,steps){ return {id,kind:'action-seq',label,steps}; }
+function STEP(id,type,params,note){ return {id,kind:'action-step',type,params:params||null,note:note||null}; }
+function REFACT(id,path,resolved){ return {id,kind:'ref-action',path,resolved}; }
+
+/* ---- shared reusable condition / action factories (mirrors refs: block in advanced-rules-example.yml) ---- */
+function mkPrivateTracker(p){
+  return GATE(p+'-any','any',[
+    LEAF(p+'-l1','trackers.url','contains','"privatehd.to"'),
+    LEAF(p+'-l2','trackers.url','contains','"torrentleech.org"'),
+    LEAF(p+'-l3','trackers.url','contains','"iptorrents.com"'),
+    LEAF(p+'-l4','trackers.url','contains','"broadcasthe.net"'),
+    LEAF(p+'-l5','trackers.url','contains','"passthepopcorn.me"'),
+  ]);
+}
+function mkUnderSeededPrivate(p){
+  return GATE(p+'-all','all',[
+    LEAF(p+'-l1','info.ratio','<','2.0  (vars.min_ratio_private)'),
+    LEAF(p+'-l2','info.state','in','[uploading, stalledUP, queuedUP]'),
+  ]);
+}
+function mkProtectedContent(p){
+  return GATE(p+'-any','any',[
+    LEAF(p+'-l1','info.category','in','[keep, seedbox, long-term, permanent, archive]'),
+    LEAF(p+'-l2','info.tags','contains','"keep"'),
+    LEAF(p+'-l3','info.tags','contains','"!delete"'),
+  ]);
+}
+function mkHdContent(p){
+  return GATE(p+'-all','all',[
+    LEAF(p+'-l1','info.name','matches','(?i).*(1080p|2160p|4k|uhd|bluray|remux).*'),
+  ]);
+}
+function mkTvShow(p){
+  return GATE(p+'-all','all',[
+    LEAF(p+'-l1','info.name','matches','(?i).*(s\\d{2}e\\d{2}|season[\\s._-]*\\d+).*'),
+  ]);
+}
+function mkExcellentlySeeded(p){
+  return GATE(p+'-all','all',[
+    LEAF(p+'-l1','info.ratio','>=','5.0  (vars.excellent_ratio)'),
+    LEAF(p+'-l2','info.seeding_time','>','2592000  (30 days in seconds)'),
+  ]);
+}
+function mkForceSeedPrivate(p){
+  return ACTIONSEQ(p,'force-seed-private',[
+    STEP(p+'-s1','force_start'),
+    STEP(p+'-s2','set_upload_limit','limit: -1  (unlimited)'),
+    STEP(p+'-s3','add_tag','tags: force-seeding, private-boost'),
+  ]);
+}
+function mkProcessHdContent(p){
+  return ACTIONSEQ(p,'process-hd-content',[
+    STEP(p+'-s1','add_tag','tags: hd, quality-content'),
+    STEP(p+'-s2','set_category','category: hd-content'),
+    STEP(p+'-s3','increase_priority'),
+  ]);
+}
+function mkRewardExcellentSeeding(p){
+  return ACTIONSEQ(p,'reward-excellent-seeding',[
+    STEP(p+'-s1','add_tag','tags: excellent-seeder, ratio-hero, ⭐-star-content'),
+  ]);
+}
+
+/* ======================================================================
+   Rules — grounded in advanced-rules-example.yml
+   ====================================================================== */
+function buildRuleA(){
+  const conditionsRoot = GATE('a-cond-root','all',[
+    REFCOND('a-ref-pt','conditions.private-tracker', mkPrivateTracker('a-pt')),
+    REFCOND('a-ref-usp','conditions.under-seeded-private', mkUnderSeededPrivate('a-usp')),
+    GATE('a-none','none',[ REFCOND('a-ref-pc','conditions.protected-content', mkProtectedContent('a-pc')) ]),
+  ]);
+  const actionsRoot = ACTIONSEQ('a-act-root','actions',[
+    REFACT('a-ref-act','actions.force-seed-private', mkForceSeedPrivate('a-act')),
+  ]);
+  return { key:'r1', tabLabel:'Rule 1 · Force-seed under ratio', name:'Force seed private tracker torrents under ratio',
+    context:'download-finished', stopOnMatch:false, enabled:true, headerId:'a-header', conditionsRoot, actionsRoot };
+}
+
+function buildRuleB(){
+  const conditionsRoot = GATE('b-cond-root','all',[
+    REFCOND('b-ref-pt','conditions.private-tracker', mkPrivateTracker('b-pt')),
+    REFCOND('b-ref-hd','conditions.hd-content', mkHdContent('b-hd')),
+    REFCOND('b-ref-tv','conditions.tv-show', mkTvShow('b-tv')),
+    GATE('b-inline-all','all',[ LEAF('b-inline-l1','info.size','>','2147483648  (~2 GB / episode)') ]),
+  ]);
+  const actionsRoot = ACTIONSEQ('b-act-root','actions',[
+    REFACT('b-ref-act1','actions.process-hd-content', mkProcessHdContent('b-a1')),
+    REFACT('b-ref-act2','actions.force-seed-private', mkForceSeedPrivate('b-a2')),
+    STEP('b-a7','add_tag','tags: premium-tv, auto-managed'),
+    STEP('b-a8','set_category','category: tv-premium'),
+  ]);
+  return { key:'r9', tabLabel:'Rule 9 · Private HD TV shows', name:'Special handling for private tracker HD TV shows',
+    context:'torrent-imported', stopOnMatch:false, enabled:true, headerId:'b-header', conditionsRoot, actionsRoot };
+}
+
+function buildRuleC(){
+  // Rule 10 — deliberately the deep-nesting showcase: any > all > $ref (+ inline leaf)
+  const conditionsRoot = GATE('c-cond-root','all',[
+    GATE('c-any','any',[
+      REFCOND('c-ref-pc','conditions.protected-content', mkProtectedContent('c-pc')),
+      GATE('c-all','all',[
+        REFCOND('c-ref-pt','conditions.private-tracker', mkPrivateTracker('c-pt')),
+        REFCOND('c-ref-es','conditions.excellently-seeded', mkExcellentlySeeded('c-es')),
+        LEAF('c-leaf1','info.completion_on','older_than','90 days  (vars.completion_age_long)'),
+      ]),
+    ]),
+  ]);
+  const actionsRoot = ACTIONSEQ('c-act-root','actions',[
+    STEP('c-a1','add_tag','tags: protected, long-term-seed, 🔒-locked'),
+    STEP('c-a2','set_category','category: archive'),
+    STEP('c-a3','force_start', null, 'ensure it keeps seeding'),
+    REFACT('c-ref-act','actions.reward-excellent-seeding', mkRewardExcellentSeeding('c-a4')),
+  ]);
+  return { key:'r10', tabLabel:'Rule 10 · Long-term archive protection', name:'Protect and maintain long-term archive content',
+    context:'weekly-cleanup', stopOnMatch:true, enabled:true, headerId:'c-header', conditionsRoot, actionsRoot };
+}
+
+/* build a per-rule index: id -> {frames} (navStack needed to reveal this node in its parent list)
+   and anchors: id -> nearest enclosing $ref id (or null), used to sync Source-mode YAML highlighting */
+function buildIndexAndAnchors(rule){
+  const anchors = {}, index = {};
+  const ROOT = {kind:'rule'};
+  function walkCond(node, refAnchor, frames){
+    anchors[node.id] = refAnchor;
+    index[node.id] = {frames};
+    if(node.kind==='gate'){
+      const label = node.id===rule.conditionsRoot.id ? 'Conditions' : node.op.toUpperCase();
+      const childFrames = frames.concat([{kind:'gate', node, label}]);
+      node.children.forEach(c=>walkCond(c, refAnchor, childFrames));
+    } else if(node.kind==='ref-cond'){
+      // Entering a $ref jumps straight to its resolved gate's children (no separate
+      // card for the resolved gate itself), so don't push an extra breadcrumb frame
+      // for it — just register it at the parent level and recurse into its children
+      // using the $ref's own frame.
+      const childFrames = frames.concat([{kind:'gate', node:node.resolved, label:'$ref: '+node.path}]);
+      anchors[node.resolved.id] = node.id;
+      index[node.resolved.id] = {frames};
+      node.resolved.children.forEach(c=>walkCond(c, node.id, childFrames));
+    }
+  }
+  function walkAct(node, refAnchor, frames){
+    anchors[node.id] = refAnchor;
+    index[node.id] = {frames};
+    if(node.kind==='action-seq'){
+      const label = node.id===rule.actionsRoot.id ? 'Actions' : node.label;
+      const childFrames = frames.concat([{kind:'action-seq', node, label}]);
+      node.steps.forEach(s=>walkAct(s, refAnchor, childFrames));
+    } else if(node.kind==='ref-action'){
+      // Same rationale as ref-cond above: no separate card for the resolved sequence
+      // itself, so recurse straight into its steps using the $ref's own frame.
+      const childFrames = frames.concat([{kind:'action-seq', node:node.resolved, label:'$ref: '+node.path}]);
+      anchors[node.resolved.id] = node.id;
+      index[node.resolved.id] = {frames};
+      node.resolved.steps.forEach(s=>walkAct(s, node.id, childFrames));
+    }
+  }
+  anchors[rule.headerId] = null; index[rule.headerId] = {frames:[ROOT]};
+  walkCond(rule.conditionsRoot, null, [ROOT]);
+  walkAct(rule.actionsRoot, null, [ROOT]);
+  return {anchors, index};
+}
+
+/* ---- generic YAML emitter, walks the SAME tree used for the canvas (source collapses $refs, resolved inlines them) ---- */
+function emitCondItem(node, indent, mode, lines){
+  if(node.kind==='leaf-cond'){
+    lines.push({id:node.id, text:`${indent}- field: ${node.field}`});
+    lines.push({id:node.id, text:`${indent}  operator: ${node.operator}`});
+    lines.push({id:node.id, text:`${indent}  value: ${node.value}`});
+  } else if(node.kind==='gate'){
+    lines.push({id:node.id, text:`${indent}- ${node.op}:`});
+    node.children.forEach(c=>emitCondItem(c, indent+'    ', mode, lines));
+  } else if(node.kind==='ref-cond'){
+    if(mode==='source'){
+      lines.push({id:node.id, text:`${indent}- $ref: ${node.path}`});
+    } else {
+      const g = node.resolved;
+      lines.push({id:node.id, text:`${indent}- ${g.op}:  # ${node.path}`});
+      g.children.forEach(c=>emitCondItem(c, indent+'    ', mode, lines));
+    }
+  }
+}
+function emitActionItem(node, indent, mode, lines, ctx){
+  if(node.kind==='action-step'){
+    const parts = [];
+    if(ctx) parts.push(ctx.first ? `${ctx.path} [1/${ctx.total}]` : `[${ctx.idx+1}/${ctx.total}]`);
+    if(node.note) parts.push(node.note);
+    const comment = parts.length ? `  # ${parts.join(' — ')}` : '';
+    lines.push({id:node.id, text:`${indent}- type: ${node.type}${comment}`});
+    if(node.params) lines.push({id:node.id, text:`${indent}  params: ${node.params}`});
+  } else if(node.kind==='ref-action'){
+    if(mode==='source'){
+      lines.push({id:node.id, text:`${indent}- $ref: ${node.path}`});
+    } else {
+      const seq = node.resolved;
+      seq.steps.forEach((s,i)=>emitActionItem(s, indent, mode, lines, {first:i===0, idx:i, total:seq.steps.length, path:node.path}));
+    }
+  }
+}
+function buildYamlLines(rule, mode){
+  const lines = [];
+  lines.push({id:null, text:'rules:'});
+  lines.push({id:rule.headerId, text:`  - name: "${rule.name}"`});
+  lines.push({id:rule.headerId, text:`    enabled: ${rule.enabled}`});
+  lines.push({id:rule.headerId, text:`    context: ${rule.context}`});
+  lines.push({id:rule.headerId, text:`    stop_on_match: ${rule.stopOnMatch}`});
+  lines.push({id:rule.conditionsRoot.id, text:'    conditions:'});
+  rule.conditionsRoot.children.forEach(c=>emitCondItem(c, '      ', mode, lines));
+  lines.push({id:rule.actionsRoot.id, text:'    actions:'});
+  rule.actionsRoot.steps.forEach(s=>emitActionItem(s, '      ', mode, lines));
+  return lines;
+}
+
+const RULES = {};
+[buildRuleA(), buildRuleB(), buildRuleC()].forEach(r=>{
+  const {anchors, index} = buildIndexAndAnchors(r);
+  r.anchors = anchors; r.index = index; r.yamlCache = {};
+  RULES[r.key] = r;
+});
+
+/* ======================================================================
+   State + DOM refs
+   ====================================================================== */
+const state = {
+  ruleKey:'r10',
+  navStack:[{kind:'rule'}],
+  selectedId:null,
+  yamlMode:'source',
+  viewMode:'nested', // 'nested' | 'flat'
+  pan:{x:0,y:0}, zoom:1,
+  panning:false, panStart:null,
+};
+let itemsById = {};
+let nodeEls = {};
+
+const el = {
+  wrap: document.getElementById('canvasWrap'),
+  world: document.getElementById('world'),
+  svg: document.getElementById('edgesSvg'),
+  nodes: document.getElementById('nodesLayer'),
+  yamlOut: document.getElementById('yamlOut'),
+  yamlPanel: document.getElementById('yamlPanel'),
+  workspace: document.getElementById('workspace'),
+  zoomReadout: document.getElementById('zoomReadout'),
+  ruleTabs: document.getElementById('ruleTabs'),
+  inspBody: document.getElementById('inspBody'),
+  statusLeft: document.getElementById('statusLeft'),
+  crumbBar: document.getElementById('crumbBar'),
+  levelBanner: document.getElementById('levelBanner'),
+  canvasHint: document.getElementById('canvasHint'),
+};
+
+function currentRule(){ return RULES[state.ruleKey]; }
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function gateIcon(op){ return op==='all'?'i-and':(op==='any'?'i-any':'i-none'); }
+function pathV(x1,y1,x2,y2){ const midY=(y1+y2)/2; return `M${x1} ${y1} L${x1} ${midY} L${x2} ${midY} L${x2} ${y2}`; }
+
+/* ======================================================================
+   Tabs
+   ====================================================================== */
+function renderTabs(){
+  el.ruleTabs.innerHTML = '';
+  Object.values(RULES).forEach(r=>{
+    const b = document.createElement('button');
+    b.className = 'rule-tab' + (r.key===state.ruleKey ? ' active':'');
+    b.innerHTML = `${esc(r.tabLabel)} <span class="ctx">on:${r.context}</span>`;
+    b.addEventListener('click', ()=>{
+      if(state.ruleKey===r.key) return;
+      state.ruleKey = r.key; state.navStack = [{kind:'rule'}]; state.selectedId = null;
+      renderTabs(); renderNav(); fitLevelView();
+    });
+    el.ruleTabs.appendChild(b);
+  });
+}
+
+/* ======================================================================
+   Breadcrumb + level banner
+   ====================================================================== */
+function renderBreadcrumb(){
+  const rule = currentRule();
+  if(state.viewMode==='flat'){
+    el.crumbBar.innerHTML = `<span class="crumb-btn current">Flattened tree — ${esc(rule.tabLabel)}</span>`;
+    return;
+  }
+  let html = '';
+  state.navStack.forEach((frame,i)=>{
+    const isLast = i===state.navStack.length-1;
+    const label = i===0 ? rule.tabLabel : frame.label;
+    html += `<button class="crumb-btn${isLast?' current':''}" data-crumb="${i}" ${isLast?'disabled':''}>${esc(label)}</button>`;
+    if(!isLast) html += `<span class="crumb-sep">›</span>`;
+  });
+  if(state.navStack.length>1) html += `<button class="crumb-btn crumb-up" data-up="1" title="Zoom out one level">⤴ Up one level</button>`;
+  el.crumbBar.innerHTML = html;
+}
+el.crumbBar.addEventListener('click', e=>{
+  const c = e.target.closest('[data-crumb]');
+  if(c){ state.navStack = state.navStack.slice(0, +c.dataset.crumb+1); state.selectedId=null; renderNav(); fitLevelView(); return; }
+  const up = e.target.closest('[data-up]');
+  if(up){ state.navStack.pop(); state.selectedId=null; renderNav(); fitLevelView(); }
+});
+
+function renderLevelBanner(){
+  if(state.viewMode==='flat'){ el.levelBanner.style.display='none'; return; }
+  el.levelBanner.style.display='flex';
+  const top = state.navStack[state.navStack.length-1];
+  if(state.navStack.length===1){
+    el.levelBanner.innerHTML = `<span class="dot" style="background:var(--accent)"></span> Rule overview — double-click <b>Conditions</b> or <b>Actions</b> to drill in.`;
+    return;
+  }
+  if(top.kind==='gate'){
+    const g = top.node;
+    const desc = g.op==='all' ? 'every condition below must match (AND)' : g.op==='any' ? 'at least one condition below must match (OR)' : 'none of the conditions below may match (NOT)';
+    el.levelBanner.innerHTML = `<span class="dot" style="background:var(--c-${g.op})"></span> <b style="color:var(--c-${g.op})">${g.op.toUpperCase()}</b> group — ${desc}. Double-click a portal card to drill further in.`;
+  } else {
+    const seq = top.node;
+    el.levelBanner.innerHTML = `<span class="dot" style="background:var(--c-action)"></span> Ordered action sequence — ${seq.steps.length} step${seq.steps.length===1?'':'s'} run top → bottom.`;
+  }
+}
+
+/* ======================================================================
+   Level renderers
+   ====================================================================== */
+const CARD_X = 70, CARD_W = 640, CARD_H = 78, ROW_GAP = 26, START_Y = 40;
+
+function renderRuleOverview(rule){
+  el.nodes.innerHTML=''; itemsById={}; nodeEls={};
+  itemsById[rule.headerId] = {kind:'header'};
+  itemsById[rule.conditionsRoot.id] = rule.conditionsRoot;
+  itemsById[rule.actionsRoot.id] = rule.actionsRoot;
+
+  const hdr = document.createElement('div');
+  hdr.className = 'node k-header';
+  Object.assign(hdr.style,{left:'40px',top:'20px',width:'760px',height:'104px'});
+  hdr.dataset.id = rule.headerId;
+  hdr.innerHTML = `<div class="hdr-bar"></div>
+    <div class="hdr-title">${esc(rule.name)}</div>
+    <div class="hdr-badges">
+      <span class="pill trigger">on: ${esc(rule.context)}</span>
+      <span class="pill ${rule.stopOnMatch?'stop':''}">stop_on_match: ${rule.stopOnMatch}</span>
+      <span class="pill on" data-toggle-enabled="1">● enabled: ${rule.enabled}</span>
+    </div>`;
+  el.nodes.appendChild(hdr); nodeEls[rule.headerId] = hdr;
+
+  const cCount = rule.conditionsRoot.children.length;
+  const condCard = buildOverviewCard(rule.conditionsRoot.id, 40, 168, 'CONDITIONS',
+    `${rule.conditionsRoot.op.toUpperCase()} · ${cCount} top-level item${cCount===1?'':'s'}`,
+    'Enter to drill into nested groups & $refs.', 'var(--c-all)', 'var(--c-all-bg)');
+  el.nodes.appendChild(condCard); nodeEls[rule.conditionsRoot.id] = condCard;
+
+  const aCount = rule.actionsRoot.steps.length;
+  const actCard = buildOverviewCard(rule.actionsRoot.id, 420, 168, 'ACTIONS',
+    `${aCount} ordered step${aCount===1?'':'s'}`,
+    'Enter to walk the pipeline in order.', 'var(--c-action)', 'var(--c-action-bg)');
+  el.nodes.appendChild(actCard); nodeEls[rule.actionsRoot.id] = actCard;
+
+  const hx=40+760/2, hy=20+104, c1x=40+170, c1y=168, c2x=420+170, c2y=168;
+  el.svg.innerHTML = `<path class="edge edge-cond" d="${pathV(hx,hy,c1x,c1y)}" marker-end="url(#mk-cond)"/>
+    <path class="edge edge-cond" d="${pathV(hx,hy,c2x,c2y)}" marker-end="url(#mk-cond)"/>`;
+}
+function buildOverviewCard(id,x,y,title,sub,hint,color,bg){
+  const div = document.createElement('div');
+  div.className = 'node lvl-card portal overview-card' + (state.selectedId===id?' selected':'');
+  div.style.setProperty('--card-color', color);
+  div.style.setProperty('--card-bg', bg);
+  Object.assign(div.style,{left:x+'px', top:y+'px'});
+  div.dataset.id = id;
+  div.innerHTML = `<div class="portal-badge" title="Enter subflow">⤤</div>
+    <div class="ov-title">${esc(title)}</div>
+    <div class="ov-sub">${esc(sub)}</div>
+    <div class="ov-hint">${esc(hint)}</div>
+    <div class="handle-mini l"></div><div class="handle-mini r"></div>`;
+  return div;
+}
+
+function condCardHtml(item){
+  if(item.kind==='leaf-cond'){
+    return {isPortal:false, color:'var(--c-leaf)', bg:'var(--c-leaf-bg)',
+      html:`<div class="lvl-card-body"><div class="leaf-field"><b>${esc(item.field)}</b> ${esc(item.operator)}</div><div class="leaf-value">${esc(item.value)}</div></div>`};
+  }
+  if(item.kind==='gate'){
+    return {isPortal:true, color:`var(--c-${item.op})`, bg:`var(--c-${item.op}-bg)`,
+      html:`<div class="portal-badge" title="Enter subflow">⤤</div>
+        <div class="lvl-card-body"><div class="gate-badge" style="color:var(--card-color)"><svg class="gicon"><use href="#${gateIcon(item.op)}"/></svg>${item.op.toUpperCase()}</div>
+        <div class="portal-sub">inline group · ${item.children.length} condition${item.children.length===1?'':'s'}</div></div>`};
+  }
+  const g = item.resolved;
+  return {isPortal:true, color:'var(--c-ref)', bg:'var(--c-ref-bg)',
+    html:`<div class="portal-badge" title="Enter subflow">⤤</div>
+      <div class="lvl-card-body"><div class="ref-eyebrow">🔗 $ref</div><div class="ref-path">${esc(item.path)}</div>
+      <div class="portal-sub">${g.op.toUpperCase()} · ${g.children.length} condition${g.children.length===1?'':'s'}</div></div>`};
+}
+function actionCardHtml(item, idx){
+  if(item.kind==='action-step'){
+    return {isPortal:false, color:'var(--c-action)', bg:'var(--c-action-bg)',
+      html:`<div class="act-step">${idx+1}</div><div class="lvl-card-body"><div class="act-type">${esc(item.type)}</div>${item.params?`<div class="act-params">${esc(item.params)}</div>`:''}</div>`};
+  }
+  const seq = item.resolved;
+  return {isPortal:true, color:'var(--c-ref)', bg:'var(--c-ref-bg)',
+    html:`<div class="act-step">${idx+1}</div><div class="portal-badge" title="Enter subflow">⤤</div>
+      <div class="lvl-card-body"><div class="ref-eyebrow">🔗 $ref</div><div class="ref-path">${esc(item.path)}</div>
+      <div class="portal-sub">${seq.steps.length} step${seq.steps.length===1?'':'s'}</div></div>`};
+}
+
+function buildCard(item, x, y, w, h, cardFn, idx){
+  const spec = cardFn(item, idx);
+  const div = document.createElement('div');
+  div.className = 'node lvl-card ' + (spec.isPortal?'portal':'terminal') + (state.selectedId===item.id?' selected':'');
+  div.style.setProperty('--card-color', spec.color);
+  div.style.setProperty('--card-bg', spec.bg);
+  Object.assign(div.style,{left:x+'px', top:y+'px', width:w+'px', height:h+'px'});
+  div.dataset.id = item.id;
+  div.innerHTML = spec.html + '<div class="handle-mini l"></div><div class="handle-mini r"></div>';
+  return div;
+}
+
+function renderGateLevel(gate){
+  el.nodes.innerHTML=''; itemsById={}; nodeEls={};
+  gate.children.forEach((item,i)=>{
+    itemsById[item.id] = item;
+    const y = START_Y + i*(CARD_H+ROW_GAP);
+    const div = buildCard(item, CARD_X, y, CARD_W, CARD_H, condCardHtml);
+    el.nodes.appendChild(div); nodeEls[item.id] = div;
+  });
+  drawRailEdges(gate);
+}
+function drawRailEdges(gate){
+  const n = gate.children.length;
+  if(!n){ el.svg.innerHTML=''; return; }
+  const railX = CARD_X - 28;
+  const firstY = START_Y + CARD_H/2, lastY = START_Y + (n-1)*(CARD_H+ROW_GAP) + CARD_H/2;
+  const color = `var(--c-${gate.op})`;
+  let svg = `<line x1="${railX}" y1="${firstY}" x2="${railX}" y2="${lastY}" stroke="${color}" stroke-width="2.5" stroke-linecap="round" opacity=".85"/>`;
+  for(let i=0;i<n;i++){
+    const cy = START_Y + i*(CARD_H+ROW_GAP) + CARD_H/2;
+    svg += `<line x1="${railX}" y1="${cy}" x2="${CARD_X}" y2="${cy}" stroke="${color}" stroke-width="2" opacity=".85"/>`;
+    svg += `<circle cx="${railX}" cy="${cy}" r="3.2" fill="${color}"/>`;
+  }
+  el.svg.innerHTML = svg;
+}
+
+function renderActionLevel(seq){
+  el.nodes.innerHTML=''; itemsById={}; nodeEls={};
+  seq.steps.forEach((item,i)=>{
+    itemsById[item.id] = item;
+    const y = START_Y + i*(CARD_H+ROW_GAP);
+    const div = buildCard(item, CARD_X, y, CARD_W, CARD_H, actionCardHtml, i);
+    el.nodes.appendChild(div); nodeEls[item.id] = div;
+  });
+  drawFlowEdges(seq);
+}
+function drawFlowEdges(seq){
+  const n = seq.steps.length;
+  if(n<2){ el.svg.innerHTML=''; return; }
+  let svg = '';
+  const cx = CARD_X + CARD_W/2;
+  for(let i=0;i<n-1;i++){
+    const y1 = START_Y + i*(CARD_H+ROW_GAP) + CARD_H;
+    const y2 = START_Y + (i+1)*(CARD_H+ROW_GAP);
+    svg += `<path class="edge edge-flow" d="${pathV(cx,y1,cx,y2)}" marker-end="url(#mk-flow)"/>`;
+  }
+  el.svg.innerHTML = svg;
+}
+
+/* ---- flattened whole-tree outline (secondary view mode) ---- */
+function renderFlattened(rule){
+  el.nodes.innerHTML=''; itemsById={}; nodeEls={};
+  const rows = [];
+  function push(depth, id, cls, html){ rows.push({depth,id,cls,html}); itemsById[id] = itemsById[id] || true; }
+  function walkCond(node, depth){
+    if(node.kind==='leaf-cond'){
+      push(depth, node.id, 'flat-leaf', `<b>${esc(node.field)}</b> ${esc(node.operator)} <span class="flat-val">${esc(node.value)}</span>`);
+    } else if(node.kind==='gate'){
+      push(depth, node.id, 'flat-gate', `<span class="flat-op" style="color:var(--c-${node.op})">${node.op.toUpperCase()}</span>`);
+      node.children.forEach(c=>walkCond(c, depth+1));
+    } else if(node.kind==='ref-cond'){
+      push(depth, node.id, 'flat-ref', `🔗 $ref: ${esc(node.path)}`);
+      walkCond(node.resolved, depth+1);
+    }
+  }
+  function walkAct(node, depth, i){
+    if(node.kind==='action-step'){
+      push(depth, node.id, 'flat-action', `<span class="flat-step-n">${i+1}</span><b>${esc(node.type)}</b>${node.params?` <span class="flat-val">${esc(node.params)}</span>`:''}`);
+    } else if(node.kind==='ref-action'){
+      push(depth, node.id, 'flat-ref', `🔗 $ref: ${esc(node.path)} <span class="portal-sub">(${node.resolved.steps.length} steps)</span>`);
+      node.resolved.steps.forEach((s,j)=>walkAct(s, depth+1, j));
+    }
+  }
+  push(0, rule.conditionsRoot.id, 'flat-section', 'conditions:');
+  rule.conditionsRoot.children.forEach(c=>walkCond(c,1));
+  push(0, rule.actionsRoot.id, 'flat-section', 'actions:');
+  rule.actionsRoot.steps.forEach((s,i)=>walkAct(s,1,i));
+
+  rows.forEach((r,i)=>{
+    const div = document.createElement('div');
+    div.className = 'node flat-row ' + r.cls + (state.selectedId===r.id?' selected':'');
+    Object.assign(div.style,{top:(20+i*32)+'px', left:(20+r.depth*28)+'px', width:'620px'});
+    div.dataset.id = r.id;
+    div.innerHTML = r.html;
+    el.nodes.appendChild(div); nodeEls[r.id] = div;
+  });
+  el.svg.innerHTML = '';
+  // rebuild real item map for flat mode (rows can duplicate placeholder `true` above)
+  itemsById = {};
+  function mapCond(node){ itemsById[node.id]=node; if(node.kind==='gate') node.children.forEach(mapCond); else if(node.kind==='ref-cond'){ mapCond(node.resolved); } }
+  function mapAct(node){ itemsById[node.id]=node; if(node.kind==='action-seq') node.steps.forEach(mapAct); else if(node.kind==='ref-action'){ mapAct(node.resolved); } }
+  mapCond(rule.conditionsRoot); mapAct(rule.actionsRoot);
+}
+
+/* ======================================================================
+   Top-level render dispatch
+   ====================================================================== */
+function renderLevelOnly(){
+  const rule = currentRule();
+  if(state.viewMode==='flat'){ renderFlattened(rule); return; }
+  const top = state.navStack[state.navStack.length-1];
+  if(state.navStack.length===1) renderRuleOverview(rule);
+  else if(top.kind==='gate') renderGateLevel(top.node);
+  else renderActionLevel(top.node);
+}
+function renderNav(){
+  renderBreadcrumb();
+  renderLevelBanner();
+  renderLevelOnly();
+  renderInspector();
+  renderYaml();
+  updateStatus();
+}
+function updateStatus(){
+  const rule = currentRule();
+  if(state.viewMode==='flat'){ el.statusLeft.textContent = `Flattened view — ${rule.tabLabel}, everything on one canvas.`; return; }
+  const depth = state.navStack.length - 1;
+  el.statusLeft.textContent = depth===0 ? `${rule.tabLabel} — rule overview.` : `${rule.tabLabel} — ${depth} level${depth===1?'':'s'} deep.`;
+}
+
+/* ======================================================================
+   Enter / navigate
+   ====================================================================== */
+function enterItem(item){
+  const rule = currentRule();
+  if(item.kind==='gate'){
+    const label = item.id===rule.conditionsRoot.id ? 'Conditions' : item.op.toUpperCase();
+    state.navStack.push({kind:'gate', node:item, label});
+  } else if(item.kind==='ref-cond'){
+    state.navStack.push({kind:'gate', node:item.resolved, label:'$ref: '+item.path});
+  } else if(item.kind==='action-seq'){
+    const label = item.id===rule.actionsRoot.id ? 'Actions' : item.label;
+    state.navStack.push({kind:'action-seq', node:item, label});
+  } else if(item.kind==='ref-action'){
+    state.navStack.push({kind:'action-seq', node:item.resolved, label:'$ref: '+item.path});
+  } else return;
+  state.selectedId = null;
+  renderNav();
+  fitLevelView();
+}
+function jumpTo(id){
+  const entry = currentRule().index[id];
+  if(!entry) return;
+  if(state.viewMode==='flat') state.viewMode='nested';
+  state.navStack = entry.frames.map(f=>({...f}));
+  state.selectedId = id;
+  renderNav();
+  fitLevelView();
+}
+
+/* ======================================================================
+   Selection + inspector
+   ====================================================================== */
+function select(id){
+  state.selectedId = id;
+  document.querySelectorAll('.node').forEach(d=>d.classList.toggle('selected', d.dataset.id===id));
+  renderInspector();
+  renderYaml();
+}
+function renderInspector(){
+  const id = state.selectedId;
+  const item = id ? itemsById[id] : null;
+  if(!item){
+    el.inspBody.innerHTML = '<div class="insp-empty">Click any card to inspect it. Double-click a card with a ⤤ badge (or click the badge) to drill into its subflow.</div>';
+    return;
+  }
+  const colorMap = {'leaf-cond':'var(--c-leaf)','ref-cond':'var(--c-ref)','gate':'var(--c-'+(item.op||'all')+')','action-step':'var(--c-action)','ref-action':'var(--c-ref)','header':'var(--accent)','action-seq':'var(--c-action)'};
+  const kc = colorMap[item.kind] || 'var(--muted)';
+  let html = `<span class="insp-kind" style="color:${kc};background:color-mix(in srgb, ${kc} 18%, transparent)">${item.kind}${item.op?(' · '+item.op):''}</span>`;
+
+  if(item.kind==='leaf-cond'){
+    html += `<div class="insp-field"><label>Field</label><input data-edit="field" value="${esc(item.field)}"></div>
+      <div class="insp-field"><label>Operator</label><input data-edit="operator" value="${esc(item.operator)}"></div>
+      <div class="insp-field"><label>Value</label><input data-edit="value" value="${esc(item.value)}"></div>
+      <div class="insp-note">Terminal node — nothing to drill into.</div>`;
+  } else if(item.kind==='ref-cond' || item.kind==='ref-action'){
+    html += `<div class="insp-field"><label>Ref path</label><input data-edit="path" value="${esc(item.path)}"></div>
+      <div class="insp-note"><b>Portal node.</b> Resolves to a reusable ${item.kind==='ref-cond'?'condition group':'action sequence'} defined once under <code>refs.${item.kind==='ref-cond'?'conditions':'actions'}</code> and reused across rules. Double-click the card (or its ⤤ badge) to enter it as its own mini-canvas.</div>`;
+  } else if(item.kind==='gate'){
+    html += `<div class="insp-note"><b>Inline ${item.op.toUpperCase()} group</b> — ${item.children.length} direct child${item.children.length===1?'':'ren'}. Double-click to drill in.</div>`;
+  } else if(item.kind==='action-step'){
+    html += `<div class="insp-field"><label>Type</label><input data-edit="type" value="${esc(item.type)}"></div>
+      <div class="insp-field"><label>Params</label><input data-edit="params" value="${esc(item.params||'')}"></div>
+      <div class="insp-note">Terminal node — nothing to drill into.</div>`;
+  } else if(item.kind==='action-seq'){
+    html += `<div class="insp-note">Action sequence with ${item.steps.length} step${item.steps.length===1?'':'s'}, run in order. Double-click to drill in.</div>`;
+  } else if(item.kind==='header'){
+    const r = currentRule();
+    html += `<div class="insp-note">Rule "${esc(r.name)}" · triggers on <b>${esc(r.context)}</b>. Toggle the enabled pill on the banner to flip it live.</div>`;
+  }
+  el.inspBody.innerHTML = html;
+  el.inspBody.querySelectorAll('[data-edit]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      item[inp.dataset.edit] = inp.value;
+      currentRule().yamlCache = {};
+      renderLevelOnly();
+      renderYaml();
+    });
+  });
+}
+
+/* ======================================================================
+   YAML preview
+   ====================================================================== */
+function colorizeYamlLine(text){
+  const hashIdx = text.indexOf('#');
+  let code = text, comment = '';
+  if(hashIdx >= 0){ code = text.slice(0,hashIdx); comment = text.slice(hashIdx); }
+  const leadMatch = code.match(/^(\s*(?:-\s*)?)/);
+  const lead = leadMatch ? leadMatch[0] : '';
+  let rest = code.slice(lead.length);
+  let out = esc(lead);
+  const kvMatch = rest.match(/^([A-Za-z_][\w.]*)\s*:\s*(.*)$/);
+  if(kvMatch){
+    const key = kvMatch[1], val = kvMatch[2];
+    out += `<span class="yk">${esc(key)}</span><span class="yp">:</span>` + (val ? ' ' + colorizeValue(val) : '');
+  } else if(rest.trim().startsWith('$ref:')){
+    const afterColon = rest.trim().slice(5).trim();
+    out += `<span class="yr">$ref</span><span class="yp">:</span> <span class="yr">${esc(afterColon)}</span>`;
+  } else {
+    out += colorizeValue(rest);
+  }
+  if(comment) out += `<span class="yc">${esc(comment)}</span>`;
+  return out;
+}
+function colorizeValue(v){
+  const t = v.trim();
+  if(!t) return '';
+  if(t.startsWith('$ref:')) return `<span class="yr">${esc(t)}</span>`;
+  if(/^["'].*["']$/.test(t)) return `<span class="ys">${esc(t)}</span>`;
+  if(/^-?\d+(\.\d+)?$/.test(t)) return `<span class="yn">${esc(t)}</span>`;
+  if(/^(true|false)$/.test(t)) return `<span class="yn">${esc(t)}</span>`;
+  if(t.startsWith('[') || t.startsWith('{')) return `<span class="yp">${esc(t)}</span>`;
+  return esc(t);
+}
+function renderYaml(){
+  const rule = currentRule();
+  const mode = state.yamlMode;
+  if(!rule.yamlCache[mode]) rule.yamlCache[mode] = buildYamlLines(rule, mode);
+  const lines = rule.yamlCache[mode];
+  const sel = state.selectedId;
+  let html = '', firstHl = -1;
+  lines.forEach((ln,i)=>{
+    let hl = false;
+    if(sel){
+      if(ln.id === sel) hl = true;
+      else if(mode==='source' && rule.anchors[sel] === ln.id) hl = true;
+    }
+    if(hl && firstHl<0) firstHl = i;
+    html += `<div class="yline${hl?' hl':''}" data-yid="${ln.id||''}">${colorizeYamlLine(ln.text)}</div>`;
+  });
+  el.yamlOut.innerHTML = html || '<span class="yc"># (empty)</span>';
+  if(firstHl>=0){
+    const rows = el.yamlOut.children;
+    if(rows[firstHl]) rows[firstHl].scrollIntoView({block:'nearest'});
+  }
+}
+el.yamlOut.addEventListener('click', e=>{
+  const row = e.target.closest('.yline');
+  if(!row) return;
+  const id = row.dataset.yid;
+  if(!id) return;
+  jumpTo(id);
+});
+
+/* ======================================================================
+   Pan / zoom
+   ====================================================================== */
+function applyTransform(){
+  el.world.style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${state.zoom})`;
+  el.zoomReadout.textContent = Math.round(state.zoom*100)+'%';
+}
+function zoomAt(newZoom, sx, sy){
+  newZoom = Math.min(2, Math.max(0.3, newZoom));
+  const r = el.wrap.getBoundingClientRect();
+  const lx = sx - r.left, ly = sy - r.top;
+  const wx = (lx-state.pan.x)/state.zoom, wy = (ly-state.pan.y)/state.zoom;
+  state.zoom = newZoom;
+  state.pan.x = lx - wx*state.zoom;
+  state.pan.y = ly - wy*state.zoom;
+  applyTransform();
+}
+function fitLevelView(){
+  const ids = Object.keys(nodeEls);
+  if(!ids.length) return;
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  ids.forEach(id=>{
+    const d = nodeEls[id];
+    const x = parseFloat(d.style.left)||0, y = parseFloat(d.style.top)||0;
+    const w = parseFloat(d.style.width)||d.offsetWidth||200, h = parseFloat(d.style.height)||d.offsetHeight||60;
+    minX=Math.min(minX,x); minY=Math.min(minY,y); maxX=Math.max(maxX,x+w); maxY=Math.max(maxY,y+h);
+  });
+  const pad = 60; minX-=pad; minY-=pad; maxX+=pad; maxY+=pad;
+  const r = el.wrap.getBoundingClientRect();
+  const topOffset = (state.viewMode==='flat') ? 30 : 92;
+  const availH = Math.max(r.height-topOffset, 120);
+  const z = Math.min(r.width/(maxX-minX), availH/(maxY-minY), 1.1);
+  state.zoom = Math.max(0.3, Math.min(1.1, z));
+  state.pan.x = r.width/2 - state.zoom*(minX+maxX)/2;
+  state.pan.y = topOffset + availH/2 - state.zoom*(minY+maxY)/2;
+  applyTransform();
+}
+
+el.wrap.addEventListener('wheel', e=>{
+  e.preventDefault();
+  const delta = -e.deltaY * 0.0016;
+  zoomAt(state.zoom * (1+delta), e.clientX, e.clientY);
+}, {passive:false});
+
+el.wrap.addEventListener('pointerdown', e=>{
+  if(e.target.closest('.node')) return;
+  state.panning = true;
+  state.panStart = { x:e.clientX, y:e.clientY, panX:state.pan.x, panY:state.pan.y };
+  el.wrap.classList.add('panning');
+  el.wrap.setPointerCapture(e.pointerId);
+  if(state.selectedId){ state.selectedId=null; renderInspector(); renderYaml();
+    document.querySelectorAll('.node.selected').forEach(d=>d.classList.remove('selected')); }
+});
+el.wrap.addEventListener('pointermove', e=>{
+  if(!state.panning) return;
+  state.pan.x = state.panStart.panX + (e.clientX-state.panStart.x);
+  state.pan.y = state.panStart.panY + (e.clientY-state.panStart.y);
+  applyTransform();
+});
+function endPan(e){ if(state.panning){ state.panning=false; el.wrap.classList.remove('panning'); try{ el.wrap.releasePointerCapture(e.pointerId); }catch(err){} } }
+el.wrap.addEventListener('pointerup', endPan);
+el.wrap.addEventListener('pointercancel', endPan);
+
+document.getElementById('btnZoomIn').addEventListener('click', ()=>{ const r=el.wrap.getBoundingClientRect(); zoomAt(state.zoom*1.2, r.left+r.width/2, r.top+r.height/2); });
+document.getElementById('btnZoomOut').addEventListener('click', ()=>{ const r=el.wrap.getBoundingClientRect(); zoomAt(state.zoom/1.2, r.left+r.width/2, r.top+r.height/2); });
+document.getElementById('btnFit').addEventListener('click', fitLevelView);
+
+/* ======================================================================
+   Node interaction: select (click) vs enter (dblclick / badge click)
+   ====================================================================== */
+el.nodes.addEventListener('pointerdown', e=>{
+  const toggleEn = e.target.closest('[data-toggle-enabled]');
+  if(toggleEn){
+    e.stopPropagation();
+    const r = currentRule();
+    r.enabled = !r.enabled;
+    r.yamlCache = {};
+    renderLevelOnly();
+    renderYaml();
+    return;
+  }
+  const card = e.target.closest('.node[data-id]');
+  if(!card) return;
+  e.stopPropagation();
+  const id = card.dataset.id;
+  const item = itemsById[id];
+  if(!item) return;
+  select(id);
+  if(e.target.closest('.portal-badge')) tryEnter(item);
+});
+el.nodes.addEventListener('dblclick', e=>{
+  const card = e.target.closest('.node[data-id]');
+  if(!card) return;
+  const item = itemsById[card.dataset.id];
+  if(item) tryEnter(item);
+});
+function tryEnter(item){
+  if(item.kind==='gate' || item.kind==='ref-cond' || item.kind==='action-seq' || item.kind==='ref-action') enterItem(item);
+}
+
+/* ======================================================================
+   Topbar controls: view mode / yaml toggle / yaml source-resolved
+   ====================================================================== */
+document.getElementById('btnViewMode').addEventListener('click', (e)=>{
+  state.viewMode = state.viewMode==='flat' ? 'nested' : 'flat';
+  e.target.textContent = state.viewMode==='flat' ? 'View: Flat ⇄ Nested' : 'View: Nested ⇄ Flat';
+  e.target.classList.toggle('on', state.viewMode==='flat');
+  el.canvasHint.style.display = state.viewMode==='flat' ? 'none' : 'block';
+  state.selectedId = null;
+  renderNav();
+  fitLevelView();
+});
+
+document.getElementById('btnYamlToggle').addEventListener('click', toggleYamlPanel);
+document.getElementById('yamlTab').addEventListener('click', toggleYamlPanel);
+function toggleYamlPanel(){
+  el.workspace.classList.toggle('no-yaml');
+  const btn = document.getElementById('btnYamlToggle');
+  btn.textContent = el.workspace.classList.contains('no-yaml') ? 'YAML ◂' : 'YAML ▸';
+}
+document.querySelectorAll('.yaml-mode-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    state.yamlMode = btn.dataset.mode;
+    document.querySelectorAll('.yaml-mode-btn').forEach(b=>b.classList.toggle('active', b===btn));
+    renderYaml();
+  });
+});
+
+/* ======================================================================
+   Boot
+   ====================================================================== */
+renderTabs();
+renderNav();
+requestAnimationFrame(fitLevelView);
+window.addEventListener('resize', ()=>{ applyTransform(); });
+
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,929 @@
+<!--
+  qbt-rules :: Refs Dependency Graph — impact-analysis explorer (concept demo)
+  ------------------------------------------------------------------------
+  A READ-ONLY, exploratory canvas (ReactFlow-inspired: Background dots,
+  MiniMap, Controls, curved edges) over the *real* refs/rules web parsed
+  from advanced-rules-example.yml. Click any node to trace what it DEPENDS
+  ON (upstream, blue) vs what would BREAK if you touched it (downstream /
+  "used by", amber) — the "why can't I delete this var?" question. Search
+  filters by name; pan/zoom + minimap navigate the auto-layered layout.
+  This is a hand-rolled mockup borrowing ReactFlow's interaction language,
+  not the real library — vanilla HTML/CSS/JS + inline SVG only.
+-->
+<title>qbt-rules — Refs Dependency Graph</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{
+    --bg:#0a0e14;
+    --bg-dot:#1a2432;
+    --panel:#111823;
+    --panel-2:#0d131c;
+    --border:#22303f;
+    --border-soft:#1a2532;
+    --text:#e6edf3;
+    --text-dim:#8ea0b3;
+    --text-faint:#576576;
+    --var-c:#38bdf8;
+    --var-c-soft:rgba(56,189,248,.14);
+    --cond-c:#b48af8;
+    --cond-c-soft:rgba(180,138,248,.14);
+    --action-c:#fb923c;
+    --action-c-soft:rgba(251,146,60,.14);
+    --rule-c:#34d399;
+    --rule-c-soft:rgba(52,211,153,.14);
+    --negate-c:#fb7185;
+    --edge:#33404f;
+    --edge-strong:#4b5a6b;
+    --up-c:#60a5fa;
+    --down-c:#fbbf24;
+    --radius:10px;
+    --shadow: 0 8px 24px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; height:100%; width:100%;
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+  }
+  .mono{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+
+  #app{ position:relative; height:100vh; width:100vw; display:flex; flex-direction:column; }
+
+  /* ---------- Top bar ---------- */
+  #topbar{
+    display:flex; align-items:center; gap:16px;
+    padding:10px 16px; background:var(--panel);
+    border-bottom:1px solid var(--border);
+    z-index:20; flex:0 0 auto;
+  }
+  #topbar .brand{ display:flex; flex-direction:column; gap:1px; margin-right:4px; }
+  #topbar .brand b{ font-size:13.5px; letter-spacing:.2px; }
+  #topbar .brand span{ font-size:11px; color:var(--text-dim); }
+
+  .search-wrap{ position:relative; flex:0 0 260px; }
+  .search-wrap input{
+    width:100%; padding:7px 10px 7px 30px; border-radius:8px;
+    border:1px solid var(--border); background:var(--panel-2); color:var(--text);
+    font-size:13px; outline:none;
+  }
+  .search-wrap input:focus{ border-color:var(--var-c); box-shadow:0 0 0 3px var(--var-c-soft); }
+  .search-wrap svg{ position:absolute; left:9px; top:50%; transform:translateY(-50%); opacity:.55; }
+  .search-count{ font-size:11px; color:var(--text-dim); margin-left:6px; white-space:nowrap; }
+
+  .filters{ display:flex; gap:6px; }
+  .chip-toggle{
+    display:flex; align-items:center; gap:6px;
+    padding:5px 10px; border-radius:999px; cursor:pointer; user-select:none;
+    border:1px solid var(--border); background:var(--panel-2);
+    font-size:12px; color:var(--text-dim); transition:opacity .15s;
+  }
+  .chip-toggle .dot{ width:8px; height:8px; border-radius:50%; }
+  .chip-toggle.off{ opacity:.4; }
+  .chip-toggle input{ display:none; }
+
+  .spacer{ flex:1 1 auto; }
+
+  .legend-inline{ display:flex; gap:14px; align-items:center; font-size:11px; color:var(--text-dim); }
+  .legend-inline .li{ display:flex; align-items:center; gap:5px; }
+  .legend-inline svg{ display:block; }
+
+  #hint{
+    font-size:11px; color:var(--text-faint); padding:6px 16px;
+    background:var(--panel-2); border-bottom:1px solid var(--border-soft);
+    flex:0 0 auto;
+  }
+  #hint b{ color:var(--text-dim); font-weight:600; }
+
+  /* ---------- Canvas ---------- */
+  #canvas-wrap{ position:relative; flex:1 1 auto; overflow:hidden; background:var(--bg); cursor:grab; }
+  #canvas-wrap.panning{ cursor:grabbing; }
+  #graph{ position:absolute; top:0; left:0; }
+
+  .node{ cursor:pointer; }
+  .node .shape{
+    stroke-width:1.6; transition:opacity .18s ease, stroke .18s ease, filter .18s ease;
+  }
+  .node text{
+    fill:var(--text); font-size:11.5px; pointer-events:none; user-select:none;
+    transition:opacity .18s ease;
+  }
+  .node .sub{ fill:var(--text-dim); font-size:9.5px; }
+  .node .badge{ font-size:8.5px; font-weight:700; letter-spacing:.4px; }
+
+  .edge path{ fill:none; stroke:var(--edge); stroke-width:1.4; transition:opacity .18s ease, stroke .18s ease, stroke-width .18s ease; }
+  .edge.negate path{ stroke:var(--negate-c); stroke-dasharray:5 3; opacity:.55; }
+  .edge.interp path{ stroke:var(--var-c); stroke-dasharray:1.5 4; opacity:.4; stroke-width:1.1; }
+  .edge.uses path{ opacity:.55; }
+
+  /* dim / highlight states applied on #graph via data-mode */
+  #graph[data-mode="focus"] .node{ opacity:.16; }
+  #graph[data-mode="focus"] .node.selected,
+  #graph[data-mode="focus"] .node.up,
+  #graph[data-mode="focus"] .node.down{ opacity:1; }
+  #graph[data-mode="focus"] .edge{ opacity:.05; }
+  #graph[data-mode="focus"] .edge.up-e{ opacity:.95; stroke:var(--up-c); stroke-width:2.1; }
+  #graph[data-mode="focus"] .edge.down-e{ opacity:.95; stroke:var(--down-c); stroke-width:2.1; }
+  #graph[data-mode="focus"] .node.selected .shape{ stroke:#fff; stroke-width:2.6; filter:drop-shadow(0 0 10px rgba(255,255,255,.35)); }
+  #graph[data-mode="focus"] .node.up .shape{ stroke:var(--up-c); filter:drop-shadow(0 0 6px rgba(96,165,250,.45)); }
+  #graph[data-mode="focus"] .node.down .shape{ stroke:var(--down-c); filter:drop-shadow(0 0 6px rgba(251,191,36,.45)); }
+
+  #graph[data-mode="search"] .node{ opacity:.14; }
+  #graph[data-mode="search"] .node.match{ opacity:1; }
+  #graph[data-mode="search"] .node.match .shape{ stroke:#fff; stroke-width:2.2; filter:drop-shadow(0 0 8px rgba(255,255,255,.4)); }
+  #graph[data-mode="search"] .edge{ opacity:.04; }
+
+  .type-hidden{ display:none !important; }
+
+  /* ---------- Info panel ---------- */
+  #info{
+    position:absolute; top:12px; right:12px; width:308px; max-height:calc(100% - 24px);
+    overflow-y:auto; background:var(--panel); border:1px solid var(--border);
+    border-radius:var(--radius); box-shadow:var(--shadow); z-index:15;
+    transform:translateX(340px); opacity:0; transition:transform .18s ease, opacity .18s ease;
+    pointer-events:none;
+  }
+  #info.open{ transform:translateX(0); opacity:1; pointer-events:auto; }
+  #info-head{ display:flex; align-items:flex-start; gap:10px; padding:14px 14px 10px; border-bottom:1px solid var(--border-soft); }
+  #info-type{ font-size:10px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; }
+  #info-title{ font-size:14px; font-weight:600; margin-top:3px; line-height:1.35; word-break:break-word; }
+  #info-close{
+    margin-left:auto; background:none; border:none; color:var(--text-dim); cursor:pointer;
+    font-size:16px; line-height:1; padding:2px 4px; border-radius:5px;
+  }
+  #info-close:hover{ background:var(--border-soft); color:var(--text); }
+  #info-body{ padding:12px 14px 16px; font-size:12.5px; }
+  #info-body .row{ margin-bottom:12px; }
+  #info-body .row .label{ font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--text-faint); margin-bottom:5px; }
+  #info-body .meta-line{ color:var(--text-dim); line-height:1.5; }
+  #info-body .kv{ display:flex; gap:6px; flex-wrap:wrap; }
+  #info-body .tag{
+    display:inline-block; padding:2px 7px; border-radius:6px; font-size:10.5px;
+    background:var(--panel-2); border:1px solid var(--border); color:var(--text-dim);
+  }
+  #info-body .steps{ display:flex; flex-direction:column; gap:4px; }
+  #info-body .steps div{ font-size:11.5px; color:var(--text-dim); }
+  #info-body .steps div b{ color:var(--text); }
+  .rel-list{ display:flex; flex-direction:column; gap:3px; max-height:180px; overflow-y:auto; }
+  .rel-item{
+    display:flex; align-items:center; gap:7px; padding:4px 6px; border-radius:6px;
+    cursor:pointer; font-size:12px; color:var(--text-dim);
+  }
+  .rel-item:hover{ background:var(--panel-2); color:var(--text); }
+  .rel-item .sw{ width:8px; height:8px; border-radius:2px; flex:0 0 auto; }
+  .rel-count{ color:var(--text-faint); font-weight:400; }
+  .empty-rel{ font-size:11.5px; color:var(--text-faint); font-style:italic; }
+
+  /* ---------- Legend panel ---------- */
+  #legend{
+    position:absolute; left:12px; bottom:12px; z-index:15;
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:10px 12px; font-size:11px; color:var(--text-dim);
+    display:flex; flex-direction:column; gap:6px; min-width:168px;
+  }
+  #legend .lg-title{ font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--text-faint); margin-bottom:2px; }
+  #legend .lg-row{ display:flex; align-items:center; gap:7px; }
+
+  /* ---------- Controls ---------- */
+  #controls{
+    position:absolute; left:12px; top:12px; z-index:15;
+    display:flex; flex-direction:column; gap:4px;
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    box-shadow:var(--shadow); overflow:hidden;
+  }
+  #controls button{
+    width:32px; height:30px; background:none; border:none; color:var(--text-dim);
+    cursor:pointer; font-size:15px; border-bottom:1px solid var(--border-soft);
+  }
+  #controls button:last-child{ border-bottom:none; }
+  #controls button:hover{ background:var(--panel-2); color:var(--text); }
+
+  /* ---------- Minimap ---------- */
+  #minimap-wrap{
+    position:absolute; right:12px; bottom:12px; z-index:15;
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    box-shadow:var(--shadow); overflow:hidden;
+  }
+  #minimap{ display:block; cursor:pointer; }
+  #minimap rect.mm-node{ }
+  #minimap rect.mm-viewport{ fill:rgba(255,255,255,.06); stroke:#fff; stroke-width:1.2; }
+
+  ::-webkit-scrollbar{ width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+</style>
+
+<div id="app">
+  <div id="topbar">
+    <div class="brand">
+      <b>qbt-rules · refs graph</b>
+      <span>read-only impact explorer</span>
+    </div>
+
+    <div class="search-wrap">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="#8ea0b3" stroke-width="2"/><path d="M20 20l-3.5-3.5" stroke="#8ea0b3" stroke-width="2" stroke-linecap="round"/></svg>
+      <input id="search" type="text" placeholder="Search vars, conditions, actions, rules…" autocomplete="off" />
+    </div>
+    <span class="search-count" id="search-count"></span>
+
+    <div class="filters" id="filters"></div>
+
+    <div class="spacer"></div>
+
+    <div class="legend-inline">
+      <span class="li"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4" stroke="#8ea0b3" stroke-width="1.6"/></svg>uses</span>
+      <span class="li"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4" stroke="#fb7185" stroke-width="1.6" stroke-dasharray="4 3"/></svg>negates</span>
+      <span class="li"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4" stroke="#38bdf8" stroke-width="1.4" stroke-dasharray="1.5 4"/></svg>interpolates</span>
+    </div>
+  </div>
+
+  <div id="hint">
+    <b>Click</b> a node to trace impact (blue = depends on / upstream, amber = used by / breaks-if-changed downstream) &nbsp;·&nbsp;
+    <b>Scroll</b> to zoom, <b>drag</b> to pan &nbsp;·&nbsp; <b>Search</b> to filter by name &nbsp;·&nbsp; <b>Esc</b> to clear
+  </div>
+
+  <div id="canvas-wrap">
+    <svg id="graph" data-mode="none"></svg>
+
+    <div id="controls">
+      <button id="zoom-in" title="Zoom in">+</button>
+      <button id="zoom-out" title="Zoom out">&minus;</button>
+      <button id="zoom-fit" title="Fit view">&#9678;</button>
+    </div>
+
+    <div id="legend">
+      <div class="lg-title">Node types</div>
+      <div class="lg-row"><svg width="14" height="14"><rect x="1" y="4" width="12" height="6" rx="3" fill="rgba(56,189,248,.18)" stroke="#38bdf8" stroke-width="1.3"/></svg> Var</div>
+      <div class="lg-row"><svg width="14" height="14"><polygon points="7,1 13,4.5 13,9.5 7,13 1,9.5 1,4.5" fill="rgba(180,138,248,.18)" stroke="#b48af8" stroke-width="1.3"/></svg> Condition</div>
+      <div class="lg-row"><svg width="14" height="14"><rect x="1" y="3" width="12" height="8" rx="2.5" fill="rgba(251,146,60,.18)" stroke="#fb923c" stroke-width="1.3"/></svg> Action</div>
+      <div class="lg-row"><svg width="14" height="14"><rect x="0.5" y="2.5" width="13" height="9" rx="3" fill="rgba(52,211,153,.18)" stroke="#34d399" stroke-width="1.3"/></svg> Rule</div>
+    </div>
+
+    <div id="minimap-wrap">
+      <svg id="minimap" width="200" height="150"></svg>
+    </div>
+
+    <div id="info">
+      <div id="info-head">
+        <div>
+          <div id="info-type"></div>
+          <div id="info-title"></div>
+        </div>
+        <button id="info-close">&times;</button>
+      </div>
+      <div id="info-body"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   1. DATA — traced by hand from advanced-rules-example.yml
+   ============================================================ */
+
+var VARS = [
+  { id:"v_min_ratio_private",     label:"min_ratio_private",     value:"2.0",  desc:"Private trackers require higher ratios" },
+  { id:"v_min_ratio_public",      label:"min_ratio_public",      value:"1.0",  desc:"Public trackers are more lenient" },
+  { id:"v_excellent_ratio",       label:"excellent_ratio",       value:"5.0",  desc:"Consider this “well seeded”" },
+  { id:"v_completion_age_short",  label:"completion_age_short",  value:"7 days",  desc:"Recent torrents" },
+  { id:"v_completion_age_medium", label:"completion_age_medium", value:"30 days", desc:"Standard cleanup age" },
+  { id:"v_completion_age_long",   label:"completion_age_long",   value:"90 days", desc:"Long-term seeding" },
+  { id:"v_large_file_bytes",      label:"large_file_bytes",      value:"50 GB",  desc:"53687091200 bytes — consider “large”" },
+  { id:"v_huge_file_bytes",       label:"huge_file_bytes",       value:"100 GB", desc:"107374182400 bytes — consider “huge”" },
+  { id:"v_protected_categories",  label:"protected_categories",  value:"[keep, seedbox, long-term, permanent, archive]", desc:"Never auto-delete these categories" },
+  { id:"v_hd_content_pattern",    label:"hd_content_pattern",    value:"(?i).*(1080p|2160p|4k|uhd|bluray|remux).*", desc:"HD quality name pattern" },
+  { id:"v_tv_show_pattern",       label:"tv_show_pattern",       value:"(?i).*(s\\d{2}e\\d{2}|season...).* ", desc:"TV episode name pattern" },
+  { id:"v_movie_pattern",         label:"movie_pattern",         value:"(?i).*(20\\d{2}|19\\d{2})....*", desc:"Movie name pattern" },
+  { id:"v_min_active_seeds",      label:"min_active_seeds",      value:"5",   desc:"Seed count floor for activity checks" },
+  { id:"v_zero_activity_hours",   label:"zero_activity_hours",   value:"168", desc:"7 days in hours" }
+];
+
+var CONDITIONS = [
+  { id:"c_private_tracker",      label:"private-tracker",      op:"any",  desc:"Tracker URL matches one of 5 known private trackers" },
+  { id:"c_public_tracker",       label:"public-tracker",       op:"none", desc:"NOT private-tracker (negated ref)" },
+  { id:"c_well_seeded_private",  label:"well-seeded-private",  op:"all",  desc:"ratio ≥ min_ratio_private AND completed ≥ completion_age_medium ago" },
+  { id:"c_well_seeded_public",   label:"well-seeded-public",   op:"all",  desc:"ratio ≥ min_ratio_public AND completed ≥ completion_age_medium ago" },
+  { id:"c_excellently_seeded",   label:"excellently-seeded",   op:"all",  desc:"ratio ≥ excellent_ratio AND seeding_time > 30d" },
+  { id:"c_under_seeded_private", label:"under-seeded-private", op:"all",  desc:"ratio < min_ratio_private AND state in [uploading,stalledUP,queuedUP]" },
+  { id:"c_hd_content",           label:"hd-content",           op:"all",  desc:"name matches hd_content_pattern" },
+  { id:"c_tv_show",              label:"tv-show",              op:"all",  desc:"name matches tv_show_pattern" },
+  { id:"c_movie",                label:"movie",                op:"all",  desc:"name matches movie_pattern" },
+  { id:"c_large_file",           label:"large-file",           op:"all",  desc:"size > large_file_bytes" },
+  { id:"c_huge_file",            label:"huge-file",            op:"all",  desc:"size > huge_file_bytes" },
+  { id:"c_no_activity",          label:"no-activity",          op:"all",  desc:"0 leechers, ≤ min_active_seeds, idle ≥ zero_activity_hours" },
+  { id:"c_protected_content",    label:"protected-content",    op:"any",  desc:"category in protected_categories, or tagged keep / !delete" }
+];
+
+var ACTIONS = [
+  { id:"a_safe_delete",              label:"safe-delete",              steps:["add_tag","stop","set_category"] },
+  { id:"a_force_seed_private",       label:"force-seed-private",       steps:["force_start","set_upload_limit","add_tag"] },
+  { id:"a_process_hd_content",       label:"process-hd-content",       steps:["add_tag","set_category","increase_priority"] },
+  { id:"a_pause_inactive",           label:"pause-inactive",           steps:["stop","add_tag","set_upload_limit"] },
+  { id:"a_reward_excellent_seeding", label:"reward-excellent-seeding", steps:["add_tag"] },
+  { id:"a_limit_large_upload",       label:"limit-large-upload",       steps:["set_upload_limit","add_tag"] }
+];
+
+var RULES = [
+  { id:"r1",  label:"Force seed private tracker torrents under ratio",         context:"download-finished", enabled:true,  stop:false },
+  { id:"r2",  label:"Cleanup well-seeded private tracker torrents",            context:"weekly-cleanup",    enabled:true,  stop:false },
+  { id:"r3",  label:"Cleanup public tracker torrents after medium term",       context:"weekly-cleanup",    enabled:true,  stop:false },
+  { id:"r4",  label:"Auto-categorize and prioritize HD content from private trackers", context:"torrent-imported", enabled:true, stop:false },
+  { id:"r5",  label:"Tag and celebrate excellent seeding achievements",        context:"weekly-cleanup",    enabled:true,  stop:false },
+  { id:"r6",  label:"Pause large files with no activity to save resources",    context:"weekly-cleanup",    enabled:true,  stop:false },
+  { id:"r7",  label:"Limit upload speed for huge files to prevent bandwidth hogging", context:"download-finished", enabled:true, stop:false },
+  { id:"r8",  label:"Aggressive cleanup of huge old public torrents",          context:"manual",            enabled:false, stop:false },
+  { id:"r9",  label:"Special handling for private tracker HD TV shows",        context:"torrent-imported",  enabled:true,  stop:false },
+  { id:"r10", label:"Protect and maintain long-term archive content",         context:"weekly-cleanup",    enabled:true,  stop:true }
+];
+
+// edges: { s, t, kind }  kind = uses | negates | interp
+var EDGES = [
+  // condition -> var (interpolation)
+  { s:"c_well_seeded_private",  t:"v_min_ratio_private",     k:"interp" },
+  { s:"c_well_seeded_private",  t:"v_completion_age_medium", k:"interp" },
+  { s:"c_well_seeded_public",   t:"v_min_ratio_public",      k:"interp" },
+  { s:"c_well_seeded_public",   t:"v_completion_age_medium", k:"interp" },
+  { s:"c_excellently_seeded",   t:"v_excellent_ratio",       k:"interp" },
+  { s:"c_under_seeded_private", t:"v_min_ratio_private",     k:"interp" },
+  { s:"c_hd_content",           t:"v_hd_content_pattern",    k:"interp" },
+  { s:"c_tv_show",              t:"v_tv_show_pattern",       k:"interp" },
+  { s:"c_movie",                t:"v_movie_pattern",         k:"interp" },
+  { s:"c_large_file",           t:"v_large_file_bytes",      k:"interp" },
+  { s:"c_huge_file",            t:"v_huge_file_bytes",       k:"interp" },
+  { s:"c_no_activity",          t:"v_min_active_seeds",      k:"interp" },
+  { s:"c_no_activity",          t:"v_zero_activity_hours",   k:"interp" },
+  { s:"c_protected_content",    t:"v_protected_categories",  k:"interp" },
+
+  // condition -> condition (nested ref, negated)
+  { s:"c_public_tracker", t:"c_private_tracker", k:"negates" },
+
+  // rule -> condition (uses)
+  { s:"r1", t:"c_private_tracker", k:"uses" },
+  { s:"r1", t:"c_under_seeded_private", k:"uses" },
+  { s:"r2", t:"c_private_tracker", k:"uses" },
+  { s:"r2", t:"c_well_seeded_private", k:"uses" },
+  { s:"r2", t:"c_no_activity", k:"uses" },
+  { s:"r3", t:"c_public_tracker", k:"uses" },
+  { s:"r3", t:"c_well_seeded_public", k:"uses" },
+  { s:"r4", t:"c_private_tracker", k:"uses" },
+  { s:"r4", t:"c_hd_content", k:"uses" },
+  { s:"r4", t:"c_tv_show", k:"uses" },
+  { s:"r4", t:"c_movie", k:"uses" },
+  { s:"r5", t:"c_excellently_seeded", k:"uses" },
+  { s:"r5", t:"c_private_tracker", k:"uses" },
+  { s:"r5", t:"c_hd_content", k:"uses" },
+  { s:"r6", t:"c_large_file", k:"uses" },
+  { s:"r6", t:"c_no_activity", k:"uses" },
+  { s:"r7", t:"c_huge_file", k:"uses" },
+  { s:"r8", t:"c_public_tracker", k:"uses" },
+  { s:"r8", t:"c_huge_file", k:"uses" },
+  { s:"r9", t:"c_private_tracker", k:"uses" },
+  { s:"r9", t:"c_hd_content", k:"uses" },
+  { s:"r9", t:"c_tv_show", k:"uses" },
+  { s:"r10", t:"c_protected_content", k:"uses" },
+  { s:"r10", t:"c_private_tracker", k:"uses" },
+  { s:"r10", t:"c_excellently_seeded", k:"uses" },
+
+  // rule -> condition (negates, via none: [...])
+  { s:"r1", t:"c_protected_content", k:"negates" },
+  { s:"r2", t:"c_protected_content", k:"negates" },
+  { s:"r3", t:"c_protected_content", k:"negates" },
+  { s:"r3", t:"c_hd_content", k:"negates" },
+  { s:"r6", t:"c_protected_content", k:"negates" },
+  { s:"r7", t:"c_under_seeded_private", k:"negates" },
+  { s:"r8", t:"c_protected_content", k:"negates" },
+
+  // rule -> var (direct inline interpolation, not via a named condition)
+  { s:"r2",  t:"v_completion_age_long",  k:"interp" },
+  { s:"r6",  t:"v_min_ratio_public",     k:"interp" },
+  { s:"r8",  t:"v_completion_age_short", k:"interp" },
+  { s:"r10", t:"v_completion_age_long",  k:"interp" },
+
+  // rule -> action (uses)
+  { s:"r1", t:"a_force_seed_private", k:"uses" },
+  { s:"r2", t:"a_safe_delete", k:"uses" },
+  { s:"r3", t:"a_safe_delete", k:"uses" },
+  { s:"r4", t:"a_process_hd_content", k:"uses" },
+  { s:"r5", t:"a_reward_excellent_seeding", k:"uses" },
+  { s:"r6", t:"a_pause_inactive", k:"uses" },
+  { s:"r7", t:"a_limit_large_upload", k:"uses" },
+  { s:"r8", t:"a_safe_delete", k:"uses" },
+  { s:"r9", t:"a_process_hd_content", k:"uses" },
+  { s:"r9", t:"a_force_seed_private", k:"uses" },
+  { s:"r10", t:"a_reward_excellent_seeding", k:"uses" }
+];
+
+/* ============================================================
+   2. Build unified node list + adjacency, then auto-layout
+   ============================================================ */
+
+var ALL = [];
+VARS.forEach(function(v){ ALL.push(Object.assign({ type:"var" }, v)); });
+CONDITIONS.forEach(function(c){ ALL.push(Object.assign({ type:"condition" }, c)); });
+ACTIONS.forEach(function(a){ ALL.push(Object.assign({ type:"action" }, a)); });
+RULES.forEach(function(r){ ALL.push(Object.assign({ type:"rule" }, r)); });
+
+var byId = {};
+ALL.forEach(function(n){ byId[n.id] = n; });
+
+var outAdj = {}, inAdj = {}; // outAdj[id] = [{id, kind}] following "uses/negates/interp" direction
+ALL.forEach(function(n){ outAdj[n.id] = []; inAdj[n.id] = []; });
+EDGES.forEach(function(e){
+  outAdj[e.s].push({ id:e.t, k:e.k });
+  inAdj[e.t].push({ id:e.s, k:e.k });
+});
+
+// column layout
+var COL_X = { var:140, condition:520, rule:940, action:1360 };
+var SUBTIER_DX = 76;      // nudge for conditions that reference another condition
+var ROW_H = 64;
+var maxCount = Math.max(VARS.length, CONDITIONS.length, RULES.length, ACTIONS.length);
+var CANVAS_H = maxCount * ROW_H + 40;
+
+function layoutColumn(list, type){
+  var n = list.length;
+  var spacing = CANVAS_H / (n + 1);
+  list.forEach(function(item, i){
+    var node = byId[item.id];
+    node.x = COL_X[type];
+    if (type === "condition" && outAdj[item.id].some(function(e){ return byId[e.id].type === "condition"; })){
+      node.x += SUBTIER_DX;
+    }
+    node.y = spacing * (i + 1);
+  });
+}
+layoutColumn(VARS, "var");
+layoutColumn(CONDITIONS, "condition");
+layoutColumn(RULES, "rule");
+layoutColumn(ACTIONS, "action");
+
+var CANVAS_W = COL_X.action + 200;
+
+// node geometry per type
+var DIM = {
+  var:       { w:150, h:30 },
+  condition: { w:176, h:50 },
+  action:    { w:176, h:44 },
+  rule:      { w:236, h:66 }
+};
+ALL.forEach(function(n){ var d = DIM[n.type]; n.w = d.w; n.h = d.h; });
+
+var TYPE_COLOR = { var:"#38bdf8", condition:"#b48af8", action:"#fb923c", rule:"#34d399" };
+var TYPE_SOFT  = { var:"rgba(56,189,248,.14)", condition:"rgba(180,138,248,.14)", action:"rgba(251,146,60,.14)", rule:"rgba(52,211,153,.14)" };
+
+/* ============================================================
+   3. Render SVG
+   ============================================================ */
+
+var svgNS = "http://www.w3.org/2000/svg";
+var svg = document.getElementById("graph");
+svg.setAttribute("width", CANVAS_W);
+svg.setAttribute("height", CANVAS_H);
+
+function el(tag, attrs){
+  var e = document.createElementNS(svgNS, tag);
+  for (var k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+
+// defs: arrow markers + dot background pattern
+var defs = el("defs", {});
+[["uses","#5b6b7d"],["negates","#fb7185"],["interp","#38bdf8"]].forEach(function(pair){
+  var marker = el("marker", { id:"arrow-"+pair[0], viewBox:"0 0 10 10", refX:"8.5", refY:"5", markerWidth:"7", markerHeight:"7", orient:"auto-start-reverse" });
+  marker.appendChild(el("path", { d:"M0,0 L10,5 L0,10 Z", fill:pair[1] }));
+  defs.appendChild(marker);
+});
+var dotPattern = el("pattern", { id:"dot-grid", width:"26", height:"26", patternUnits:"userSpaceOnUse" });
+dotPattern.appendChild(el("circle", { cx:"2", cy:"2", r:"1.4", fill:"#1a2432" }));
+defs.appendChild(dotPattern);
+svg.appendChild(defs);
+
+var bg = el("rect", { x:-4000, y:-4000, width:8800, height:8800, fill:"url(#dot-grid)" });
+svg.appendChild(bg);
+
+var viewport = el("g", { id:"viewport" });
+svg.appendChild(viewport);
+
+var edgeLayer = el("g", { id:"edge-layer" });
+var nodeLayer = el("g", { id:"node-layer" });
+viewport.appendChild(edgeLayer);
+viewport.appendChild(nodeLayer);
+
+function anchorPoints(a, b){
+  // returns [ [x1,y1], [x2,y2] ] choosing left/right side based on relative x
+  var forward = b.x >= a.x;
+  var p1 = forward ? [a.x + a.w/2, a.y] : [a.x - a.w/2, a.y];
+  var p2 = forward ? [b.x - b.w/2, b.y] : [b.x + b.w/2, b.y];
+  return [p1, p2];
+}
+
+function edgePath(p1, p2){
+  var midX = (p1[0] + p2[0]) / 2;
+  return "M" + p1[0] + "," + p1[1] + " C" + midX + "," + p1[1] + " " + midX + "," + p2[1] + " " + p2[0] + "," + p2[1];
+}
+
+var edgeEls = [];
+EDGES.forEach(function(e){
+  var a = byId[e.s], b = byId[e.t];
+  var pts = anchorPoints(a, b);
+  var g = el("g", { class:"edge " + e.k, "data-s":e.s, "data-t":e.t });
+  var path = el("path", { d: edgePath(pts[0], pts[1]), "marker-end": "url(#arrow-" + e.k + ")" });
+  g.appendChild(path);
+  edgeLayer.appendChild(g);
+  edgeEls.push({ s:e.s, t:e.t, k:e.k, el:g });
+});
+
+function hexPoints(cx, cy, w, h){
+  var hw = w/2, hh = h/2, cut = w*0.16;
+  return [
+    [cx-hw+cut, cy-hh], [cx+hw-cut, cy-hh], [cx+hw, cy],
+    [cx+hw-cut, cy+hh], [cx-hw+cut, cy+hh], [cx-hw, cy]
+  ].map(function(p){ return p.join(","); }).join(" ");
+}
+
+var nodeEls = {};
+ALL.forEach(function(n){
+  var g = el("g", { class:"node type-" + n.type, "data-id": n.id, transform:"translate(0,0)" });
+  var color = TYPE_COLOR[n.type], soft = TYPE_SOFT[n.type];
+
+  if (n.type === "var"){
+    g.appendChild(el("rect", { class:"shape", x:n.x-n.w/2, y:n.y-n.h/2, width:n.w, height:n.h, rx:n.h/2, fill:soft, stroke:color }));
+    var t = el("text", { x:n.x, y:n.y+4, "text-anchor":"middle", class:"mono" });
+    t.textContent = truncate(n.label, 20);
+    g.appendChild(t);
+  } else if (n.type === "condition"){
+    g.appendChild(el("polygon", { class:"shape", points:hexPoints(n.x, n.y, n.w, n.h), fill:soft, stroke:color }));
+    var bt = el("text", { x:n.x, y:n.y-n.h/2+13, "text-anchor":"middle", class:"badge", fill:color });
+    bt.textContent = n.op.toUpperCase();
+    g.appendChild(bt);
+    var ct = el("text", { x:n.x, y:n.y+6, "text-anchor":"middle" });
+    ct.textContent = truncate(n.label, 20);
+    g.appendChild(ct);
+  } else if (n.type === "action"){
+    g.appendChild(el("rect", { class:"shape", x:n.x-n.w/2, y:n.y-n.h/2, width:n.w, height:n.h, rx:10, fill:soft, stroke:color }));
+    var at = el("text", { x:n.x, y:n.y-2, "text-anchor":"middle" });
+    at.textContent = truncate(n.label, 21);
+    g.appendChild(at);
+    var st = el("text", { x:n.x, y:n.y+13, "text-anchor":"middle", class:"sub" });
+    st.textContent = n.steps.length + " step" + (n.steps.length===1?"":"s") + ": " + n.steps.join(" → ");
+    g.appendChild(st);
+  } else if (n.type === "rule"){
+    g.appendChild(el("rect", { class:"shape", x:n.x-n.w/2, y:n.y-n.h/2, width:n.w, height:n.h, rx:12, fill:soft, stroke:color, "stroke-dasharray": n.enabled ? "" : "5 3" }));
+    var rt = el("text", { x:n.x, y:n.y-10, "text-anchor":"middle" });
+    rt.textContent = truncate(n.label, 30);
+    g.appendChild(rt);
+    var ctxT = el("text", { x:n.x, y:n.y+8, "text-anchor":"middle", class:"sub mono" });
+    ctxT.textContent = n.context + (n.enabled ? "" : "  ·  disabled") + (n.stop ? "  ·  stop_on_match" : "");
+    g.appendChild(ctxT);
+  }
+
+  nodeLayer.appendChild(g);
+  nodeEls[n.id] = g;
+});
+
+function truncate(s, n){ return s.length > n ? s.slice(0, n-1) + "…" : s; }
+
+/* ============================================================
+   4. Pan / zoom
+   ============================================================ */
+
+var wrap = document.getElementById("canvas-wrap");
+var tx = 0, ty = 0, scale = 1;
+var MIN_S = 0.22, MAX_S = 2.4;
+
+function applyTransform(){
+  viewport.setAttribute("transform", "translate(" + tx + "," + ty + ") scale(" + scale + ")");
+  updateMinimapViewport();
+}
+
+function fitView(animate){
+  var cw = wrap.clientWidth, ch = wrap.clientHeight;
+  var s = Math.min(cw / (CANVAS_W + 120), ch / (CANVAS_H + 80));
+  s = Math.max(MIN_S, Math.min(MAX_S, s * 0.94));
+  scale = s;
+  tx = (cw - CANVAS_W * s) / 2;
+  ty = (ch - CANVAS_H * s) / 2;
+  applyTransform();
+}
+
+wrap.addEventListener("wheel", function(ev){
+  ev.preventDefault();
+  var rect = wrap.getBoundingClientRect();
+  var mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+  var prevS = scale;
+  var delta = -ev.deltaY * 0.0016;
+  scale = Math.max(MIN_S, Math.min(MAX_S, scale * (1 + delta)));
+  // keep cursor position stable
+  tx = mx - (mx - tx) * (scale / prevS);
+  ty = my - (my - ty) * (scale / prevS);
+  applyTransform();
+}, { passive:false });
+
+var panning = false, panStart = null;
+wrap.addEventListener("pointerdown", function(ev){
+  if (ev.target.closest(".node")) return;
+  panning = true;
+  panStart = { x: ev.clientX, y: ev.clientY, tx:tx, ty:ty };
+  wrap.classList.add("panning");
+  wrap.setPointerCapture(ev.pointerId);
+});
+wrap.addEventListener("pointermove", function(ev){
+  if (!panning) return;
+  tx = panStart.tx + (ev.clientX - panStart.x);
+  ty = panStart.ty + (ev.clientY - panStart.y);
+  applyTransform();
+});
+["pointerup","pointercancel","pointerleave"].forEach(function(evt){
+  wrap.addEventListener(evt, function(){ panning = false; wrap.classList.remove("panning"); });
+});
+
+document.getElementById("zoom-in").addEventListener("click", function(){ zoomBy(1.2); });
+document.getElementById("zoom-out").addEventListener("click", function(){ zoomBy(1/1.2); });
+document.getElementById("zoom-fit").addEventListener("click", function(){ fitView(); });
+
+function zoomBy(f){
+  var cw = wrap.clientWidth, ch = wrap.clientHeight;
+  var prevS = scale;
+  scale = Math.max(MIN_S, Math.min(MAX_S, scale * f));
+  tx = cw/2 - (cw/2 - tx) * (scale/prevS);
+  ty = ch/2 - (ch/2 - ty) * (scale/prevS);
+  applyTransform();
+}
+
+/* ============================================================
+   5. Minimap
+   ============================================================ */
+
+var mm = document.getElementById("minimap");
+var MM_W = 200, MM_H = 150;
+mm.setAttribute("viewBox", "0 0 " + MM_W + " " + MM_H);
+var mmScale = Math.min(MM_W / CANVAS_W, MM_H / CANVAS_H);
+var mmOffX = (MM_W - CANVAS_W * mmScale) / 2;
+var mmOffY = (MM_H - CANVAS_H * mmScale) / 2;
+
+ALL.forEach(function(n){
+  var r = el("rect", {
+    class:"mm-node", x: mmOffX + (n.x - n.w/2) * mmScale, y: mmOffY + (n.y - n.h/2) * mmScale,
+    width: Math.max(2, n.w * mmScale), height: Math.max(2, n.h * mmScale),
+    fill: TYPE_COLOR[n.type], opacity:0.75, rx:1
+  });
+  mm.appendChild(r);
+});
+var mmViewportRect = el("rect", { class:"mm-viewport" });
+mm.appendChild(mmViewportRect);
+
+function updateMinimapViewport(){
+  var cw = wrap.clientWidth, ch = wrap.clientHeight;
+  var x0 = (0 - tx) / scale, y0 = (0 - ty) / scale;
+  var x1 = (cw - tx) / scale, y1 = (ch - ty) / scale;
+  mmViewportRect.setAttribute("x", mmOffX + x0 * mmScale);
+  mmViewportRect.setAttribute("y", mmOffY + y0 * mmScale);
+  mmViewportRect.setAttribute("width", Math.max(1, (x1-x0) * mmScale));
+  mmViewportRect.setAttribute("height", Math.max(1, (y1-y0) * mmScale));
+}
+
+mm.addEventListener("pointerdown", function(ev){
+  var rect = mm.getBoundingClientRect();
+  var mx = (ev.clientX - rect.left) * (MM_W / rect.width);
+  var my = (ev.clientY - rect.top) * (MM_H / rect.height);
+  var gx = (mx - mmOffX) / mmScale, gy = (my - mmOffY) / mmScale;
+  var cw = wrap.clientWidth, ch = wrap.clientHeight;
+  tx = cw/2 - gx * scale;
+  ty = ch/2 - gy * scale;
+  applyTransform();
+});
+
+/* ============================================================
+   6. Impact analysis: click to trace upstream / downstream
+   ============================================================ */
+
+function collect(startId, adj){
+  var visited = {};
+  var stack = [startId];
+  while (stack.length){
+    var cur = stack.pop();
+    (adj[cur] || []).forEach(function(edge){
+      if (!visited[edge.id]){
+        visited[edge.id] = true;
+        stack.push(edge.id);
+      }
+    });
+  }
+  return visited;
+}
+
+var selectedId = null;
+
+function typeLabel(t){
+  return { var:"Variable", condition:"Condition", action:"Action", rule:"Rule" }[t];
+}
+
+function selectNode(id){
+  selectedId = id;
+  clearSearch(true);
+  var node = byId[id];
+  var up = collect(id, outAdj);     // things this node depends on
+  var down = collect(id, inAdj);    // things that depend on this node
+
+  svg.setAttribute("data-mode", "focus");
+  ALL.forEach(function(n){
+    var g = nodeEls[n.id];
+    g.classList.remove("selected","up","down");
+    if (n.id === id) g.classList.add("selected");
+    else if (up[n.id]) g.classList.add("up");
+    else if (down[n.id]) g.classList.add("down");
+  });
+  edgeEls.forEach(function(e){
+    e.el.classList.remove("up-e","down-e");
+    var isUp = (e.s === id || up[e.s]) && up[e.t];
+    var isDown = (e.t === id || down[e.t]) && down[e.s];
+    if (isUp) e.el.classList.add("up-e");
+    if (isDown) e.el.classList.add("down-e");
+  });
+
+  renderInfo(node, up, down);
+}
+
+function clearSelection(){
+  selectedId = null;
+  svg.setAttribute("data-mode", "none");
+  ALL.forEach(function(n){ nodeEls[n.id].classList.remove("selected","up","down"); });
+  edgeEls.forEach(function(e){ e.el.classList.remove("up-e","down-e"); });
+  document.getElementById("info").classList.remove("open");
+}
+
+nodeLayer.addEventListener("click", function(ev){
+  var g = ev.target.closest(".node");
+  if (!g) return;
+  var id = g.getAttribute("data-id");
+  if (selectedId === id){ clearSelection(); return; }
+  selectNode(id);
+});
+
+/* ---------- info panel ---------- */
+
+var infoEl = document.getElementById("info");
+var infoType = document.getElementById("info-type");
+var infoTitle = document.getElementById("info-title");
+var infoBody = document.getElementById("info-body");
+document.getElementById("info-close").addEventListener("click", clearSelection);
+
+function relRow(id, swColor){
+  var n = byId[id];
+  var row = document.createElement("div");
+  row.className = "rel-item";
+  row.innerHTML = '<span class="sw" style="background:' + swColor + '"></span><span>' + n.label + '</span>';
+  row.addEventListener("click", function(ev){ ev.stopPropagation(); selectNode(id); });
+  return row;
+}
+
+function renderInfo(node, up, down){
+  infoType.textContent = typeLabel(node.type);
+  infoType.style.color = TYPE_COLOR[node.type];
+  infoTitle.textContent = node.label;
+  infoBody.innerHTML = "";
+
+  var metaRow = document.createElement("div");
+  metaRow.className = "row";
+  if (node.type === "var"){
+    metaRow.innerHTML = '<div class="label">Value</div><div class="meta-line mono">' + escapeHtml(node.value) + '</div>' +
+      (node.desc ? '<div class="meta-line" style="margin-top:4px">' + escapeHtml(node.desc) + '</div>' : '');
+  } else if (node.type === "condition"){
+    metaRow.innerHTML = '<div class="label">Logic</div><div class="kv"><span class="tag">' + node.op + '</span></div>' +
+      '<div class="meta-line" style="margin-top:6px">' + escapeHtml(node.desc) + '</div>';
+  } else if (node.type === "action"){
+    var stepsHtml = node.steps.map(function(s, i){ return '<div><b>' + (i+1) + '.</b> ' + escapeHtml(s) + '</div>'; }).join("");
+    metaRow.innerHTML = '<div class="label">Steps</div><div class="steps">' + stepsHtml + '</div>';
+  } else if (node.type === "rule"){
+    metaRow.innerHTML = '<div class="label">Context</div><div class="kv">' +
+      '<span class="tag">' + escapeHtml(node.context) + '</span>' +
+      (node.enabled ? '' : '<span class="tag" style="color:#fb7185;border-color:#fb7185">disabled</span>') +
+      (node.stop ? '<span class="tag">stop_on_match</span>' : '') +
+      '</div>';
+  }
+  infoBody.appendChild(metaRow);
+
+  var upIds = Object.keys(up), downIds = Object.keys(down);
+
+  var upRow = document.createElement("div");
+  upRow.className = "row";
+  upRow.innerHTML = '<div class="label">Depends on <span class="rel-count">(' + upIds.length + ')</span></div>';
+  var upList = document.createElement("div"); upList.className = "rel-list";
+  if (upIds.length === 0){ upList.innerHTML = '<div class="empty-rel">Nothing — this is a leaf.</div>'; }
+  else upIds.sort(function(a,b){ return byId[a].label.localeCompare(byId[b].label); })
+    .forEach(function(id){ upList.appendChild(relRow(id, "#60a5fa")); });
+  upRow.appendChild(upList);
+  infoBody.appendChild(upRow);
+
+  var downRow = document.createElement("div");
+  downRow.className = "row";
+  downRow.innerHTML = '<div class="label">Used by <span class="rel-count">(' + downIds.length + ')</span> — breaks if changed</div>';
+  var downList = document.createElement("div"); downList.className = "rel-list";
+  if (downIds.length === 0){ downList.innerHTML = '<div class="empty-rel">Nothing references this. Safe to remove.</div>'; }
+  else downIds.sort(function(a,b){ return byId[a].label.localeCompare(byId[b].label); })
+    .forEach(function(id){ downList.appendChild(relRow(id, "#fbbf24")); });
+  downRow.appendChild(downList);
+  infoBody.appendChild(downRow);
+
+  infoEl.classList.add("open");
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, function(c){
+    return { "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c];
+  });
+}
+
+/* ============================================================
+   7. Search / filter
+   ============================================================ */
+
+var searchInput = document.getElementById("search");
+var searchCount = document.getElementById("search-count");
+
+searchInput.addEventListener("input", function(){
+  var q = searchInput.value.trim().toLowerCase();
+  if (!q){ clearSearch(); return; }
+  clearSelectionQuiet();
+  svg.setAttribute("data-mode", "search");
+  var matches = 0;
+  ALL.forEach(function(n){
+    var isMatch = n.label.toLowerCase().indexOf(q) !== -1;
+    nodeEls[n.id].classList.toggle("match", isMatch);
+    if (isMatch) matches++;
+  });
+  searchCount.textContent = matches + " match" + (matches===1?"":"es");
+});
+
+function clearSelectionQuiet(){
+  selectedId = null;
+  ALL.forEach(function(n){ nodeEls[n.id].classList.remove("selected","up","down"); });
+  edgeEls.forEach(function(e){ e.el.classList.remove("up-e","down-e"); });
+  infoEl.classList.remove("open");
+}
+
+function clearSearch(keepMode){
+  searchInput.value = "";
+  searchCount.textContent = "";
+  ALL.forEach(function(n){ nodeEls[n.id].classList.remove("match"); });
+  if (!keepMode && svg.getAttribute("data-mode") === "search") svg.setAttribute("data-mode", "none");
+}
+
+document.addEventListener("keydown", function(ev){
+  if (ev.key === "Escape"){
+    clearSearch();
+    clearSelection();
+    searchInput.blur();
+  }
+});
+
+/* ============================================================
+   8. Type filter toggles
+   ============================================================ */
+
+var TYPES = [
+  { key:"var", label:"Vars ("+VARS.length+")", color:"#38bdf8" },
+  { key:"condition", label:"Conditions ("+CONDITIONS.length+")", color:"#b48af8" },
+  { key:"action", label:"Actions ("+ACTIONS.length+")", color:"#fb923c" },
+  { key:"rule", label:"Rules ("+RULES.length+")", color:"#34d399" }
+];
+var filtersEl = document.getElementById("filters");
+var activeTypes = { var:true, condition:true, action:true, rule:true };
+
+TYPES.forEach(function(t){
+  var label = document.createElement("label");
+  label.className = "chip-toggle";
+  label.innerHTML = '<span class="dot" style="background:' + t.color + '"></span>' + t.label;
+  var input = document.createElement("input");
+  input.type = "checkbox"; input.checked = true;
+  label.prepend(input);
+  input.addEventListener("change", function(){
+    activeTypes[t.key] = input.checked;
+    label.classList.toggle("off", !input.checked);
+    applyTypeFilter();
+  });
+  filtersEl.appendChild(label);
+});
+
+function applyTypeFilter(){
+  ALL.forEach(function(n){
+    nodeEls[n.id].classList.toggle("type-hidden", !activeTypes[n.type]);
+  });
+  edgeEls.forEach(function(e){
+    var hide = !activeTypes[byId[e.s].type] || !activeTypes[byId[e.t].type];
+    e.el.classList.toggle("type-hidden", hide);
+  });
+}
+
+/* ============================================================
+   9. Init
+   ============================================================ */
+
+window.addEventListener("resize", function(){ fitView(); });
+fitView();
+})();
+</script>

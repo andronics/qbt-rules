@@ -1,0 +1,1216 @@
+<!doctype html>
+<!--
+  qbt-rules — Execution / Simulation Pipeline (concept demo)
+
+  A hand-rolled, ReactFlow-inspired node/edge canvas that simulates one context
+  firing against a sample torrent. Pick a context + a preset torrent, then
+  Step or Run All to watch each rule evaluate in order: PASS (green, glowing,
+  fires animated edges to its action chips), FAIL (muted, evaluated but no
+  match), or SKIPPED (faded, never reached because an earlier stop_on_match
+  rule already matched). Conditions/actions/rules below are transcribed from
+  advanced-rules-example.yml and genuinely evaluated in JS against each
+  torrent's fields — nothing here is canned animation. Canvas supports
+  pan/zoom, a minimap, and a click-to-inspect condition trace per rule.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>qbt-rules · Execution Pipeline</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#0a0e14;
+    --bg-canvas:#0c1119;
+    --panel:#0f1621;
+    --panel-2:#121a26;
+    --border:#22303f;
+    --border-soft:#1a2531;
+    --text:#e6edf3;
+    --text-dim:#93a1b0;
+    --text-faint:#556270;
+    --accent:#38bdf8;
+    --accent-soft:rgba(56,189,248,.18);
+    --pass:#34d399;
+    --pass-glow:rgba(52,211,153,.6);
+    --fail:#f87171;
+    --skip:#64748b;
+    --stop:#fbbf24;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg); color:var(--text); font-family:var(--sans);
+    display:flex; flex-direction:column; overflow:hidden; font-size:14px;
+  }
+
+  /* ---------- Header ---------- */
+  header{
+    display:flex; align-items:center; gap:18px; padding:10px 18px;
+    background:linear-gradient(180deg,#101826,#0d131d);
+    border-bottom:1px solid var(--border); flex-shrink:0; flex-wrap:wrap;
+  }
+  .brand{display:flex; align-items:center; gap:9px; margin-right:6px;}
+  .brand .logo{
+    width:26px; height:26px; border-radius:7px;
+    background:linear-gradient(135deg,var(--accent),#818cf8);
+    display:flex; align-items:center; justify-content:center; font-size:14px;
+  }
+  .brand b{font-size:14.5px; letter-spacing:.2px;}
+  .brand span.tag{color:var(--text-faint); font-size:11px; font-weight:500;}
+
+  .field{display:flex; flex-direction:column; gap:3px;}
+  .field label{font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint);}
+  select{
+    background:var(--panel-2); color:var(--text); border:1px solid var(--border);
+    border-radius:7px; padding:6px 10px; font-size:12.5px; font-family:var(--sans);
+    min-width:190px; cursor:pointer;
+  }
+  select:focus{outline:1px solid var(--accent);}
+
+  .controls-group{display:flex; align-items:center; gap:6px;}
+  .btn{
+    background:var(--panel-2); color:var(--text); border:1px solid var(--border);
+    border-radius:7px; padding:7px 13px; font-size:12.5px; font-weight:600;
+    cursor:pointer; display:flex; align-items:center; gap:6px; font-family:var(--sans);
+    transition:background .12s, border-color .12s;
+  }
+  .btn:hover:not(:disabled){background:#182233; border-color:#2c3d51;}
+  .btn:disabled{opacity:.4; cursor:not-allowed;}
+  .btn.primary{background:linear-gradient(135deg,#1d7a56,#159463); border-color:#1d8a63; color:#eafff4;}
+  .btn.primary:hover:not(:disabled){filter:brightness(1.08);}
+  .btn.ghost{background:transparent;}
+
+  .spacer{flex:1;}
+  .pipeline-note{
+    font-size:11.5px; color:var(--text-faint); max-width:340px; line-height:1.4;
+    border-left:2px solid var(--border); padding-left:10px;
+  }
+  .pipeline-note b{color:var(--text-dim);}
+
+  /* ---------- Body layout ---------- */
+  .app-body{flex:1; display:flex; min-height:0;}
+
+  /* ---------- Fact panel ---------- */
+  .fact-panel{
+    width:268px; flex-shrink:0; background:var(--panel); border-right:1px solid var(--border);
+    padding:16px; overflow-y:auto;
+  }
+  .fact-panel h3{
+    margin:0 0 12px; font-size:11px; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--text-faint); display:flex; align-items:center; gap:6px;
+  }
+  .torrent-card{
+    background:var(--panel-2); border:1px solid var(--border); border-radius:10px; padding:13px;
+  }
+  .torrent-card .t-name{
+    font-size:12.5px; font-weight:600; line-height:1.4; word-break:break-word; margin-bottom:10px;
+    color:#f1f5f9;
+  }
+  .t-row{
+    display:flex; justify-content:space-between; gap:10px; padding:5px 0;
+    border-top:1px solid var(--border-soft); font-size:12px;
+  }
+  .t-row:first-of-type{border-top:none;}
+  .t-row .k{color:var(--text-faint);}
+  .t-row .v{color:var(--text); font-family:var(--mono); font-size:11.5px; text-align:right;}
+  .t-tags{display:flex; flex-wrap:wrap; gap:4px; margin-top:8px;}
+  .t-tag{
+    background:var(--accent-soft); color:var(--accent); border-radius:5px; padding:2px 7px;
+    font-size:10.5px; font-family:var(--mono);
+  }
+  .t-tag.empty{color:var(--text-faint); background:transparent; border:1px dashed var(--border); }
+  .preset-desc{margin-top:12px; font-size:11.5px; color:var(--text-dim); line-height:1.5;}
+
+  .legend{margin-top:20px;}
+  .legend h3{margin-bottom:10px;}
+  .legend-row{display:flex; align-items:center; gap:8px; padding:4px 0; font-size:12px; color:var(--text-dim);}
+  .swatch{width:13px; height:13px; border-radius:4px; flex-shrink:0;}
+  .swatch.pending{border:1.5px dashed var(--text-faint); background:transparent;}
+  .swatch.pass{background:var(--pass); box-shadow:0 0 8px var(--pass-glow);}
+  .swatch.fail{background:#2a1f22; border:1.5px solid var(--fail);}
+  .swatch.skipped{background:var(--panel-2); border:1.5px dashed var(--skip); opacity:.7;}
+
+  /* ---------- Canvas ---------- */
+  .canvas-wrap{flex:1; position:relative; overflow:hidden; background:var(--bg-canvas); cursor:grab;}
+  .canvas-wrap.panning{cursor:grabbing;}
+  .canvas-wrap.dots{
+    background-image: radial-gradient(circle, #253145 1.2px, transparent 1.2px);
+  }
+  #world{position:absolute; left:0; top:0; transform-origin:0 0; will-change:transform;}
+
+  svg.edges{position:absolute; left:0; top:0; overflow:visible; pointer-events:none;}
+  .edge{fill:none; stroke:var(--border); stroke-width:2;}
+  .edge.pending{stroke:var(--border); stroke-dasharray:3 5; opacity:.5;}
+  .edge.evaluated{stroke:#3a4a5e; stroke-width:2.2; opacity:.95;}
+  .edge.skipped{stroke:var(--skip); stroke-dasharray:2 6; opacity:.3;}
+  .edge.flow{
+    stroke:var(--pass); stroke-width:2.6; stroke-dasharray:7 6; opacity:.95;
+    filter:drop-shadow(0 0 5px var(--pass-glow));
+    animation:dashmove .55s linear infinite;
+  }
+  .edge.stopcut{stroke:var(--stop); stroke-width:2.4; stroke-dasharray:1 6; opacity:.85;}
+  @keyframes dashmove{ to{ stroke-dashoffset:-26; } }
+  .edge-arrow{fill:#3a4a5e;}
+
+  .node{
+    position:absolute; border-radius:12px; border:1.4px solid var(--border);
+    background:linear-gradient(180deg,#131c29,#0f1620); padding:11px 13px;
+    transition:opacity .25s, border-color .25s, box-shadow .25s, transform .2s;
+    cursor:pointer; user-select:none;
+  }
+  .node:hover{border-color:#33445a;}
+
+  .trigger-node{
+    background:linear-gradient(135deg,#122536,#0e1a27); border-color:#2b5570;
+    display:flex; flex-direction:column; justify-content:center; cursor:default;
+  }
+  .trigger-node .tn-kicker{font-size:9.5px; text-transform:uppercase; letter-spacing:.08em; color:#7dd3fc;}
+  .trigger-node .tn-title{font-size:14.5px; font-weight:700; margin-top:3px; color:#e0f2fe;}
+  .trigger-node .tn-sub{font-size:10.5px; color:#5fa8c9; margin-top:3px;}
+  .trigger-node.firing{box-shadow:0 0 0 2px rgba(56,189,248,.5), 0 0 22px rgba(56,189,248,.45);}
+
+  .rule-node .node-head{display:flex; align-items:center; gap:6px; margin-bottom:6px;}
+  .rule-node .idx{
+    font-family:var(--mono); font-size:10px; color:var(--text-faint); background:#0a121c;
+    border:1px solid var(--border); border-radius:4px; padding:1px 5px;
+  }
+  .rule-node .ctx-tag{font-size:9.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.04em;}
+  .rule-node .stop-badge{
+    margin-left:auto; font-size:9.5px; color:var(--stop); border:1px solid rgba(251,191,36,.4);
+    background:rgba(251,191,36,.08); border-radius:5px; padding:1px 5px; white-space:nowrap;
+  }
+  .rule-node .node-title{font-size:12.5px; font-weight:650; line-height:1.35; color:#f1f5f9; margin-bottom:5px;}
+  .rule-node .node-summary{
+    font-size:10.8px; color:var(--text-dim); font-family:var(--mono); line-height:1.5;
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .rule-node .node-status{
+    margin-top:8px; font-size:10px; font-weight:700; letter-spacing:.06em; padding:2px 0;
+    display:flex; align-items:center; gap:5px;
+  }
+  .status-dot{width:7px; height:7px; border-radius:50%;}
+
+  .rule-node.status-pending{opacity:.88;}
+  .rule-node.status-pending .status-dot{background:transparent; border:1.5px solid var(--text-faint);}
+  .rule-node.status-pending .node-status{color:var(--text-faint);}
+
+  .rule-node.status-pass{
+    border-color:var(--pass); box-shadow:0 0 0 1px rgba(52,211,153,.25), 0 0 24px rgba(52,211,153,.28);
+  }
+  .rule-node.status-pass .status-dot{background:var(--pass); box-shadow:0 0 6px var(--pass-glow);}
+  .rule-node.status-pass .node-status{color:var(--pass);}
+
+  .rule-node.status-fail{opacity:.6; filter:grayscale(.35);}
+  .rule-node.status-fail .status-dot{background:transparent; border:1.5px solid var(--fail);}
+  .rule-node.status-fail .node-status{color:var(--fail);}
+
+  .rule-node.status-skipped{opacity:.32; filter:grayscale(.7); border-style:dashed;}
+  .rule-node.status-skipped .status-dot{background:var(--skip);}
+  .rule-node.status-skipped .node-status{color:var(--skip);}
+
+  .chip{
+    position:absolute; background:var(--panel-2); border:1px solid var(--border);
+    border-radius:8px; padding:7px 10px; font-size:11px; display:flex; align-items:center; gap:7px;
+    opacity:0; transform:scale(.85); transition:opacity .3s, transform .3s; pointer-events:none;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .chip.show{
+    opacity:1; transform:scale(1); border-color:rgba(52,211,153,.45);
+    box-shadow:0 0 14px rgba(52,211,153,.16);
+  }
+  .chip .ic{font-size:13px;}
+  .chip .lbl{overflow:hidden; text-overflow:ellipsis; color:#d7f5e8;}
+
+  /* ---------- Controls & Minimap (ReactFlow-style corners) ---------- */
+  .rf-controls{
+    position:absolute; left:14px; bottom:14px; display:flex; flex-direction:column; gap:1px;
+    background:var(--panel-2); border:1px solid var(--border); border-radius:8px; overflow:hidden;
+  }
+  .rf-controls button{
+    width:30px; height:30px; background:transparent; border:none; border-bottom:1px solid var(--border-soft);
+    color:var(--text-dim); cursor:pointer; font-size:14px;
+  }
+  .rf-controls button:last-child{border-bottom:none;}
+  .rf-controls button:hover{background:#1a2533; color:var(--text);}
+
+  .rf-minimap{
+    position:absolute; right:14px; bottom:14px; width:180px; height:130px;
+    background:rgba(15,22,33,.9); border:1px solid var(--border); border-radius:8px;
+    backdrop-filter:blur(2px);
+  }
+
+  .zoom-indicator{
+    position:absolute; left:14px; top:14px; background:rgba(15,22,33,.85); border:1px solid var(--border);
+    border-radius:7px; padding:4px 9px; font-size:10.5px; color:var(--text-faint); font-family:var(--mono);
+  }
+
+  /* ---------- Inspector drawer ---------- */
+  .inspector{
+    width:0; flex-shrink:0; background:var(--panel); border-left:1px solid var(--border);
+    overflow:hidden; transition:width .22s ease; display:flex; flex-direction:column;
+  }
+  .inspector.open{width:340px;}
+  .insp-inner{width:340px; padding:16px; overflow-y:auto; flex:1;}
+  .insp-head{display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:4px;}
+  .insp-head h2{font-size:14px; margin:0; line-height:1.4; color:#f1f5f9;}
+  .insp-close{background:none; border:none; color:var(--text-faint); font-size:16px; cursor:pointer; padding:2px 6px;}
+  .insp-close:hover{color:var(--text);}
+  .insp-meta{display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 14px;}
+  .insp-meta span{font-size:10px; padding:3px 7px; border-radius:5px; background:var(--panel-2); border:1px solid var(--border); color:var(--text-dim); font-family:var(--mono);}
+  .insp-verdict{
+    font-size:12px; font-weight:700; padding:8px 10px; border-radius:8px; margin-bottom:14px;
+    display:flex; align-items:center; gap:7px;
+  }
+  .insp-verdict.pass{background:rgba(52,211,153,.1); color:var(--pass); border:1px solid rgba(52,211,153,.3);}
+  .insp-verdict.fail{background:rgba(248,113,113,.08); color:var(--fail); border:1px solid rgba(248,113,113,.25);}
+  .insp-verdict.pending{background:var(--panel-2); color:var(--text-dim); border:1px solid var(--border);}
+  .insp-verdict.skipped{background:var(--panel-2); color:var(--skip); border:1px dashed var(--border);}
+  .insp-section-title{font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--text-faint); margin:16px 0 8px;}
+  .trace{font-family:var(--mono); font-size:11.3px; line-height:1.9;}
+  .trace .grp{color:var(--text-dim); font-weight:700;}
+  .trace .leaf{color:var(--text-dim);}
+  .trace .ok{color:var(--pass);}
+  .trace .no{color:var(--fail);}
+  .trace .actual{color:var(--text-faint);}
+  .trace ul{list-style:none; margin:2px 0 2px 0; padding-left:16px; border-left:1px dashed var(--border-soft);}
+  .insp-actions{display:flex; flex-direction:column; gap:6px;}
+  .insp-actions .a-row{
+    display:flex; gap:8px; align-items:center; background:var(--panel-2); border:1px solid var(--border);
+    border-radius:7px; padding:7px 9px; font-size:11.3px;
+  }
+
+  /* ---------- Log drawer ---------- */
+  .log-drawer{
+    position:absolute; left:0; right:0; bottom:0; background:rgba(12,17,25,.96);
+    border-top:1px solid var(--border); backdrop-filter:blur(3px);
+    max-height:34px; overflow:hidden; transition:max-height .2s ease;
+  }
+  .log-drawer.open{max-height:190px;}
+  .log-toggle{
+    display:flex; align-items:center; justify-content:space-between; padding:7px 14px;
+    cursor:pointer; font-size:11px; color:var(--text-dim); letter-spacing:.03em;
+  }
+  .log-toggle b{color:var(--text);}
+  .log-body{height:150px; overflow-y:auto; padding:0 14px 10px; font-family:var(--mono); font-size:11.3px;}
+  .log-line{padding:3px 0; border-bottom:1px solid var(--border-soft); color:var(--text-dim); display:flex; gap:8px;}
+  .log-line .tag{flex-shrink:0; font-weight:700; width:64px;}
+  .log-line.type-pass .tag{color:var(--pass);}
+  .log-line.type-fail .tag{color:var(--fail);}
+  .log-line.type-skip .tag{color:var(--skip);}
+  .log-line.type-sys .tag{color:var(--accent);}
+  .log-line.type-action .tag{color:#a78bfa;}
+  .log-empty{color:var(--text-faint); padding:10px 0; font-style:italic;}
+
+  ::-webkit-scrollbar{width:9px; height:9px;}
+  ::-webkit-scrollbar-thumb{background:#233043; border-radius:6px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">&#9889;</div>
+    <div>
+      <b>qbt-rules</b><br>
+      <span class="tag">execution pipeline &middot; concept demo</span>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="contextSelect">Context (trigger)</label>
+    <select id="contextSelect"></select>
+  </div>
+
+  <div class="field">
+    <label for="torrentSelect">Sample torrent</label>
+    <select id="torrentSelect"></select>
+  </div>
+
+  <div class="controls-group">
+    <button class="btn" id="stepBtn">&#9654;&#124; Step</button>
+    <button class="btn primary" id="runBtn">&#9654; Run all</button>
+    <button class="btn ghost" id="resetBtn">&#8635; Reset</button>
+  </div>
+
+  <div class="spacer"></div>
+  <div class="pipeline-note" id="pipelineNote"></div>
+</header>
+
+<div class="app-body">
+
+  <aside class="fact-panel">
+    <h3>&#128193; Sample torrent facts</h3>
+    <div class="torrent-card" id="torrentCard"></div>
+    <div class="preset-desc" id="presetDesc"></div>
+
+    <div class="legend">
+      <h3>&#127763; Node states</h3>
+      <div class="legend-row"><span class="swatch pending"></span> Pending &mdash; not yet evaluated</div>
+      <div class="legend-row"><span class="swatch pass"></span> Pass &mdash; matched, actions fired</div>
+      <div class="legend-row"><span class="swatch fail"></span> Fail &mdash; evaluated, no match</div>
+      <div class="legend-row"><span class="swatch skipped"></span> Skipped &mdash; stop_on_match upstream</div>
+    </div>
+  </aside>
+
+  <div class="canvas-wrap dots" id="canvasWrap">
+    <div id="world">
+      <svg class="edges" id="edgesSvg"></svg>
+      <div id="nodesLayer"></div>
+    </div>
+
+    <div class="zoom-indicator" id="zoomIndicator">100%</div>
+
+    <div class="rf-controls">
+      <button id="zoomInBtn" title="Zoom in">+</button>
+      <button id="zoomOutBtn" title="Zoom out">&minus;</button>
+      <button id="fitBtn" title="Fit view">&#9635;</button>
+      <button id="resetViewBtn" title="Reset view">&#8962;</button>
+    </div>
+
+    <svg class="rf-minimap" id="minimapSvg"></svg>
+
+    <div class="log-drawer" id="logDrawer">
+      <div class="log-toggle" id="logToggle">
+        <span><b>Execution log</b> &mdash; click a rule node to inspect its condition trace</span>
+        <span id="logToggleIcon">&#9650;</span>
+      </div>
+      <div class="log-body" id="logBody"><div class="log-empty">Press Step or Run all to begin the simulation.</div></div>
+    </div>
+  </div>
+
+  <aside class="inspector" id="inspector">
+    <div class="insp-inner">
+      <div class="insp-head">
+        <h2 id="inspTitle"></h2>
+        <button class="insp-close" id="inspClose">&times;</button>
+      </div>
+      <div class="insp-meta" id="inspMeta"></div>
+      <div class="insp-verdict" id="inspVerdict"></div>
+      <div class="insp-section-title">Condition trace (live, vs. selected torrent)</div>
+      <div class="trace" id="inspTrace"></div>
+      <div class="insp-section-title">Actions (as configured)</div>
+      <div class="insp-actions" id="inspActions"></div>
+    </div>
+  </aside>
+
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* =========================================================================
+   1. RULE ENGINE DATA — transcribed from advanced-rules-example.yml
+   ========================================================================= */
+
+var NOW = Math.floor(Date.now()/1000);
+
+var VARS = {
+  min_ratio_private: 2.0,
+  min_ratio_public: 1.0,
+  excellent_ratio: 5.0,
+  completion_age_short: "7 days",
+  completion_age_medium: "30 days",
+  completion_age_long: "90 days",
+  large_file_bytes: 53687091200,
+  huge_file_bytes: 107374182400,
+  protected_categories: ["keep","seedbox","long-term","permanent","archive"],
+  hd_content_pattern: "(?i).*(1080p|2160p|4k|uhd|bluray|remux).*",
+  tv_show_pattern: "(?i).*(s\\d{2}e\\d{2}|season[\\s._-]*\\d+).*",
+  movie_pattern: "(?i).*(20\\d{2}|19\\d{2}).*\\.(mkv|mp4|avi).*",
+  min_active_seeds: 5,
+  zero_activity_hours: 168
+};
+
+var PRIVATE_DOMAINS = ["privatehd.to","torrentleech.org","iptorrents.com","broadcasthe.net","passthepopcorn.me"];
+
+// refs.conditions
+var CONDITIONS = {
+  "private-tracker": { any: PRIVATE_DOMAINS.map(function(d){ return {field:"trackers.url",operator:"contains",value:d}; }) },
+  "public-tracker": { none: [ {ref:"private-tracker"} ] },
+  "well-seeded-private": { all: [
+    {field:"info.ratio", operator:">=", value:VARS.min_ratio_private},
+    {field:"info.completion_on", operator:"older_than", value:VARS.completion_age_medium}
+  ]},
+  "well-seeded-public": { all: [
+    {field:"info.ratio", operator:">=", value:VARS.min_ratio_public},
+    {field:"info.completion_on", operator:"older_than", value:VARS.completion_age_medium}
+  ]},
+  "excellently-seeded": { all: [
+    {field:"info.ratio", operator:">=", value:VARS.excellent_ratio},
+    {field:"info.seeding_time", operator:">", value:2592000}
+  ]},
+  "under-seeded-private": { all: [
+    {field:"info.ratio", operator:"<", value:VARS.min_ratio_private},
+    {field:"info.state", operator:"in", value:["uploading","stalledUP","queuedUP"]}
+  ]},
+  "hd-content": { all: [ {field:"info.name", operator:"matches", value:VARS.hd_content_pattern} ] },
+  "tv-show": { all: [ {field:"info.name", operator:"matches", value:VARS.tv_show_pattern} ] },
+  "movie": { all: [ {field:"info.name", operator:"matches", value:VARS.movie_pattern} ] },
+  "large-file": { all: [ {field:"info.size", operator:">", value:VARS.large_file_bytes} ] },
+  "huge-file": { all: [ {field:"info.size", operator:">", value:VARS.huge_file_bytes} ] },
+  "no-activity": { all: [
+    {field:"info.num_leechs", operator:"==", value:0},
+    {field:"info.num_seeds", operator:"<=", value:VARS.min_active_seeds},
+    {field:"info.last_activity", operator:"older_than", value:VARS.zero_activity_hours+" hours"}
+  ]},
+  "protected-content": { any: [
+    {field:"info.category", operator:"in", value:VARS.protected_categories},
+    {field:"info.tags", operator:"contains", value:"keep"},
+    {field:"info.tags", operator:"contains", value:"!delete"}
+  ]}
+};
+
+// refs.actions
+var ACTIONS = {
+  "safe-delete": [
+    {type:"add_tag", params:{tags:["pending-delete","auto-cleanup"]}},
+    {type:"stop", params:{}},
+    {type:"set_category", params:{category:"cleanup-queue"}}
+  ],
+  "force-seed-private": [
+    {type:"force_start", params:{}},
+    {type:"set_upload_limit", params:{limit:-1}},
+    {type:"add_tag", params:{tags:["force-seeding","private-boost"]}}
+  ],
+  "process-hd-content": [
+    {type:"add_tag", params:{tags:["hd","quality-content"]}},
+    {type:"set_category", params:{category:"hd-content"}},
+    {type:"increase_priority", params:{}}
+  ],
+  "pause-inactive": [
+    {type:"stop", params:{}},
+    {type:"add_tag", params:{tags:["paused-inactive","low-priority"]}},
+    {type:"set_upload_limit", params:{limit:0}}
+  ],
+  "reward-excellent-seeding": [
+    {type:"add_tag", params:{tags:["excellent-seeder","ratio-hero","⭐-star-content"]}}
+  ],
+  "limit-large-upload": [
+    {type:"set_upload_limit", params:{limit:5242880}},
+    {type:"add_tag", params:{tags:["bandwidth-limited","large-file"]}}
+  ]
+};
+
+// rules: (id matches the "Rule N" comment numbering in advanced-rules-example.yml; rule 8 is disabled in
+// the source file and omitted here)
+var RULES = [
+  { id:1, name:"Force seed private tracker torrents under ratio", context:"download-finished", stop_on_match:false,
+    summary:"private tracker AND under-seeded (ratio < 2.0) AND NOT protected",
+    conditions:[ {ref:"private-tracker"}, {ref:"under-seeded-private"}, {none:[{ref:"protected-content"}]} ],
+    actions:[ {ref:"force-seed-private"} ] },
+
+  { id:7, name:"Limit upload speed for huge files to prevent bandwidth hogging", context:"download-finished", stop_on_match:false,
+    summary:"huge file (>100GB) AND state in [uploading, forcedUP] AND NOT under-seeded-private",
+    conditions:[ {ref:"huge-file"}, {all:[{field:"info.state",operator:"in",value:["uploading","forcedUP"]}]}, {none:[{ref:"under-seeded-private"}]} ],
+    actions:[ {ref:"limit-large-upload"} ] },
+
+  { id:4, name:"Auto-categorize and prioritize HD content from private trackers", context:"torrent-imported", stop_on_match:false,
+    summary:"private tracker AND HD content AND (TV show OR movie)",
+    conditions:[ {ref:"private-tracker"}, {ref:"hd-content"}, {any:[{ref:"tv-show"},{ref:"movie"}]} ],
+    actions:[ {ref:"process-hd-content"} ] },
+
+  { id:9, name:"Special handling for private tracker HD TV shows", context:"torrent-imported", stop_on_match:false,
+    summary:"private tracker AND HD content AND TV show AND size > 2GB/episode",
+    conditions:[ {ref:"private-tracker"}, {ref:"hd-content"}, {ref:"tv-show"}, {all:[{field:"info.size",operator:">",value:2147483648}]} ],
+    actions:[ {ref:"process-hd-content"}, {ref:"force-seed-private"}, {type:"add_tag",params:{tags:["premium-tv","auto-managed"]}}, {type:"set_category",params:{category:"tv-premium"}} ] },
+
+  { id:10, name:"Protect and maintain long-term archive content", context:"weekly-cleanup", stop_on_match:true,
+    summary:"protected category/tag OR (private tracker AND excellently-seeded AND completion >90d old)",
+    conditions:[ {any:[ {ref:"protected-content"}, {all:[{ref:"private-tracker"},{ref:"excellently-seeded"},{field:"info.completion_on",operator:"older_than",value:VARS.completion_age_long}]} ]} ],
+    actions:[ {type:"add_tag",params:{tags:["protected","long-term-seed","🔒-locked"]}}, {type:"set_category",params:{category:"archive"}}, {type:"force_start",params:{}}, {ref:"reward-excellent-seeding"} ] },
+
+  { id:2, name:"Cleanup well-seeded private tracker torrents", context:"weekly-cleanup", stop_on_match:false,
+    summary:"private tracker AND well-seeded (≥2.0, >30d) AND NOT protected AND (>90d old OR inactive)",
+    conditions:[ {ref:"private-tracker"}, {ref:"well-seeded-private"}, {none:[{ref:"protected-content"}]}, {any:[ {all:[{field:"info.completion_on",operator:"older_than",value:VARS.completion_age_long}]}, {ref:"no-activity"} ]} ],
+    actions:[ {ref:"safe-delete"} ] },
+
+  { id:3, name:"Cleanup public tracker torrents after medium term", context:"weekly-cleanup", stop_on_match:false,
+    summary:"public tracker AND well-seeded (≥1.0, >30d) AND NOT (protected OR HD content)",
+    conditions:[ {ref:"public-tracker"}, {ref:"well-seeded-public"}, {none:[{ref:"protected-content"},{ref:"hd-content"}]} ],
+    actions:[ {ref:"safe-delete"} ] },
+
+  { id:5, name:"Tag and celebrate excellent seeding achievements", context:"weekly-cleanup", stop_on_match:false,
+    summary:"excellently-seeded (≥5.0, seeding >30d) AND (private tracker OR HD content)",
+    conditions:[ {ref:"excellently-seeded"}, {any:[{ref:"private-tracker"},{ref:"hd-content"}]} ],
+    actions:[ {ref:"reward-excellent-seeding"} ] },
+
+  { id:6, name:"Pause large files with no activity to save resources", context:"weekly-cleanup", stop_on_match:false,
+    summary:"large file (>50GB) AND no-activity AND NOT (protected OR ratio<1.0)",
+    conditions:[ {ref:"large-file"}, {ref:"no-activity"}, {none:[{ref:"protected-content"},{field:"info.ratio",operator:"<",value:VARS.min_ratio_public}]} ],
+    actions:[ {ref:"pause-inactive"} ] }
+];
+var RULES_BY_ID = {}; RULES.forEach(function(r){ RULES_BY_ID[r.id]=r; });
+
+// Evaluation order per context. weekly-cleanup is intentionally shown with rule #10 (the only
+// stop_on_match rule in the file, and the LAST rule defined there) promoted to the front of the
+// pipeline -- in file order it never has a chance to skip anything downstream, which would hide
+// this demo's core feature. Every other pipeline below matches the source file's rule order exactly.
+var PIPELINES = {
+  "download-finished": [1,7],
+  "torrent-imported": [4,9],
+  "weekly-cleanup": [10,2,3,5,6]
+};
+var CONTEXT_NOTES = {
+  "download-finished": "Fires once a torrent finishes downloading. 2 enabled rules in this file target it, evaluated in source order.",
+  "torrent-imported": "Fires when a torrent is added/imported. 2 enabled rules target it, evaluated in source order.",
+  "weekly-cleanup": "Cron-driven sweep. Shown with rule #10 (stop_on_match, last in the file) promoted first so a skip cascade is reachable — see badge on its node."
+};
+
+/* =========================================================================
+   2. SAMPLE TORRENTS
+   ========================================================================= */
+
+function daysAgo(d){ return NOW - d*86400; }
+function hoursAgo(h){ return NOW - h*3600; }
+
+var TORRENTS = [
+  {
+    id:"tv-wellseeded",
+    label:"Well-seeded private TV show",
+    icon:"📺",
+    desc:"Healthy private-tracker episode: ratio above the private minimum, finished long enough ago to be cleanup-eligible, but not yet an “excellent” seeder.",
+    info:{
+      name:"Northern.Lights.S03E07.1080p.BluRay.x264-GROUP",
+      category:"tv", tags:[], ratio:2.5, state:"uploading",
+      size:4800000000, completion_on:daysAgo(95), seeding_time:60*86400,
+      num_leechs:4, num_seeds:20, last_activity:hoursAgo(1)
+    },
+    trackers:["torrentleech.org"]
+  },
+  {
+    id:"movie-underseeded",
+    label:"Under-seeded private movie",
+    icon:"🎬",
+    desc:"Freshly finished private 4K remux, still well under the private ratio floor and inactive by the seed/leech test — needs a boost, not a cleanup.",
+    info:{
+      name:"Iron.Horizon.2022.2160p.UHD.BluRay.Remux.mkv",
+      category:"movies", tags:[], ratio:0.8, state:"uploading",
+      size:61000000000, completion_on:daysAgo(3), seeding_time:3*86400,
+      num_leechs:0, num_seeds:2, last_activity:hoursAgo(240)
+    },
+    trackers:["iptorrents.com"]
+  },
+  {
+    id:"archive-protected",
+    label:"Protected archive torrent",
+    icon:"🔒",
+    desc:"Public-tracker box set explicitly filed under a protected category and tagged “keep” — should be shielded from cleanup entirely.",
+    info:{
+      name:"Complete.Discography.FLAC.Box.Set",
+      category:"archive", tags:["keep"], ratio:3.5, state:"stalledUP",
+      size:15000000000, completion_on:daysAgo(200), seeding_time:150*86400,
+      num_leechs:0, num_seeds:1, last_activity:hoursAgo(300)
+    },
+    trackers:["example-public-tracker.org"]
+  }
+];
+var TORRENTS_BY_ID = {}; TORRENTS.forEach(function(t){ TORRENTS_BY_ID[t.id]=t; });
+
+/* =========================================================================
+   3. CONDITION EVALUATOR
+   ========================================================================= */
+
+function parseDuration(str){
+  var m = String(str).trim().match(/^([\d.]+)\s*(day|days|hour|hours|minute|minutes|second|seconds)$/i);
+  if(!m) return 0;
+  var n = parseFloat(m[1]), unit = m[2].toLowerCase();
+  var mult = unit.indexOf("day")===0?86400: unit.indexOf("hour")===0?3600: unit.indexOf("minute")===0?60:1;
+  return n*mult;
+}
+
+function resolveField(t, path){
+  if(path==="trackers.url") return t.trackers;
+  var parts = path.split("."), v = t;
+  for(var i=0;i<parts.length;i++){ if(v==null) return undefined; v = v[parts[i]]; }
+  return v;
+}
+
+function toRegex(pattern){
+  var flags = "", body = pattern;
+  if(body.indexOf("(?i)")===0){ flags="i"; body = body.slice(4); }
+  try{ return new RegExp(body, flags); } catch(e){ return /$^/; }
+}
+
+function evalLeaf(leaf, t){
+  var val = resolveField(t, leaf.field), target = leaf.value;
+  switch(leaf.operator){
+    case ">=": return Number(val) >= Number(target);
+    case "<=": return Number(val) <= Number(target);
+    case ">":  return Number(val) >  Number(target);
+    case "<":  return Number(val) <  Number(target);
+    case "==": return val === target;
+    case "!=": return val !== target;
+    case "in": return Array.isArray(target) && target.indexOf(val) !== -1;
+    case "contains":
+      if(Array.isArray(val)){
+        if(leaf.field==="trackers.url") return val.some(function(u){ return u.toLowerCase().indexOf(String(target).toLowerCase())!==-1; });
+        return val.indexOf(target) !== -1;
+      }
+      return String(val||"").indexOf(target) !== -1;
+    case "matches": return toRegex(target).test(String(val||""));
+    case "older_than": {
+      var seconds = typeof target==="number" ? target : parseDuration(target);
+      if(val==null) return false;
+      return (NOW - Number(val)) > seconds;
+    }
+    default: return false;
+  }
+}
+
+function evalNode(node, t){
+  if(node.ref) return evalNode(CONDITIONS[node.ref], t);
+  if(node.all) return node.all.every(function(c){ return evalNode(c,t); });
+  if(node.any) return node.any.some(function(c){ return evalNode(c,t); });
+  if(node.none) return !node.none.some(function(c){ return evalNode(c,t); });
+  return evalLeaf(node, t);
+}
+
+function evalRule(rule, torrent){
+  return rule.conditions.every(function(c){ return evalNode(c, torrent); });
+}
+
+function fmtVal(v){
+  if(Array.isArray(v)) return "["+v.join(", ")+"]";
+  if(typeof v==="string" && /^\(\?i\)/.test(v)) return "/"+v.slice(4)+"/i";
+  return String(v);
+}
+function fmtActual(field, v){
+  if(v==null) return "null";
+  if(field==="info.completion_on" || field==="info.last_activity") return fmtAgo(v);
+  if(field==="info.size") return fmtBytes(v);
+  return Array.isArray(v) ? "["+v.join(", ")+"]" : String(v);
+}
+
+function evalNodeVerbose(node, t){
+  if(node.ref){
+    var inner = evalNodeVerbose(CONDITIONS[node.ref], t);
+    return { kind:"ref", label:node.ref, result:inner.result, children:inner.kind==="ref"?inner.children:[inner] };
+  }
+  var kind = node.all ? "all" : node.any ? "any" : node.none ? "none" : "leaf";
+  if(kind!=="leaf"){
+    var list = node[kind];
+    var children = list.map(function(c){ return evalNodeVerbose(c, t); });
+    var result = kind==="all" ? children.every(function(c){return c.result;}) :
+                 kind==="any" ? children.some(function(c){return c.result;}) :
+                 !children.some(function(c){return c.result;});
+    return { kind:kind, label:kind.toUpperCase(), result:result, children:children };
+  }
+  var actual = resolveField(t, node.field);
+  return { kind:"leaf", label:node.field+" "+node.operator+" "+fmtVal(node.value), actual:fmtActual(node.field, actual), result:evalLeaf(node,t), children:[] };
+}
+
+function flattenActions(rule){
+  var out = [];
+  rule.actions.forEach(function(a){
+    if(a.ref) out = out.concat(ACTIONS[a.ref]);
+    else out.push(a);
+  });
+  return out;
+}
+
+var ACTION_ICONS = {add_tag:"🏷", set_category:"📁", stop:"⏹", force_start:"▶", set_upload_limit:"🚦", increase_priority:"⭐"};
+function actionLabel(a){
+  switch(a.type){
+    case "add_tag": return "add_tag: "+a.params.tags.join(", ");
+    case "set_category": return "set_category: "+a.params.category;
+    case "set_upload_limit":
+      var l = a.params.limit;
+      return "set_upload_limit: "+(l<0?"unlimited":l===0?"0 (paused)":fmtBytes(l)+"/s");
+    case "stop": return "stop";
+    case "force_start": return "force_start";
+    case "increase_priority": return "increase_priority";
+    default: return a.type;
+  }
+}
+
+/* =========================================================================
+   4. FORMATTERS
+   ========================================================================= */
+
+function fmtBytes(n){
+  if(n>=1e12) return (n/1e12).toFixed(2)+" TB";
+  if(n>=1e9) return (n/1e9).toFixed(2)+" GB";
+  if(n>=1e6) return (n/1e6).toFixed(1)+" MB";
+  return n+" B";
+}
+function fmtAgo(epoch){
+  var s = NOW - epoch;
+  if(s < 3600) return Math.round(s/60)+" min ago";
+  if(s < 86400) return (s/3600).toFixed(1)+" hrs ago";
+  return Math.round(s/86400)+" days ago";
+}
+
+/* =========================================================================
+   5. STATE
+   ========================================================================= */
+
+var state = {
+  contextId: "weekly-cleanup",
+  torrentId: "tv-wellseeded",
+  pipeline: [],       // array of rule ids in eval order
+  ruleStates: {},      // ruleId -> pending|pass|fail|skipped
+  stepPos: -1,
+  stopped: false,
+  running: false,
+  layout: null,
+  scale: 1, panX: 40, panY: 20,
+  inspectedRuleId: null
+};
+
+/* =========================================================================
+   6. LAYOUT
+   ========================================================================= */
+
+function computeLayout(pipeline){
+  var trigger = {x:30, y:30, w:210, h:84};
+  var rules = [];
+  var y = 180;
+  pipeline.forEach(function(ruleId){
+    var rule = RULES_BY_ID[ruleId];
+    var acts = flattenActions(rule);
+    var chipH=32, gap=8;
+    var totalH = acts.length ? acts.length*chipH + (acts.length-1)*gap : 0;
+    var rx=30, ry=y, rw=258, rh=118;
+    var chipX = rx+rw+90;
+    var startY = ry+rh/2-totalH/2;
+    var chips = acts.map(function(a,ci){
+      return { type:a.type, params:a.params, x:chipX, y:startY+ci*(chipH+gap), w:196, h:chipH };
+    });
+    rules.push({ ruleId:ruleId, x:rx, y:ry, w:rw, h:rh, chips:chips });
+    y += rh + 64;
+  });
+  var maxRight = 30;
+  rules.forEach(function(r){ r.chips.forEach(function(c){ maxRight = Math.max(maxRight, c.x+c.w); }); });
+  var bounds = { minX:0, minY:0, maxX: maxRight+30, maxY: y+20 };
+  return { trigger:trigger, rules:rules, bounds:bounds };
+}
+
+/* =========================================================================
+   7. RENDER
+   ========================================================================= */
+
+var el = {
+  world: document.getElementById("world"),
+  edgesSvg: document.getElementById("edgesSvg"),
+  nodesLayer: document.getElementById("nodesLayer"),
+  canvasWrap: document.getElementById("canvasWrap"),
+  minimapSvg: document.getElementById("minimapSvg"),
+  zoomIndicator: document.getElementById("zoomIndicator"),
+  torrentCard: document.getElementById("torrentCard"),
+  presetDesc: document.getElementById("presetDesc"),
+  pipelineNote: document.getElementById("pipelineNote"),
+  logBody: document.getElementById("logBody"),
+  logDrawer: document.getElementById("logDrawer"),
+  contextSelect: document.getElementById("contextSelect"),
+  torrentSelect: document.getElementById("torrentSelect"),
+  stepBtn: document.getElementById("stepBtn"),
+  runBtn: document.getElementById("runBtn"),
+  resetBtn: document.getElementById("resetBtn"),
+  inspector: document.getElementById("inspector"),
+  inspTitle: document.getElementById("inspTitle"),
+  inspMeta: document.getElementById("inspMeta"),
+  inspVerdict: document.getElementById("inspVerdict"),
+  inspTrace: document.getElementById("inspTrace"),
+  inspActions: document.getElementById("inspActions")
+};
+
+function trunkPath(x1,y1,x2,y2){
+  var my=(y1+y2)/2;
+  return "M "+x1+","+y1+" C "+x1+","+my+" "+x2+","+my+" "+x2+","+y2;
+}
+function actionPath(x1,y1,x2,y2){
+  var mx=(x1+x2)/2;
+  return "M "+x1+","+y1+" C "+mx+","+y1+" "+mx+","+y2+" "+x2+","+y2;
+}
+
+function renderFactPanel(){
+  var t = TORRENTS_BY_ID[state.torrentId];
+  var html = '<div class="t-name">'+t.icon+' '+t.info.name+'</div>';
+  var rows = [
+    ["category", t.info.category],
+    ["tracker", t.trackers[0]],
+    ["state", t.info.state],
+    ["ratio", t.info.ratio.toFixed(2)],
+    ["size", fmtBytes(t.info.size)],
+    ["completion_on", fmtAgo(t.info.completion_on)],
+    ["seeding_time", Math.round(t.info.seeding_time/86400)+" days"],
+    ["seeds / leechs", t.info.num_seeds+" / "+t.info.num_leechs],
+    ["last_activity", fmtAgo(t.info.last_activity)]
+  ];
+  rows.forEach(function(r){ html += '<div class="t-row"><span class="k">'+r[0]+'</span><span class="v">'+r[1]+'</span></div>'; });
+  html += '<div class="t-tags">';
+  if(t.info.tags.length){ t.info.tags.forEach(function(tag){ html += '<span class="t-tag">'+tag+'</span>'; }); }
+  else html += '<span class="t-tag empty">no tags</span>';
+  html += '</div>';
+  el.torrentCard.innerHTML = html;
+  el.presetDesc.textContent = t.desc;
+}
+
+function statusLabel(s){
+  return s==="pass"?"PASS — matched": s==="fail"?"FAIL — no match": s==="skipped"?"SKIPPED": "PENDING";
+}
+
+function renderNodesAndEdges(){
+  var L = state.layout;
+  el.nodesLayer.innerHTML = "";
+  el.edgesSvg.innerHTML = "";
+  el.world.style.width = L.bounds.maxX+"px";
+  el.world.style.height = L.bounds.maxY+"px";
+  el.edgesSvg.setAttribute("width", L.bounds.maxX);
+  el.edgesSvg.setAttribute("height", L.bounds.maxY);
+
+  // trigger node
+  var triggerFiring = state.stepPos >= 0;
+  var tn = document.createElement("div");
+  tn.className = "node trigger-node"+(triggerFiring?" firing":"");
+  tn.style.left=L.trigger.x+"px"; tn.style.top=L.trigger.y+"px"; tn.style.width=L.trigger.w+"px"; tn.style.height=L.trigger.h+"px";
+  tn.innerHTML = '<div class="tn-kicker">context fires</div><div class="tn-title">'+state.contextId+'</div><div class="tn-sub">'+state.pipeline.length+' enabled rule(s) listen here</div>';
+  el.nodesLayer.appendChild(tn);
+
+  var edgesHtml = "";
+  var prevAnchor = { x: L.trigger.x+L.trigger.w/2, y: L.trigger.y+L.trigger.h };
+
+  L.rules.forEach(function(r, i){
+    var rule = RULES_BY_ID[r.ruleId];
+    var st = state.ruleStates[r.ruleId] || "pending";
+    var topAnchor = { x:r.x+r.w/2, y:r.y };
+    var bottomAnchor = { x:r.x+r.w/2, y:r.y+r.h };
+    var leftMidAnchor = { x:r.x, y:r.y+r.h/2 };
+    var rightMidAnchor = { x:r.x+r.w, y:r.y+r.h/2 };
+
+    // trunk edge into this rule
+    var edgeCls = "edge ";
+    if(st==="skipped") edgeCls += "skipped";
+    else if(st==="pending") edgeCls += "pending";
+    else edgeCls += "evaluated";
+    edgesHtml += '<path class="'+edgeCls+'" d="'+trunkPath(prevAnchor.x,prevAnchor.y,topAnchor.x,topAnchor.y)+'"></path>';
+    prevAnchor = bottomAnchor;
+
+    // node
+    var card = document.createElement("div");
+    card.className = "node rule-node status-"+st;
+    card.style.left=r.x+"px"; card.style.top=r.y+"px"; card.style.width=r.w+"px"; card.style.height=r.h+"px";
+    card.setAttribute("data-rule-id", r.ruleId);
+    var stopBadge = rule.stop_on_match ? '<span class="stop-badge">&#9940; stop_on_match</span>' : "";
+    card.innerHTML =
+      '<div class="node-head"><span class="idx">#'+rule.id+'</span><span class="ctx-tag">'+rule.context+'</span>'+stopBadge+'</div>'+
+      '<div class="node-title">'+rule.name+'</div>'+
+      '<div class="node-summary">'+rule.summary+'</div>'+
+      '<div class="node-status"><span class="status-dot"></span>'+statusLabel(st)+'</div>';
+    card.addEventListener("click", function(){ openInspector(r.ruleId); });
+    el.nodesLayer.appendChild(card);
+
+    // action chips + edges (only visible when passed)
+    r.chips.forEach(function(chipDef, ci){
+      var chipEl = document.createElement("div");
+      chipEl.className = "chip"+(st==="pass" ? " show" : "");
+      chipEl.style.left=chipDef.x+"px"; chipEl.style.top=chipDef.y+"px"; chipEl.style.width=chipDef.w+"px"; chipEl.style.height=chipDef.h+"px";
+      chipEl.style.transitionDelay = st==="pass" ? (ci*70)+"ms" : "0ms";
+      chipEl.innerHTML = '<span class="ic">'+(ACTION_ICONS[chipDef.type]||"⚙")+'</span><span class="lbl">'+actionLabel(chipDef)+'</span>';
+      el.nodesLayer.appendChild(chipEl);
+
+      var chipLeft = { x:chipDef.x, y:chipDef.y+chipDef.h/2 };
+      var aCls = "edge "+(st==="pass" ? "flow" : "pending");
+      if(st!=="pass") aCls += " skipped"; // hide non-fired action edges almost entirely
+      edgesHtml += '<path class="'+aCls+'" d="'+actionPath(rightMidAnchor.x, rightMidAnchor.y, chipLeft.x, chipLeft.y)+'"></path>';
+    });
+
+    // stop_on_match cut marker
+    if(st==="pass" && rule.stop_on_match && i < L.rules.length-1){
+      edgesHtml += '<circle cx="'+bottomAnchor.x+'" cy="'+(bottomAnchor.y+18)+'" r="4" fill="#fbbf24"></circle>';
+    }
+  });
+
+  el.edgesSvg.innerHTML = edgesHtml;
+  updateMinimap();
+  applyTransform();
+}
+
+/* =========================================================================
+   8. INSPECTOR
+   ========================================================================= */
+
+function renderTrace(node){
+  var icon = node.result ? '<span class="ok">&#10003;</span>' : '<span class="no">&#10007;</span>';
+  if(node.kind==="leaf"){
+    return '<div class="leaf">'+icon+' '+node.label+' <span class="actual">(actual: '+node.actual+')</span></div>';
+  }
+  var label = node.kind==="ref" ? ("["+node.label+"]") : node.label;
+  var html = '<div class="grp">'+icon+' '+label+'</div><ul>';
+  node.children.forEach(function(c){ html += '<li>'+renderTrace(c)+'</li>'; });
+  html += '</ul>';
+  return html;
+}
+
+function openInspector(ruleId){
+  var rule = RULES_BY_ID[ruleId];
+  var torrent = TORRENTS_BY_ID[state.torrentId];
+  state.inspectedRuleId = ruleId;
+
+  el.inspTitle.textContent = "#"+rule.id+" · "+rule.name;
+  el.inspMeta.innerHTML =
+    '<span>context: '+rule.context+'</span>' +
+    '<span>stop_on_match: '+rule.stop_on_match+'</span>';
+
+  var st = state.ruleStates[rule.id] || "pending";
+  var verdictText = st==="pass" ? "MATCHED — actions fired" :
+                     st==="fail" ? "NO MATCH — conditions evaluated false" :
+                     st==="skipped" ? "SKIPPED — never evaluated (earlier stop_on_match matched)" :
+                     "Not yet stepped — showing a live preview against the selected torrent";
+  el.inspVerdict.className = "insp-verdict "+st;
+  el.inspVerdict.textContent = verdictText;
+
+  var traceHtml = "";
+  rule.conditions.forEach(function(c){ traceHtml += renderTrace(evalNodeVerbose(c, torrent)); });
+  el.inspTrace.innerHTML = traceHtml;
+
+  var actsHtml = "";
+  flattenActions(rule).forEach(function(a){
+    actsHtml += '<div class="a-row"><span>'+(ACTION_ICONS[a.type]||"⚙")+'</span><span>'+actionLabel(a)+'</span></div>';
+  });
+  el.inspActions.innerHTML = actsHtml;
+
+  el.inspector.classList.add("open");
+}
+document.getElementById("inspClose").addEventListener("click", function(){ el.inspector.classList.remove("open"); });
+
+/* =========================================================================
+   9. SIMULATION CONTROL
+   ========================================================================= */
+
+function logLine(type, tag, text){
+  if(el.logBody.querySelector(".log-empty")) el.logBody.innerHTML = "";
+  var row = document.createElement("div");
+  row.className = "log-line type-"+type;
+  row.innerHTML = '<span class="tag">'+tag+'</span><span>'+text+'</span>';
+  el.logBody.appendChild(row);
+  el.logBody.scrollTop = el.logBody.scrollHeight;
+  el.logDrawer.classList.add("open");
+  document.getElementById("logToggleIcon").textContent = "▼";
+}
+
+function resetSim(refit){
+  state.pipeline = PIPELINES[state.contextId];
+  state.layout = computeLayout(state.pipeline);
+  state.ruleStates = {};
+  state.pipeline.forEach(function(id){ state.ruleStates[id] = "pending"; });
+  state.stepPos = -1;
+  state.stopped = false;
+  state.running = false;
+  el.logBody.innerHTML = '<div class="log-empty">Press Step or Run all to begin the simulation.</div>';
+  el.inspector.classList.remove("open");
+  state.inspectedRuleId = null;
+  updateButtons();
+  renderFactPanel();
+  renderNodesAndEdges();
+  if(refit) fitView();
+}
+
+function updateButtons(){
+  var done = state.stepPos >= state.pipeline.length-1;
+  el.stepBtn.disabled = done || state.running;
+  el.runBtn.disabled = done || state.running;
+}
+
+function stepForward(){
+  if(state.stepPos >= state.pipeline.length-1) return false;
+  var idx = state.stepPos+1;
+  var ruleId = state.pipeline[idx];
+  var rule = RULES_BY_ID[ruleId];
+  var torrent = TORRENTS_BY_ID[state.torrentId];
+  var matched = evalRule(rule, torrent);
+  state.ruleStates[ruleId] = matched ? "pass" : "fail";
+  state.stepPos = idx;
+
+  logLine(matched?"pass":"fail", matched?"MATCH":"NO MATCH", "#"+rule.id+" \""+rule.name+"\"");
+  if(matched){
+    flattenActions(rule).forEach(function(a){ logLine("action","fired","→ "+actionLabel(a)); });
+  }
+
+  if(matched && rule.stop_on_match){
+    var remaining = state.pipeline.slice(idx+1);
+    remaining.forEach(function(id){ state.ruleStates[id] = "skipped"; });
+    state.stepPos = state.pipeline.length-1;
+    state.stopped = true;
+    if(remaining.length) logLine("skip","STOP", "stop_on_match on #"+rule.id+" — "+remaining.length+" downstream rule(s) skipped");
+  }
+
+  renderNodesAndEdges();
+  if(state.inspectedRuleId!=null) openInspector(state.inspectedRuleId);
+  updateButtons();
+  return true;
+}
+
+function runAll(){
+  if(state.running) return;
+  state.running = true;
+  updateButtons();
+  (function tick(){
+    var more = stepForward();
+    if(more && state.stepPos < state.pipeline.length-1){
+      setTimeout(tick, 850);
+    } else {
+      state.running = false;
+      updateButtons();
+    }
+  })();
+}
+
+/* =========================================================================
+   10. PAN / ZOOM / MINIMAP / CONTROLS
+   ========================================================================= */
+
+function applyTransform(){
+  el.world.style.transform = "translate("+state.panX+"px,"+state.panY+"px) scale("+state.scale+")";
+  el.canvasWrap.style.backgroundSize = (26*state.scale)+"px "+(26*state.scale)+"px";
+  el.canvasWrap.style.backgroundPosition = state.panX+"px "+state.panY+"px";
+  el.zoomIndicator.textContent = Math.round(state.scale*100)+"%";
+  updateMinimapViewport();
+}
+
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+function fitView(){
+  var L = state.layout;
+  var cw = el.canvasWrap.clientWidth, ch = el.canvasWrap.clientHeight;
+  var bw = L.bounds.maxX, bh = L.bounds.maxY;
+  var s = clamp(Math.min((cw-60)/bw, (ch-60)/bh), 0.35, 1.15);
+  state.scale = s;
+  state.panX = (cw - bw*s)/2;
+  state.panY = 24;
+  applyTransform();
+}
+
+document.getElementById("zoomInBtn").addEventListener("click", function(){
+  state.scale = clamp(state.scale*1.2, 0.3, 2.2); applyTransform();
+});
+document.getElementById("zoomOutBtn").addEventListener("click", function(){
+  state.scale = clamp(state.scale/1.2, 0.3, 2.2); applyTransform();
+});
+document.getElementById("fitBtn").addEventListener("click", fitView);
+document.getElementById("resetViewBtn").addEventListener("click", function(){
+  state.scale = 1; state.panX = 40; state.panY = 20; applyTransform();
+});
+
+var dragging = false, dragStart = {x:0,y:0}, panStart = {x:0,y:0};
+el.canvasWrap.addEventListener("mousedown", function(e){
+  if(e.target.closest(".node") || e.target.closest(".rf-controls")) return;
+  dragging = true;
+  dragStart = {x:e.clientX, y:e.clientY};
+  panStart = {x:state.panX, y:state.panY};
+  el.canvasWrap.classList.add("panning");
+});
+window.addEventListener("mousemove", function(e){
+  if(!dragging) return;
+  state.panX = panStart.x + (e.clientX-dragStart.x);
+  state.panY = panStart.y + (e.clientY-dragStart.y);
+  applyTransform();
+});
+window.addEventListener("mouseup", function(){
+  dragging = false;
+  el.canvasWrap.classList.remove("panning");
+});
+el.canvasWrap.addEventListener("wheel", function(e){
+  e.preventDefault();
+  var rect = el.canvasWrap.getBoundingClientRect();
+  var cx = e.clientX-rect.left, cy = e.clientY-rect.top;
+  var wx = (cx-state.panX)/state.scale, wy = (cy-state.panY)/state.scale;
+  var newScale = clamp(state.scale * (e.deltaY<0?1.12:0.89), 0.3, 2.2);
+  state.panX = cx - wx*newScale;
+  state.panY = cy - wy*newScale;
+  state.scale = newScale;
+  applyTransform();
+}, {passive:false});
+
+function updateMinimap(){
+  var L = state.layout;
+  var mmW = 180, mmH = 130, pad = 8;
+  var bw = L.bounds.maxX, bh = L.bounds.maxY;
+  var s = Math.min((mmW-pad*2)/bw, (mmH-pad*2)/bh);
+  var offX = (mmW - bw*s)/2, offY = (mmH - bh*s)/2;
+
+  function mx(x){ return offX + x*s; }
+  function my(y){ return offY + y*s; }
+
+  var svg = '<rect x="0" y="0" width="'+mmW+'" height="'+mmH+'" fill="none"></rect>';
+  svg += '<rect x="'+mx(L.trigger.x)+'" y="'+my(L.trigger.y)+'" width="'+(L.trigger.w*s)+'" height="'+(L.trigger.h*s)+'" rx="2" fill="#38bdf8"></rect>';
+  L.rules.forEach(function(r){
+    var st = state.ruleStates[r.ruleId] || "pending";
+    var color = st==="pass" ? "#34d399" : st==="fail" ? "#f87171" : st==="skipped" ? "#334155" : "#475569";
+    svg += '<rect x="'+mx(r.x)+'" y="'+my(r.y)+'" width="'+(r.w*s)+'" height="'+(r.h*s)+'" rx="2" fill="'+color+'" opacity="'+(st==="skipped"?0.35:0.9)+'"></rect>';
+  });
+  svg += '<rect id="mmViewport" x="0" y="0" width="0" height="0" fill="rgba(56,189,248,.12)" stroke="#38bdf8" stroke-width="1.5"></rect>';
+  el.minimapSvg.setAttribute("viewBox", "0 0 "+mmW+" "+mmH);
+  el.minimapSvg.innerHTML = svg;
+  el.minimapSvg.dataset.scale = s; el.minimapSvg.dataset.offx = offX; el.minimapSvg.dataset.offy = offY;
+  updateMinimapViewport();
+}
+
+function updateMinimapViewport(){
+  var rect = document.getElementById("mmViewport");
+  if(!rect) return;
+  var s = parseFloat(el.minimapSvg.dataset.scale||"0");
+  var offX = parseFloat(el.minimapSvg.dataset.offx||"0");
+  var offY = parseFloat(el.minimapSvg.dataset.offy||"0");
+  var cw = el.canvasWrap.clientWidth, ch = el.canvasWrap.clientHeight;
+  var wx0 = -state.panX/state.scale, wy0 = -state.panY/state.scale;
+  var wx1 = (cw-state.panX)/state.scale, wy1 = (ch-state.panY)/state.scale;
+  rect.setAttribute("x", offX + wx0*s);
+  rect.setAttribute("y", offY + wy0*s);
+  rect.setAttribute("width", Math.max(0,(wx1-wx0)*s));
+  rect.setAttribute("height", Math.max(0,(wy1-wy0)*s));
+}
+
+/* =========================================================================
+   11. WIRE UP UI
+   ========================================================================= */
+
+Object.keys(PIPELINES).forEach(function(ctx){
+  var opt = document.createElement("option");
+  opt.value = ctx; opt.textContent = ctx+"  ("+PIPELINES[ctx].length+" rules)";
+  el.contextSelect.appendChild(opt);
+});
+TORRENTS.forEach(function(t){
+  var opt = document.createElement("option");
+  opt.value = t.id; opt.textContent = t.icon+" "+t.label;
+  el.torrentSelect.appendChild(opt);
+});
+el.contextSelect.value = state.contextId;
+el.torrentSelect.value = state.torrentId;
+
+el.contextSelect.addEventListener("change", function(){
+  state.contextId = this.value;
+  el.pipelineNote.textContent = CONTEXT_NOTES[state.contextId];
+  resetSim(true);
+});
+el.torrentSelect.addEventListener("change", function(){
+  state.torrentId = this.value;
+  resetSim(false);
+});
+el.stepBtn.addEventListener("click", stepForward);
+el.runBtn.addEventListener("click", runAll);
+el.resetBtn.addEventListener("click", function(){ resetSim(false); });
+
+document.getElementById("logToggle").addEventListener("click", function(){
+  el.logDrawer.classList.toggle("open");
+  document.getElementById("logToggleIcon").textContent = el.logDrawer.classList.contains("open") ? "▼" : "▲";
+});
+
+window.addEventListener("resize", function(){ fitView(); });
+
+/* =========================================================================
+   12. BOOT
+   ========================================================================= */
+
+el.pipelineNote.textContent = CONTEXT_NOTES[state.contextId];
+resetSim(true);
+
+})();
+</script>
+</body>
+</html>

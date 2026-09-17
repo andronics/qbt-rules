@@ -1,0 +1,2194 @@
+<!--
+  qbt-rules :: Visual Rule Builder — PARAMETER EDITING concept demo (vanilla HTML/CSS/JS + inline SVG, no frameworks).
+  Forked from demo-rule-builder.html. Same app shell, color system, canvas (pan/zoom/minimap/
+  edges/frames), and the same two real rules pre-loaded from advanced-rules-example.yml — but this
+  variant is entirely about RICH PARAMETER TWEAKING, not about node grouping or subflow navigation:
+
+  WHAT'S NEW vs the baseline:
+  - Leaf condition values are now typed (number / bytes / duration / enum / regex / tag-list / string)
+    instead of opaque display strings, inferred from a small FIELD_TYPES registry keyed by field name.
+    The inspector renders a control matched to that type: number input + range slider, byte-magnitude
+    + unit select, duration magnitude + unit select, a multi-select chip picker for enums, a regex
+    pattern field with a live "test against sample string" preview, and an editable tag chip list.
+  - Operator choice is a segmented control constrained to what's valid for the field's inferred type
+    (numeric comparators for numbers, contains/matches/in for strings/lists, older_than/newer_than for
+    duration fields) — editing the Field name and blurring re-infers the type and resets the control.
+  - `${vars.*}` interpolation is now a first-class editable mode: a linked value renders as a dashed
+    "🔗 linked" chip with an Unlink button (materializes the current resolved value as a hardcoded
+    literal) and, when unlinked, a "Link to var…" button opens a searchable dropdown scoped to
+    type-compatible entries from refs.vars in the loaded rule set.
+  - Double-clicking a leaf's value — or an action's params — directly on the canvas node opens an
+    inline text editor right there (no side panel round-trip needed for quick tweaks).
+  - Nodes whose params differ from the originally-loaded rule get a small amber "edited" dot, and the
+    inspector shows an "● edited" badge + a one-click "Reset" to restore that node's original params.
+    Invalid/out-of-range/required params get a red outline + inline error text, live as you type.
+  - The YAML preview (source + resolved modes) is generated from live node state for every leaf and
+    action line, not static pre-written text — every control above writes straight through to the YAML,
+    including var-link/unlink toggling between `${vars.x}` and its resolved literal.
+
+  Node grouping/categorization visuals and nested subflow zoom navigation are intentionally NOT touched
+  here — those are separate concept variants of this same baseline.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qbt-rules — Rule Builder (parameter editing concept)</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --bg-app:#0a0c11;
+    --bg-panel:#12151c;
+    --bg-panel-2:#171b25;
+    --bg-canvas:#0d1017;
+    --dot: rgba(255,255,255,.08);
+    --border:#262b38;
+    --border-strong:#3a4152;
+    --fg:#e7e9f0;
+    --fg-dim:#aab0c0;
+    --muted:#747c90;
+    --accent:#5b8cff;
+    --accent-soft:rgba(91,140,255,.16);
+    --danger:#f43f5e;
+
+    --c-all:#8b5cf6;   --c-all-bg:rgba(139,92,246,.14);
+    --c-any:#f59e0b;   --c-any-bg:rgba(245,158,11,.14);
+    --c-none:#f43f5e;  --c-none-bg:rgba(244,63,94,.14);
+    --c-leaf:#3b82f6;  --c-leaf-bg:rgba(59,130,246,.12);
+    --c-ref:#2dd4bf;   --c-ref-bg:rgba(45,212,191,.08);
+    --c-action:#22c55e;--c-action-bg:rgba(34,197,94,.12);
+
+    --yaml-key:#7dd3fc;
+    --yaml-str:#a7e08a;
+    --yaml-num:#f5b962;
+    --yaml-ref:#5eead4;
+    --yaml-comment:#5b6577;
+    --yaml-punct:#6b7280;
+
+    --radius: 10px;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Code", Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      color-scheme: light;
+      --bg-app:#eef0f4; --bg-panel:#ffffff; --bg-panel-2:#f5f6f9; --bg-canvas:#e7e9ef;
+      --dot: rgba(20,25,40,.10);
+      --border:#dbdfe8; --border-strong:#c2c8d6;
+      --fg:#161a22; --fg-dim:#454d5e; --muted:#6b7280;
+      --accent:#2f5ce0; --accent-soft:rgba(47,92,224,.12);
+      --c-all-bg:rgba(139,92,246,.12); --c-any-bg:rgba(245,158,11,.12);
+      --c-none-bg:rgba(244,63,94,.12); --c-leaf-bg:rgba(59,130,246,.10);
+      --c-ref-bg:rgba(45,212,191,.10); --c-action-bg:rgba(34,197,94,.10);
+      --yaml-comment:#8a93a6; --yaml-punct:#8a93a6;
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg-app); color:var(--fg);
+    font-family:var(--font-ui);
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  button{font-family:inherit;}
+  ::selection{background:var(--accent-soft);}
+
+  #app{ display:grid; grid-template-rows:auto 1fr auto; height:100vh; min-width:920px; }
+
+  /* ---------- topbar ---------- */
+  .topbar{
+    display:flex; align-items:center; gap:1rem;
+    padding:.6rem 1rem; border-bottom:1px solid var(--border);
+    background:var(--bg-panel);
+  }
+  .brand{ display:flex; align-items:baseline; gap:.5rem; white-space:nowrap; }
+  .brand b{ font-size:.95rem; letter-spacing:.02em; }
+  .brand span{ font-size:.72rem; color:var(--muted); font-family:var(--font-mono); }
+  .rule-tabs{ display:flex; gap:.4rem; flex:1; min-width:0; }
+  .rule-tab{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2);
+    color:var(--fg-dim); border-radius:999px; padding:.4rem .85rem; font-size:.78rem;
+    cursor:pointer; display:flex; align-items:center; gap:.45rem; max-width:340px;
+  }
+  .rule-tab .ctx{ font-family:var(--font-mono); font-size:.68rem; color:var(--muted); }
+  .rule-tab:hover{ border-color:var(--border-strong); color:var(--fg); }
+  .rule-tab.active{ background:var(--accent-soft); border-color:var(--accent); color:var(--fg); }
+  .topbar-actions{ display:flex; gap:.4rem; align-items:center; }
+  .icon-btn{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2); color:var(--fg-dim);
+    border-radius:8px; padding:.4rem .6rem; font-size:.75rem; cursor:pointer; display:flex; gap:.35rem; align-items:center;
+  }
+  .icon-btn:hover{ color:var(--fg); border-color:var(--border-strong); }
+  .icon-btn.on{ color:var(--accent); border-color:var(--accent); background:var(--accent-soft); }
+
+  /* ---------- workspace grid ---------- */
+  .workspace{ display:grid; grid-template-columns:224px 1fr 380px; min-height:0; transition:grid-template-columns .18s ease; }
+  .workspace.no-yaml{ grid-template-columns:224px 1fr 0px; }
+
+  /* ---------- palette ---------- */
+  .palette{
+    background:var(--bg-panel); border-right:1px solid var(--border);
+    padding:.85rem .7rem; overflow-y:auto; display:flex; flex-direction:column; gap:1.1rem;
+  }
+  .pal-group h4{
+    margin:0 0 .5rem 2px; font-size:.68rem; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--muted); font-weight:700;
+  }
+  .pal-item{
+    display:flex; align-items:center; gap:.5rem;
+    border:1px dashed var(--border-strong); border-radius:8px; background:var(--bg-panel-2);
+    padding:.5rem .55rem; margin-bottom:.4rem; cursor:grab; font-size:.76rem; color:var(--fg-dim);
+    user-select:none;
+  }
+  .pal-item:active{ cursor:grabbing; }
+  .pal-item:hover{ color:var(--fg); border-color:var(--accent); background:var(--accent-soft); }
+  .pal-swatch{ width:10px; height:10px; border-radius:3px; flex:none; }
+  .pal-hint{ font-size:.68rem; color:var(--muted); line-height:1.4; margin-top:-.3rem; }
+
+  .legend{ display:flex; flex-direction:column; gap:.3rem; }
+  .legend-row{ display:flex; align-items:center; gap:.45rem; font-size:.7rem; color:var(--fg-dim); }
+  .legend-row .pal-swatch{ width:8px; height:8px; border-radius:50%; }
+  .legend-row .ln{ width:16px; height:0; border-top:2px solid; opacity:.9; }
+  .legend-row .ln.dashed{ border-top-style:dashed; }
+  .legend-row .dot-sample{ width:8px;height:8px;border-radius:50%;background:#eab308;flex:none; }
+
+  /* ---------- canvas ---------- */
+  .canvas-wrap{
+    position:relative; overflow:hidden; background:var(--bg-canvas); cursor:grab;
+  }
+  .canvas-wrap.panning{ cursor:grabbing; }
+  #world{ position:absolute; left:0; top:0; transform-origin:0 0; will-change:transform; }
+  .bg-dots{
+    position:absolute; left:-4000px; top:-4000px; width:10000px; height:10000px;
+    background-image:radial-gradient(circle, var(--dot) 1.4px, transparent 1.4px);
+    background-size:26px 26px;
+  }
+  .frames-layer{ position:absolute; left:0; top:0; }
+  .frame{
+    position:absolute; border-radius:16px; border:1.5px dashed var(--c-ref);
+    background:var(--c-ref-bg); pointer-events:none;
+  }
+  .frame.frame-action{ border-color:var(--c-action); background:var(--c-action-bg); }
+  .frame-tab{
+    position:absolute; top:-11px; left:14px; background:var(--bg-canvas);
+    padding:0 8px; font-family:var(--font-mono); font-size:.65rem; color:var(--c-ref);
+    border:1px dashed var(--c-ref); border-radius:999px; white-space:nowrap;
+  }
+  .frame.frame-action .frame-tab{ color:var(--c-action); border-color:var(--c-action); }
+
+  svg.edges-svg{ position:absolute; left:0; top:0; overflow:visible; }
+  .edge{ fill:none; stroke-linejoin:round; stroke-linecap:round; transition:opacity .15s; }
+  .edge-cond{ stroke:var(--border-strong); stroke-width:1.75; }
+  .edge-ref{ stroke:var(--c-ref); stroke-width:1.75; stroke-dasharray:5 4; }
+  .edge-flow{ stroke:var(--c-action); stroke-width:2.5; stroke-dasharray:7 6; animation:flowdash .7s linear infinite; }
+  .edge-flow.edge-trigger{ stroke:var(--accent); }
+  .edge.hl{ filter:drop-shadow(0 0 3px currentColor); stroke-width:3; opacity:1 !important; }
+  .edge.dim{ opacity:.18; }
+  @keyframes flowdash{ to{ stroke-dashoffset:-52; } }
+  .mk-cond{ fill:var(--border-strong); }
+  .mk-ref{ fill:var(--c-ref); }
+  .mk-flow{ fill:var(--c-action); }
+  .mk-trigger{ fill:var(--accent); }
+
+  .nodes-layer{ position:absolute; left:0; top:0; }
+  .node{
+    position:absolute; border-radius:10px; background:var(--bg-panel);
+    border:1px solid var(--border); box-shadow:0 1px 2px rgba(0,0,0,.25), 0 6px 16px rgba(0,0,0,.18);
+    cursor:grab; user-select:none; transition:box-shadow .12s, border-color .12s, opacity .15s;
+  }
+  .node:active{ cursor:grabbing; }
+  .node.dim{ opacity:.28; }
+  .node.selected{ border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft), 0 6px 18px rgba(0,0,0,.3); }
+  .node.unattached{ border-style:dashed; border-color:#eab308; animation:pulseNew 1.6s ease-in-out infinite; }
+  @keyframes pulseNew{ 0%,100%{ box-shadow:0 0 0 0 rgba(234,179,8,.35);} 50%{ box-shadow:0 0 0 5px rgba(234,179,8,0);} }
+  .node.edited{ position:absolute; }
+  .node.edited::after{
+    content:''; position:absolute; top:-4px; right:-4px; width:9px; height:9px; border-radius:50%;
+    background:#eab308; border:2px solid var(--bg-canvas); box-shadow:0 0 0 1px rgba(234,179,8,.5);
+    z-index:5;
+  }
+  .node.invalid{ border-color:var(--danger) !important; box-shadow:0 0 0 1.5px rgba(244,63,94,.32) !important; }
+
+  .handle{ position:absolute; width:9px; height:9px; border-radius:50%; background:var(--bg-app); border:2px solid var(--muted); z-index:4; }
+  .handle.out{ right:-6px; top:50%; transform:translateY(-50%); }
+  .handle.out.bottom{ right:auto; left:50%; top:auto; bottom:-6px; transform:translateX(-50%); }
+  .handles-in{ position:absolute; left:-6px; top:0; bottom:0; width:9px; }
+  .handles-in .handle{ position:absolute; left:0; transform:translate(0,-50%); }
+  .handle.top{ left:50%; top:-6px; transform:translateX(-50%); }
+
+  /* header/banner node */
+  .node.k-header{
+    background:linear-gradient(180deg, var(--bg-panel), var(--bg-panel-2));
+    padding:.85rem 1.1rem; cursor:default;
+  }
+  .hdr-bar{ position:absolute; left:0; top:0; right:0; height:4px; border-radius:10px 10px 0 0;
+    background:linear-gradient(90deg, var(--c-all), var(--c-any), var(--c-action)); }
+  .hdr-title{ font-size:1.02rem; font-weight:700; margin:.35rem 0 .5rem; }
+  .hdr-badges{ display:flex; gap:.4rem; flex-wrap:wrap; }
+  .pill{
+    font-family:var(--font-mono); font-size:.68rem; padding:.22rem .55rem; border-radius:999px;
+    border:1px solid var(--border); color:var(--fg-dim); background:var(--bg-app);
+  }
+  .pill.on{ color:#22c55e; border-color:#22c55e55; background:rgba(34,197,94,.12); cursor:pointer; }
+  .pill.trigger{ color:var(--accent); border-color:var(--accent); background:var(--accent-soft); }
+  .pill.stop{ color:var(--danger); border-color:var(--danger); background:rgba(244,63,94,.1); }
+
+  /* gate node (all/any/none) */
+  .node.k-gate{ display:flex; flex-direction:column; align-items:center; justify-content:center; padding:.4rem; text-align:center; }
+  .node.op-all{ border-color:var(--c-all); background:var(--c-all-bg); }
+  .node.op-any{ border-color:var(--c-any); background:var(--c-any-bg); }
+  .node.op-none{ border-color:var(--c-none); background:var(--c-none-bg); }
+  .gate-badge{
+    font-family:var(--font-mono); font-weight:800; font-size:.72rem; letter-spacing:.06em;
+    display:flex; align-items:center; gap:.3rem;
+  }
+  .node.op-all .gate-badge{ color:var(--c-all); }
+  .node.op-any .gate-badge{ color:var(--c-any); }
+  .node.op-none .gate-badge{ color:var(--c-none); }
+  .gicon{ width:15px; height:15px; }
+  .gate-label{ font-size:.7rem; color:var(--fg-dim); margin-top:.2rem; line-height:1.25; }
+
+  /* ref chip */
+  .node.k-ref{ border:1.5px dashed var(--c-ref); background:var(--c-ref-bg); padding:.45rem .6rem; display:flex; flex-direction:column; gap:.15rem; }
+  .ref-top{ display:flex; align-items:center; justify-content:space-between; gap:.4rem; }
+  .ref-eyebrow{ font-family:var(--font-mono); font-size:.6rem; color:var(--c-ref); letter-spacing:.08em; display:flex; align-items:center; gap:.3rem; }
+  .ref-toggle{
+    appearance:none; border:none; background:transparent; color:var(--c-ref); cursor:pointer;
+    font-size:.7rem; padding:0 2px; line-height:1; border-radius:4px;
+  }
+  .ref-toggle:hover{ background:rgba(45,212,191,.18); }
+  .ref-path{ font-family:var(--font-mono); font-size:.73rem; color:var(--fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ref-summary{ font-size:.64rem; color:var(--muted); }
+
+  /* leaf condition card */
+  .node.k-leaf{ border-color:var(--c-leaf); background:var(--c-leaf-bg); padding:.4rem .55rem; display:flex; flex-direction:column; justify-content:center; gap:.12rem; }
+  .leaf-field{ font-family:var(--font-mono); font-size:.72rem; color:var(--c-leaf); }
+  .leaf-field b{ color:var(--fg); font-weight:600; }
+  .leaf-value{ font-family:var(--font-mono); font-size:.71rem; color:var(--fg-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:text; border-bottom:1px dashed transparent; }
+  .leaf-value:hover{ color:var(--fg); border-bottom-color:var(--border-strong); }
+
+  /* action node */
+  .node.k-action{ border-color:var(--c-action); background:var(--c-action-bg); padding:.4rem .6rem; display:flex; gap:.5rem; align-items:center; }
+  .act-step{
+    flex:none; width:20px; height:20px; border-radius:50%; background:var(--c-action); color:#04140a;
+    font-size:.66rem; font-weight:800; display:flex; align-items:center; justify-content:center; font-family:var(--font-mono);
+  }
+  .act-body{ min-width:0; }
+  .act-type{ font-family:var(--font-mono); font-size:.74rem; font-weight:700; color:var(--fg); }
+  .act-params{ font-family:var(--font-mono); font-size:.66rem; color:var(--fg-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:text; border-bottom:1px dashed transparent; }
+  .act-params:hover{ color:var(--fg); border-bottom-color:var(--border-strong); }
+
+  /* corner UI: controls + minimap */
+  .controls-bl{
+    position:absolute; left:14px; bottom:14px; display:flex; flex-direction:column; gap:5px; z-index:9;
+  }
+  .ctl-btn{
+    width:30px; height:30px; border-radius:8px; border:1px solid var(--border); background:var(--bg-panel);
+    color:var(--fg-dim); cursor:pointer; font-size:.95rem; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 2px 6px rgba(0,0,0,.25);
+  }
+  .ctl-btn:hover{ color:var(--fg); border-color:var(--border-strong); }
+  .ctl-zoom{ font-family:var(--font-mono); font-size:.62rem; color:var(--muted); text-align:center; padding:2px 0; }
+
+  .minimap-br{
+    position:absolute; right:14px; bottom:14px; width:200px; height:128px;
+    background:var(--bg-panel); border:1px solid var(--border); border-radius:10px; overflow:hidden;
+    box-shadow:0 2px 10px rgba(0,0,0,.3); z-index:9;
+  }
+  .minimap-br svg{ width:100%; height:100%; display:block; cursor:pointer; }
+
+  .canvas-hint{
+    position:absolute; top:12px; left:12px; z-index:9; font-size:.68rem; color:var(--muted);
+    background:var(--bg-panel); border:1px solid var(--border); padding:.35rem .6rem; border-radius:8px;
+    font-family:var(--font-mono); max-width:400px; pointer-events:none; line-height:1.5;
+  }
+
+  /* on-canvas inline quick-edit input */
+  .quick-edit-input{
+    position:absolute; z-index:30; font-family:var(--font-mono); font-size:.72rem;
+    background:var(--bg-panel); border:1.5px solid var(--accent); border-radius:5px; color:var(--fg);
+    padding:.22rem .4rem; box-shadow:0 4px 14px rgba(0,0,0,.4); outline:none;
+  }
+
+  /* ---------- inspector (floats bottom of palette) ---------- */
+  .inspector{
+    border-top:1px solid var(--border); padding-top:.75rem; margin-top:auto;
+    display:flex; flex-direction:column; gap:.55rem; max-height:62vh; overflow-y:auto;
+  }
+  .inspector h4{ margin:0; font-size:.68rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+  .insp-head-row{ display:flex; align-items:center; justify-content:space-between; gap:.4rem; flex-wrap:wrap; }
+  .insp-kind{ font-family:var(--font-mono); font-size:.7rem; padding:.15rem .4rem; border-radius:5px; display:inline-block; width:fit-content; }
+  .edited-badge{ font-family:var(--font-mono); font-size:.62rem; color:#eab308; display:flex; align-items:center; gap:.25rem; }
+  .edited-badge::before{ content:''; width:6px; height:6px; border-radius:50%; background:#eab308; display:inline-block; }
+  .reset-btn{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2); color:var(--fg-dim);
+    font-size:.62rem; padding:.16rem .5rem; border-radius:6px; cursor:pointer; font-family:var(--font-mono);
+  }
+  .reset-btn:hover{ color:var(--fg); border-color:var(--border-strong); }
+
+  .insp-field{ display:flex; flex-direction:column; gap:.2rem; }
+  .insp-field label{ display:block; font-size:.65rem; color:var(--muted); }
+  .insp-field input, .insp-field select{
+    width:100%; font-family:var(--font-mono); font-size:.72rem; background:var(--bg-panel-2);
+    border:1px solid var(--border); border-radius:6px; color:var(--fg); padding:.32rem .4rem;
+  }
+  .insp-field input:focus, .insp-field select:focus{ outline:1.5px solid var(--accent); border-color:var(--accent); }
+  .insp-field input.bad, .insp-field select.bad{ border-color:var(--danger); }
+  .insp-empty{ font-size:.72rem; color:var(--muted); line-height:1.5; }
+  .insp-note{ font-size:.65rem; color:var(--muted); line-height:1.4; background:var(--bg-panel-2); border-radius:6px; padding:.4rem .5rem; }
+  .field-error{ color:var(--danger); font-size:.63rem; }
+
+  .type-badge{
+    font-family:var(--font-mono); font-size:.58rem; color:var(--muted); background:var(--bg-panel-2);
+    border:1px solid var(--border); border-radius:5px; padding:.1rem .35rem; text-transform:uppercase;
+    letter-spacing:.04em; flex:none;
+  }
+  .field-row{ display:flex; gap:.4rem; align-items:center; }
+  .field-row input{ flex:1; }
+
+  .op-seg{ display:flex; flex-wrap:wrap; gap:.25rem; }
+  .op-btn{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2); color:var(--fg-dim);
+    font-family:var(--font-mono); font-size:.68rem; padding:.22rem .48rem; border-radius:6px; cursor:pointer;
+  }
+  .op-btn:hover{ border-color:var(--border-strong); color:var(--fg); }
+  .op-btn.active{ background:var(--accent-soft); border-color:var(--accent); color:var(--fg); }
+
+  .value-row{ display:flex; flex-direction:column; gap:.35rem; }
+  .num-combo{ display:flex; gap:.4rem; align-items:center; }
+  .num-combo input[type=number]{ width:88px; flex:none; }
+  .num-combo input[type=range]{ flex:1; accent-color:var(--accent); }
+  .num-combo select{ flex:none; width:auto; }
+  .hint-line{ font-size:.62rem; color:var(--muted); font-family:var(--font-mono); }
+
+  .chip-picker{ display:flex; flex-wrap:wrap; gap:.3rem; }
+  .chip-opt{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2); color:var(--fg-dim);
+    font-family:var(--font-mono); font-size:.65rem; padding:.2rem .5rem; border-radius:999px; cursor:pointer;
+  }
+  .chip-opt:hover{ border-color:var(--border-strong); }
+  .chip-opt.on{ background:var(--c-leaf-bg); border-color:var(--c-leaf); color:var(--c-leaf); }
+  .chip-add-row input{ margin-top:.1rem; }
+
+  .chip-list{
+    display:flex; flex-wrap:wrap; gap:.3rem; align-items:center; background:var(--bg-panel-2);
+    border:1px solid var(--border); border-radius:8px; padding:.35rem;
+  }
+  .chip{
+    display:flex; align-items:center; gap:.25rem; background:var(--c-action-bg); color:var(--c-action);
+    border:1px solid var(--c-action); border-radius:999px; padding:.12rem .3rem .12rem .55rem;
+    font-family:var(--font-mono); font-size:.65rem;
+  }
+  .chip-x{ appearance:none; border:none; background:transparent; color:inherit; cursor:pointer; font-size:.78rem; line-height:1; padding:0 2px; }
+  .chip-add-input{ border:none; background:transparent; outline:none; color:var(--fg); font-family:var(--font-mono); font-size:.68rem; flex:1; min-width:70px; padding:.15rem; }
+
+  .var-link-chip{
+    display:flex; align-items:center; gap:.4rem; background:var(--c-ref-bg); border:1.5px dashed var(--c-ref);
+    border-radius:8px; padding:.4rem .55rem; font-family:var(--font-mono); font-size:.66rem; color:var(--c-ref); flex-wrap:wrap;
+  }
+  .vlc-resolved{ color:var(--muted); }
+  .vlc-unlink{
+    margin-left:auto; appearance:none; border:1px solid var(--c-ref); background:transparent; color:var(--c-ref);
+    font-size:.6rem; padding:.15rem .4rem; border-radius:6px; cursor:pointer; font-family:var(--font-mono);
+  }
+  .vlc-unlink:hover{ background:var(--c-ref-bg); }
+  .link-var-btn{
+    align-self:flex-start; appearance:none; border:1px dashed var(--c-ref); background:transparent; color:var(--c-ref);
+    font-size:.64rem; padding:.25rem .5rem; border-radius:6px; cursor:pointer; font-family:var(--font-mono);
+  }
+  .link-var-btn:hover{ background:var(--c-ref-bg); }
+  .var-picker{ border:1px solid var(--border); border-radius:8px; background:var(--bg-panel-2); padding:.4rem; display:flex; flex-direction:column; gap:.3rem; }
+  .var-picker input{ width:100%; }
+  .var-picker-list{ display:flex; flex-direction:column; gap:.15rem; max-height:160px; overflow:auto; }
+  .var-opt{
+    appearance:none; border:none; background:transparent; text-align:left; color:var(--fg-dim);
+    font-family:var(--font-mono); font-size:.64rem; padding:.28rem .35rem; border-radius:5px; cursor:pointer;
+    display:flex; justify-content:space-between; gap:.4rem;
+  }
+  .var-opt:hover{ background:var(--accent-soft); color:var(--fg); }
+  .vo-val{ color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:120px; }
+
+  .regex-test-row{ display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+  .regex-test-row input{ flex:1; min-width:120px; }
+  .regex-result{ font-size:.63rem; font-family:var(--font-mono); flex:none; }
+  .regex-result.match{ color:#22c55e; }
+  .regex-result.no-match{ color:var(--muted); }
+  .regex-result.invalid-pattern{ color:var(--danger); }
+
+  .limit-row{ display:flex; flex-direction:column; gap:.4rem; }
+  .bool-toggle{ display:flex; align-items:center; gap:.4rem; font-size:.68rem; color:var(--fg-dim); }
+  .unit-fixed{ font-size:.63rem; color:var(--muted); font-family:var(--font-mono); flex:none; }
+
+  /* ---------- yaml panel ---------- */
+  .yaml-panel{ display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border); background:var(--bg-panel); overflow:hidden; }
+  .yaml-head{ display:flex; align-items:center; gap:.5rem; padding:.55rem .75rem; border-bottom:1px solid var(--border); }
+  .yaml-head .title{ font-size:.74rem; color:var(--fg-dim); font-family:var(--font-mono); flex:1; }
+  .yaml-modes{ display:flex; background:var(--bg-panel-2); border:1px solid var(--border); border-radius:7px; overflow:hidden; }
+  .yaml-mode-btn{
+    appearance:none; border:none; background:transparent; color:var(--muted); font-size:.68rem;
+    padding:.3rem .55rem; cursor:pointer; font-family:var(--font-mono);
+  }
+  .yaml-mode-btn.active{ background:var(--accent); color:#fff; }
+  .yaml-body{ flex:1; overflow:auto; padding:.7rem .5rem; }
+  .yaml-body pre{ margin:0; font-family:var(--font-mono); font-size:.735rem; line-height:1.62; }
+  .yline{ padding:0 .5rem 0 .35rem; border-radius:4px; white-space:pre; cursor:default; }
+  .yline.hl{ background:var(--accent-soft); box-shadow:inset 2px 0 0 var(--accent); }
+  .yk{ color:var(--yaml-key); }
+  .ys{ color:var(--yaml-str); }
+  .yn{ color:var(--yaml-num); }
+  .yr{ color:var(--yaml-ref); font-weight:600; }
+  .yc{ color:var(--yaml-comment); font-style:italic; }
+  .yp{ color:var(--yaml-punct); }
+
+  .yaml-collapsed-tab{
+    position:absolute; right:0; top:64px; writing-mode:vertical-rl; background:var(--bg-panel);
+    border:1px solid var(--border); border-right:none; border-radius:8px 0 0 8px; padding:.5rem .3rem;
+    font-size:.68rem; color:var(--muted); cursor:pointer; display:none; z-index:5;
+  }
+  .workspace.no-yaml .yaml-collapsed-tab{ display:block; }
+  .workspace.no-yaml .yaml-panel{ display:none; }
+
+  /* ---------- statusbar ---------- */
+  .statusbar{
+    padding:.4rem 1rem; border-top:1px solid var(--border); background:var(--bg-panel);
+    font-size:.7rem; color:var(--muted); display:flex; justify-content:space-between; gap:1rem;
+  }
+  .statusbar b{ color:var(--fg-dim); }
+
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:6px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-and" viewBox="0 0 14 14"><path d="M2 2 H7 A5 5 0 0 1 7 12 H2 Z" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-any" viewBox="0 0 14 14"><path d="M2 2 Q6 2 11 7 Q6 12 2 12 Q4.5 7 2 2 Z" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-none" viewBox="0 0 14 14"><path d="M2 2 L2 12 L10 7 Z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="7" r="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <marker id="mk-cond" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-cond" d="M0,0 L8,4 L0,8 Z"/></marker>
+    <marker id="mk-ref" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-ref" d="M0,0 L8,4 L0,8 Z"/></marker>
+    <marker id="mk-flow" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-flow" d="M0,0 L8,4 L0,8 Z"/></marker>
+    <marker id="mk-trigger" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-trigger" d="M0,0 L8,4 L0,8 Z"/></marker>
+  </defs>
+</svg>
+
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand"><b>qbt-rules</b><span>rule builder — parameter editing concept</span></div>
+    <div class="rule-tabs" id="ruleTabs"></div>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="btnLegend" title="Toggle legend">Legend</button>
+      <button class="icon-btn" id="btnYamlToggle" title="Toggle YAML panel">YAML ▸</button>
+    </div>
+  </header>
+
+  <div class="workspace" id="workspace">
+
+    <aside class="palette" id="palette">
+      <div class="pal-group">
+        <h4>Condition Nodes</h4>
+        <div class="pal-item" draggable="true" data-newkind="gate" data-newop="all"><span class="pal-swatch" style="background:var(--c-all)"></span>ALL group (AND)</div>
+        <div class="pal-item" draggable="true" data-newkind="gate" data-newop="any"><span class="pal-swatch" style="background:var(--c-any)"></span>ANY group (OR)</div>
+        <div class="pal-item" draggable="true" data-newkind="gate" data-newop="none"><span class="pal-swatch" style="background:var(--c-none)"></span>NONE group (NOT)</div>
+        <div class="pal-item" draggable="true" data-newkind="leaf"><span class="pal-swatch" style="background:var(--c-leaf)"></span>Condition leaf</div>
+        <div class="pal-item" draggable="true" data-newkind="ref"><span class="pal-swatch" style="background:var(--c-ref)"></span>$ref lookup</div>
+      </div>
+      <div class="pal-group">
+        <h4>Action Nodes</h4>
+        <div class="pal-item" draggable="true" data-newkind="action"><span class="pal-swatch" style="background:var(--c-action)"></span>Action step</div>
+      </div>
+      <div class="pal-hint">Drag a node onto the canvas to sketch it. New nodes start unconnected. Click any node, then tweak its typed params in the Inspector below — or double-click its value right on the canvas.</div>
+
+      <div class="pal-group legend" id="legendBlock">
+        <h4>Legend</h4>
+        <div class="legend-row"><span class="pal-swatch" style="background:var(--c-all)"></span>ALL — every child must match</div>
+        <div class="legend-row"><span class="pal-swatch" style="background:var(--c-any)"></span>ANY — at least one child matches</div>
+        <div class="legend-row"><span class="pal-swatch" style="background:var(--c-none)"></span>NONE — no child may match</div>
+        <div class="legend-row"><span class="pal-swatch" style="background:var(--c-leaf)"></span>leaf — field / operator / value</div>
+        <div class="legend-row"><span class="pal-swatch" style="border:1.5px dashed var(--c-ref);background:transparent"></span>$ref — reusable, click ▸ to expand</div>
+        <div class="legend-row"><span class="pal-swatch" style="background:var(--c-action)"></span>action — ordered pipeline step</div>
+        <div class="legend-row"><span class="dot-sample"></span>amber dot — edited from the loaded rule</div>
+        <div class="legend-row"><span class="ln" style="border-color:var(--border-strong)"></span>condition trace</div>
+        <div class="legend-row"><span class="ln dashed" style="border-color:var(--c-ref)"></span>ref resolution</div>
+        <div class="legend-row"><span class="ln" style="border-color:var(--c-action)"></span>action flow (animated)</div>
+      </div>
+
+      <div class="inspector" id="inspector">
+        <h4>Inspector</h4>
+        <div id="inspBody"><div class="insp-empty">Click any node on the canvas to inspect and tweak its parameters with typed controls. Edits sync live to the YAML preview.</div></div>
+      </div>
+    </aside>
+
+    <div class="canvas-wrap" id="canvasWrap">
+      <div class="canvas-hint">drag canvas to pan · wheel to zoom · click a node to inspect · dbl-click a leaf value or action params to quick-edit in place</div>
+      <div id="world">
+        <div class="bg-dots"></div>
+        <div class="frames-layer" id="framesLayer"></div>
+        <svg class="edges-svg" id="edgesSvg" width="3600" height="2200"></svg>
+        <div class="nodes-layer" id="nodesLayer"></div>
+      </div>
+      <div class="controls-bl">
+        <button class="ctl-btn" id="btnZoomIn" title="Zoom in">+</button>
+        <div class="ctl-zoom" id="zoomReadout">100%</div>
+        <button class="ctl-btn" id="btnZoomOut" title="Zoom out">−</button>
+        <button class="ctl-btn" id="btnFit" title="Fit view">⤢</button>
+      </div>
+      <div class="minimap-br" id="minimapWrap"><svg id="minimapSvg" viewBox="0 0 200 128"></svg></div>
+    </div>
+
+    <button class="yaml-collapsed-tab" id="yamlTab">YAML ▸</button>
+    <aside class="yaml-panel" id="yamlPanel">
+      <div class="yaml-head">
+        <span class="title" id="yamlFileLabel">config/rules.yml</span>
+        <div class="yaml-modes">
+          <button class="yaml-mode-btn active" data-mode="source">Source</button>
+          <button class="yaml-mode-btn" data-mode="resolved">Resolved</button>
+        </div>
+      </div>
+      <div class="yaml-body"><pre id="yamlOut"></pre></div>
+    </aside>
+
+  </div>
+
+  <footer class="statusbar">
+    <span id="statusLeft">Ready.</span>
+    <span id="statusRight"><b>advanced-rules-example.yml</b> — parameter editing concept, not a production editor</span>
+  </footer>
+
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ======================================================================
+   Type registries: field types, ref vars, action param schemas
+   ====================================================================== */
+const FIELD_TYPES = {
+  'info.ratio':        {valueType:'number', min:0, max:10, step:0.1, ops:['>','>=','<','<=','==','!=']},
+  'info.size':         {valueType:'bytes', min:0, step:1048576, ops:['>','>=','<','<=','==','!=']},
+  'info.seeding_time': {valueType:'number', min:0, step:3600, ops:['>','>=','<','<=','==','!=']},
+  'info.num_leechs':   {valueType:'number', min:0, max:200, step:1, ops:['==','!=','>','>=','<','<=']},
+  'info.num_seeds':    {valueType:'number', min:0, max:200, step:1, ops:['==','!=','>','>=','<','<=']},
+  'info.completion_on':{valueType:'duration', ops:['older_than','newer_than']},
+  'info.last_activity':{valueType:'duration', ops:['older_than','newer_than']},
+  'info.state':        {valueType:'enum', options:['downloading','uploading','stalledUP','stalledDL','queuedUP','queuedDL','pausedUP','pausedDL','forcedUP','forcedDL','checkingUP','checkingDL','error','missingFiles','allocating','metaDL'], ops:['in','not_in']},
+  'info.category':     {valueType:'enum', options:['keep','seedbox','long-term','permanent','archive','hd-content','tv-premium','cleanup-queue'], allowCustom:true, ops:['in','not_in','==','!=']},
+  'info.tags':         {valueType:'string', ops:['contains','not_contains','==','!=']},
+  'info.name':         {valueType:'regex', ops:['matches']},
+  'trackers.url':      {valueType:'string', ops:['contains','not_contains','==','!=']},
+};
+const DEFAULT_TYPE = {valueType:'string', ops:['==','!=','contains','not_contains','in','not_in','matches','older_than','newer_than','>','>=','<','<=']};
+function fieldTypeOf(field){ return FIELD_TYPES[field] || DEFAULT_TYPE; }
+
+const REF_VARS = {
+  'vars.min_ratio_private':   {type:'number', value:2.0, display:'2.0'},
+  'vars.min_ratio_public':    {type:'number', value:1.0, display:'1.0'},
+  'vars.excellent_ratio':     {type:'number', value:5.0, display:'5.0'},
+  'vars.min_active_seeds':    {type:'number', value:5, display:'5'},
+  'vars.zero_activity_hours': {type:'number', value:168, display:'168'},
+  'vars.completion_age_short':  {type:'duration', value:'7 days'},
+  'vars.completion_age_medium': {type:'duration', value:'30 days'},
+  'vars.completion_age_long':   {type:'duration', value:'90 days'},
+  'vars.large_file_bytes': {type:'bytes', value:53687091200},
+  'vars.huge_file_bytes':  {type:'bytes', value:107374182400},
+  'vars.protected_categories': {type:'enum', value:['keep','seedbox','long-term','permanent','archive']},
+  'vars.hd_content_pattern': {type:'regex', value:'(?i).*(1080p|2160p|4k|uhd|bluray|remux).*'},
+  'vars.tv_show_pattern':    {type:'regex', value:'(?i).*(s\\d{2}e\\d{2}|season[\\s._-]*\\d+).*'},
+  'vars.movie_pattern':      {type:'regex', value:'(?i).*(20\\d{2}|19\\d{2}).*\\.(mkv|mp4|avi).*'},
+};
+function mapToVarType(valueType){ return {number:'number', bytes:'bytes', duration:'duration', enum:'enum', regex:'regex'}[valueType] || null; }
+function compatibleVars(valueType){
+  const vt = mapToVarType(valueType);
+  if(!vt) return [];
+  return Object.entries(REF_VARS).filter(([,v])=>v.type===vt);
+}
+function rawVarDisplayString(varRef){
+  const v = REF_VARS[varRef]; if(!v) return '';
+  switch(v.type){
+    case 'number': return v.display || String(v.value);
+    case 'bytes': return formatBytes(v.value);
+    case 'duration': return v.value;
+    case 'enum': return '['+v.value.join(', ')+']';
+    case 'regex': return v.value;
+    default: return String(v.value);
+  }
+}
+
+const ACTION_TYPES = {
+  add_tag:            {paramKind:'taglist', paramKey:'tags'},
+  remove_tag:         {paramKind:'taglist', paramKey:'tags'},
+  set_category:       {paramKind:'category', paramKey:'category'},
+  set_upload_limit:   {paramKind:'limit', paramKey:'limit'},
+  set_download_limit: {paramKind:'limit', paramKey:'limit'},
+  force_start:        {paramKind:'none'},
+  stop:                {paramKind:'none'},
+  increase_priority:  {paramKind:'none'},
+  decrease_priority:  {paramKind:'none'},
+};
+const CATEGORY_OPTIONS = ['keep','seedbox','long-term','permanent','archive','hd-content','tv-premium','cleanup-queue'];
+
+/* ======================================================================
+   Formatting helpers
+   ====================================================================== */
+function formatBytes(n){
+  n = Number(n)||0;
+  if(n>=1073741824) return (n/1073741824).toFixed(2)+' GB';
+  if(n>=1048576) return (n/1048576).toFixed(1)+' MB';
+  if(n>=1024) return (n/1024).toFixed(0)+' KB';
+  return n+' B';
+}
+function bytesToUnit(n){
+  n = Number(n)||0;
+  if(n>=1073741824) return {mag:+(n/1073741824).toFixed(3), unit:'GB'};
+  if(n>=1048576) return {mag:+(n/1048576).toFixed(3), unit:'MB'};
+  if(n>=1024) return {mag:+(n/1024).toFixed(3), unit:'KB'};
+  return {mag:n, unit:'B'};
+}
+function unitToBytes(mag, unit){
+  const m = {B:1, KB:1024, MB:1048576, GB:1073741824}[unit] || 1;
+  return Math.round(Number(mag)*m);
+}
+function opLabel(op){ return {'>=':'≥','<=':'≤','==':'=','!=':'≠'}[op] || op; }
+function testRegex(pattern, sample){
+  // qbt-rules patterns may use a leading Python/PCRE-style inline flag group like "(?i)",
+  // which JS RegExp rejects — translate it to a real flag instead of misreporting "invalid".
+  if(!sample) return {cls:'', label:''};
+  let flags = '', p = pattern;
+  const m = p.match(/^\(\?([a-z]+)\)/);
+  if(m){ flags = m[1].replace(/[^gimsuy]/g,''); p = p.slice(m[0].length); }
+  try{
+    const re = new RegExp(p, flags);
+    return re.test(sample) ? {cls:'match', label:'✓ matches'} : {cls:'no-match', label:'✗ no match'};
+  }catch(e){ return {cls:'invalid-pattern', label:'⚠ invalid regex'}; }
+}
+function opYaml(op){ return /^[=!<>]+$/.test(op) ? `"${op}"` : op; }
+
+function rawValueYaml(n){
+  switch(n.valueType){
+    case 'number': return String(n.value);
+    case 'bytes': return String(n.value);
+    case 'string': return JSON.stringify(String(n.value));
+    case 'regex': return `'${n.value}'`;
+    case 'enum': return Array.isArray(n.value) ? '['+n.value.join(', ')+']' : JSON.stringify(n.value);
+    case 'taglist': return Array.isArray(n.value) ? '['+n.value.join(', ')+']' : JSON.stringify(n.value);
+    case 'duration': return `"${n.value} ${n.unit}"`;
+    default: return String(n.value);
+  }
+}
+function rawVarValueYaml(varRef){
+  const v = REF_VARS[varRef]; if(!v) return 'null';
+  switch(v.type){
+    case 'number': return v.display || String(v.value);
+    case 'bytes': return String(v.value);
+    case 'duration': return `"${v.value}"`;
+    case 'enum': return '['+v.value.join(', ')+']';
+    case 'regex': return `'${v.value}'`;
+    default: return String(v.value);
+  }
+}
+function leafValueYaml(n, mode){
+  if(n.varRef){
+    if(mode==='resolved') return rawVarValueYaml(n.varRef);
+    return '${'+n.varRef+'}';
+  }
+  return rawValueYaml(n);
+}
+function leafDisplayValue(n){
+  if(n.varRef) return `${rawVarDisplayString(n.varRef)}  (${n.varRef})`;
+  switch(n.valueType){
+    case 'number': return String(n.value);
+    case 'bytes': return formatBytes(n.value);
+    case 'duration': return `${n.value} ${n.unit}`;
+    case 'enum': return Array.isArray(n.value) ? '['+n.value.join(', ')+']' : String(n.value);
+    case 'taglist': return Array.isArray(n.value) ? n.value.join(', ') : String(n.value);
+    case 'regex': return n.value;
+    case 'string': return `"${n.value}"`;
+    default: return String(n.value);
+  }
+}
+function actionDisplaySummary(n){
+  const meta = ACTION_TYPES[n.type];
+  if(!meta || meta.paramKind==='none') return '—';
+  if(meta.paramKind==='taglist') return 'tags: ' + (n.params[meta.paramKey]||[]).join(', ');
+  if(meta.paramKind==='category') return 'category: ' + (n.params.category||'');
+  if(meta.paramKind==='limit') return 'limit: ' + (n.params.limit===-1 ? 'unlimited' : formatBytes(n.params.limit)+'/s');
+  return '—';
+}
+
+/* ======================================================================
+   Small authoring helpers (node/edge/frame constructors)
+   ====================================================================== */
+function L(id,x,y,field,operator,valSpec,gate){
+  return Object.assign({id,kind:'leaf',x,y,w:250,h:54,field,operator,gate:gate||null,sample:''}, valSpec);
+}
+function G(id,op,x,y,label,gate,w,h){ return {id,kind:'gate',op,x,y,w:w||140,h:h||78,label,gate:gate||null}; }
+function R(id,x,y,path,summary,collapsed){ return {id,kind:'ref',x,y,w:224,h:60,path,summary,collapsed:!!collapsed,gate:null}; }
+function A(id,x,y,w,type,params,step,gate){ return {id,kind:'action',x,y,w,h:60,type,params:params||{},step,gate:gate||null}; }
+function E(from,to,kind,gate,dir){ return {id:from+'>'+to, from,to,kind,gate:gate||null,dir:dir||'h'}; }
+function F(id,label,members,gate,color){ return {id,label,members,gate,color}; }
+
+function leafLines(n, dashIndent, kvIndent, mode, comment){
+  const c = comment ? ('   # '+comment) : '';
+  return [
+    {id:n.id, text:()=> `${dashIndent}- field: ${n.field}`},
+    {id:n.id, text:()=> `${kvIndent}operator: ${opYaml(n.operator)}`},
+    {id:n.id, text:()=> `${kvIndent}value: ${leafValueYaml(n, mode)}${c}`},
+  ];
+}
+function actionLines(n, dashIndent, kvIndent, comment){
+  const c = comment ? ('  # '+comment) : '';
+  const lines = [{id:n.id, text:()=> `${dashIndent}- type: ${n.type}${c}`}];
+  const meta = ACTION_TYPES[n.type];
+  if(meta && meta.paramKind==='taglist'){
+    lines.push({id:n.id, text:()=> `${kvIndent}params: { ${meta.paramKey}: [${(n.params[meta.paramKey]||[]).join(', ')}] }`});
+  } else if(meta && meta.paramKind==='category'){
+    lines.push({id:n.id, text:()=> `${kvIndent}params: { category: ${n.params.category} }`});
+  } else if(meta && meta.paramKind==='limit'){
+    lines.push({id:n.id, text:()=> `${kvIndent}params: { limit: ${n.params.limit} }`});
+  }
+  return lines;
+}
+
+/* ======================================================================
+   Rule A — "Force seed private tracker torrents under ratio"
+   ====================================================================== */
+function buildRuleA(){
+  const aPtL1 = L('a-pt-l1',40,196,'trackers.url','contains',{valueType:'string', value:'privatehd.to'},'a-ref-pt');
+  const aPtL2 = L('a-pt-l2',40,260,'trackers.url','contains',{valueType:'string', value:'torrentleech.org'},'a-ref-pt');
+  const aPtL3 = L('a-pt-l3',40,324,'trackers.url','contains',{valueType:'string', value:'iptorrents.com'},'a-ref-pt');
+  const aPtL4 = L('a-pt-l4',40,388,'trackers.url','contains',{valueType:'string', value:'broadcasthe.net'},'a-ref-pt');
+  const aPtL5 = L('a-pt-l5',40,452,'trackers.url','contains',{valueType:'string', value:'passthepopcorn.me'},'a-ref-pt');
+  const aPtAny = G('a-pt-any','any',330,312,'private-tracker','a-ref-pt');
+  const aRefPt = R('a-ref-pt',600,320,'conditions.private-tracker','any · 5 conditions');
+
+  const aUspL1 = L('a-usp-l1',40,544,'info.ratio','<',{valueType:'number', value:2.0, varRef:'vars.min_ratio_private'},'a-ref-usp');
+  const aUspL2 = L('a-usp-l2',40,608,'info.state','in',{valueType:'enum', value:['uploading','stalledUP','queuedUP']},'a-ref-usp');
+  const aUspAll = G('a-usp-all','all',330,564,'under-seeded-private','a-ref-usp');
+  const aRefUsp = R('a-ref-usp',600,572,'conditions.under-seeded-private','all · 2 conditions');
+
+  const aPcL1 = L('a-pc-l1',40,700,'info.category','in',{valueType:'enum', value:['keep','seedbox','long-term','permanent','archive'], varRef:'vars.protected_categories'},'a-ref-pc');
+  const aPcL2 = L('a-pc-l2',40,764,'info.tags','contains',{valueType:'string', value:'keep'},'a-ref-pc');
+  const aPcL3 = L('a-pc-l3',40,828,'info.tags','contains',{valueType:'string', value:'!delete'},'a-ref-pc');
+  const aPcAny = G('a-pc-any','any',330,752,'protected-content','a-ref-pc');
+  const aRefPc = R('a-ref-pc',600,760,'conditions.protected-content','any · 3 conditions');
+  const aNone = G('a-none','none',870,752,'protection exclusion');
+
+  const aRoot = G('a-root','all',1140,532,'Rule Conditions',null,150,96);
+
+  const aAct1 = A('a-act1',40,944,190,'force_start',{},1);
+  const aAct2 = A('a-act2',270,944,240,'set_upload_limit',{limit:-1},2);
+  const aAct3 = A('a-act3',550,944,300,'add_tag',{tags:['force-seeding','private-boost']},3);
+
+  const nodes = [
+    {id:'a-header', kind:'header', x:40,y:20,w:1180,h:104,
+      title:'Force seed private tracker torrents under ratio',
+      context:'download-finished', stopOnMatch:false, enabled:true},
+    aPtL1,aPtL2,aPtL3,aPtL4,aPtL5,aPtAny,aRefPt,
+    aUspL1,aUspL2,aUspAll,aRefUsp,
+    aPcL1,aPcL2,aPcL3,aPcAny,aRefPc,aNone,
+    aRoot,
+    aAct1,aAct2,aAct3,
+  ];
+
+  const edges = [
+    E('a-pt-l1','a-pt-any','cond','a-ref-pt'), E('a-pt-l2','a-pt-any','cond','a-ref-pt'),
+    E('a-pt-l3','a-pt-any','cond','a-ref-pt'), E('a-pt-l4','a-pt-any','cond','a-ref-pt'),
+    E('a-pt-l5','a-pt-any','cond','a-ref-pt'), E('a-pt-any','a-ref-pt','cond','a-ref-pt'),
+    E('a-ref-pt','a-root','ref'),
+
+    E('a-usp-l1','a-usp-all','cond','a-ref-usp'), E('a-usp-l2','a-usp-all','cond','a-ref-usp'),
+    E('a-usp-all','a-ref-usp','cond','a-ref-usp'), E('a-ref-usp','a-root','ref'),
+
+    E('a-pc-l1','a-pc-any','cond','a-ref-pc'), E('a-pc-l2','a-pc-any','cond','a-ref-pc'),
+    E('a-pc-l3','a-pc-any','cond','a-ref-pc'), E('a-pc-any','a-ref-pc','cond','a-ref-pc'),
+    E('a-ref-pc','a-none','cond'), E('a-none','a-root','cond'),
+
+    E('a-root','a-act1','flow',null,'v'),
+    E('a-act1','a-act2','flow'), E('a-act2','a-act3','flow'),
+  ];
+
+  const frames = [
+    F('f-pt','$ref: conditions.private-tracker',['a-pt-any','a-pt-l1','a-pt-l2','a-pt-l3','a-pt-l4','a-pt-l5'],'a-ref-pt','ref'),
+    F('f-usp','$ref: conditions.under-seeded-private',['a-usp-all','a-usp-l1','a-usp-l2'],'a-ref-usp','ref'),
+    F('f-pc','$ref: conditions.protected-content',['a-pc-any','a-pc-l1','a-pc-l2','a-pc-l3'],'a-ref-pc','ref'),
+    F('f-act','$ref: actions.force-seed-private',['a-act1','a-act2','a-act3'],null,'action'),
+  ];
+
+  const anchors = {
+    'a-pt-l1':'a-ref-pt','a-pt-l2':'a-ref-pt','a-pt-l3':'a-ref-pt','a-pt-l4':'a-ref-pt','a-pt-l5':'a-ref-pt','a-pt-any':'a-ref-pt',
+    'a-usp-l1':'a-ref-usp','a-usp-l2':'a-ref-usp','a-usp-all':'a-ref-usp',
+    'a-pc-l1':'a-ref-pc','a-pc-l2':'a-ref-pc','a-pc-l3':'a-ref-pc','a-pc-any':'a-ref-pc',
+    'a-act1':'f-act','a-act2':'f-act','a-act3':'f-act',
+  };
+
+  const source = [
+    {id:null,text:'rules:'},
+    {id:'a-header',text:'  - name: "Force seed private tracker torrents under ratio"'},
+    {id:'a-header',text:'    enabled: true'},
+    {id:'a-header',text:'    context: download-finished'},
+    {id:'a-header',text:'    stop_on_match: false'},
+    {id:'a-root',text:'    conditions:'},
+    {id:'a-ref-pt',text:'      - $ref: conditions.private-tracker'},
+    {id:'a-ref-usp',text:'      - $ref: conditions.under-seeded-private'},
+    {id:'a-none',text:'      - none:'},
+    {id:'a-ref-pc',text:'          - $ref: conditions.protected-content'},
+    {id:'f-act',text:'    actions:'},
+    {id:'f-act',text:'      - $ref: actions.force-seed-private'},
+  ];
+
+  const resolved = [
+    {id:null,text:'rules:'},
+    {id:'a-header',text:'  - name: "Force seed private tracker torrents under ratio"'},
+    {id:'a-header',text:'    enabled: true'},
+    {id:'a-header',text:'    context: download-finished'},
+    {id:'a-header',text:'    stop_on_match: false'},
+    {id:'a-root',text:'    conditions:'},
+    {id:'a-pt-any',text:'      - any:  # conditions.private-tracker'},
+    ...leafLines(aPtL1,'          ','            ','resolved'),
+    ...leafLines(aPtL2,'          ','            ','resolved'),
+    ...leafLines(aPtL3,'          ','            ','resolved'),
+    ...leafLines(aPtL4,'          ','            ','resolved'),
+    ...leafLines(aPtL5,'          ','            ','resolved'),
+    {id:'a-usp-all',text:'      - all:  # conditions.under-seeded-private'},
+    ...leafLines(aUspL1,'          ','            ','resolved'),
+    ...leafLines(aUspL2,'          ','            ','resolved'),
+    {id:'a-none',text:'      - none:'},
+    {id:'a-pc-any',text:'          - any:  # conditions.protected-content'},
+    ...leafLines(aPcL1,'              ','                ','resolved'),
+    ...leafLines(aPcL2,'              ','                ','resolved'),
+    ...leafLines(aPcL3,'              ','                ','resolved'),
+    {id:'f-act',text:'    actions:  # actions.force-seed-private'},
+    ...actionLines(aAct1,'      ','        '),
+    ...actionLines(aAct2,'      ','        '),
+    ...actionLines(aAct3,'      ','        '),
+  ];
+
+  return {key:'ruleA', name:'Rule 1 · Force-seed under ratio', context:'download-finished', nodes, edges, frames, anchors, source, resolved};
+}
+
+/* ======================================================================
+   Rule B — "Special handling for private tracker HD TV shows"
+   ====================================================================== */
+function buildRuleB(){
+  const bPtL1 = L('b-pt-l1',40,196,'trackers.url','contains',{valueType:'string', value:'privatehd.to'},'b-ref-pt');
+  const bPtL2 = L('b-pt-l2',40,260,'trackers.url','contains',{valueType:'string', value:'torrentleech.org'},'b-ref-pt');
+  const bPtL3 = L('b-pt-l3',40,324,'trackers.url','contains',{valueType:'string', value:'iptorrents.com'},'b-ref-pt');
+  const bPtL4 = L('b-pt-l4',40,388,'trackers.url','contains',{valueType:'string', value:'broadcasthe.net'},'b-ref-pt');
+  const bPtL5 = L('b-pt-l5',40,452,'trackers.url','contains',{valueType:'string', value:'passthepopcorn.me'},'b-ref-pt');
+  const bPtAny = G('b-pt-any','any',330,312,'private-tracker','b-ref-pt');
+  const bRefPt = R('b-ref-pt',600,320,'conditions.private-tracker','any · 5 conditions', true);
+
+  const bHdL1 = L('b-hd-l1',40,544,'info.name','matches',{valueType:'regex', value:'(?i).*(1080p|2160p|4k|uhd|bluray|remux).*', varRef:'vars.hd_content_pattern'},'b-ref-hd');
+  const bHdAll = G('b-hd-all','all',330,532,'hd-content','b-ref-hd');
+  const bRefHd = R('b-ref-hd',600,540,'conditions.hd-content','all · 1 condition', true);
+
+  const bTvL1 = L('b-tv-l1',40,636,'info.name','matches',{valueType:'regex', value:'(?i).*(s\\d{2}e\\d{2}|season[\\s._-]*\\d+).*', varRef:'vars.tv_show_pattern'},'b-ref-tv');
+  const bTvAll = G('b-tv-all','all',330,624,'tv-show','b-ref-tv');
+  const bRefTv = R('b-ref-tv',600,632,'conditions.tv-show','all · 1 condition', true);
+
+  const bInlineL1 = L('b-inline-l1',40,728,'info.size','>',{valueType:'bytes', value:2147483648});
+  const bInlineAll = G('b-inline-all','all',600,716,'inline size filter');
+
+  const bRoot = G('b-root','all',870,514,'Rule Conditions',null,150,96);
+
+  const bA1 = A('b-a1',40,846,205,'add_tag',{tags:['hd','quality-content']},1);
+  const bA2 = A('b-a2',285,846,225,'set_category',{category:'hd-content'},2);
+  const bA3 = A('b-a3',550,846,200,'increase_priority',{},3);
+  const bA4 = A('b-a4',790,846,175,'force_start',{},4);
+  const bA5 = A('b-a5',40,936,225,'set_upload_limit',{limit:-1},5);
+  const bA6 = A('b-a6',305,936,265,'add_tag',{tags:['force-seeding','private-boost']},6);
+  const bA7 = A('b-a7',610,936,250,'add_tag',{tags:['premium-tv','auto-managed']},7);
+  const bA8 = A('b-a8',900,936,215,'set_category',{category:'tv-premium'},8);
+
+  const nodes = [
+    {id:'b-header', kind:'header', x:40,y:20,w:960,h:104,
+      title:'Special handling for private tracker HD TV shows',
+      context:'torrent-imported', stopOnMatch:false, enabled:true},
+    bPtL1,bPtL2,bPtL3,bPtL4,bPtL5,bPtAny,bRefPt,
+    bHdL1,bHdAll,bRefHd,
+    bTvL1,bTvAll,bRefTv,
+    bInlineL1,bInlineAll,
+    bRoot,
+    bA1,bA2,bA3,bA4,bA5,bA6,bA7,bA8,
+  ];
+
+  const edges = [
+    E('b-pt-l1','b-pt-any','cond','b-ref-pt'), E('b-pt-l2','b-pt-any','cond','b-ref-pt'),
+    E('b-pt-l3','b-pt-any','cond','b-ref-pt'), E('b-pt-l4','b-pt-any','cond','b-ref-pt'),
+    E('b-pt-l5','b-pt-any','cond','b-ref-pt'), E('b-pt-any','b-ref-pt','cond','b-ref-pt'),
+    E('b-ref-pt','b-root','ref'),
+
+    E('b-hd-l1','b-hd-all','cond','b-ref-hd'), E('b-hd-all','b-ref-hd','cond','b-ref-hd'), E('b-ref-hd','b-root','ref'),
+    E('b-tv-l1','b-tv-all','cond','b-ref-tv'), E('b-tv-all','b-ref-tv','cond','b-ref-tv'), E('b-ref-tv','b-root','ref'),
+
+    E('b-inline-l1','b-inline-all','cond'), E('b-inline-all','b-root','cond'),
+
+    E('b-root','b-a1','flow',null,'v'),
+    E('b-a1','b-a2','flow'), E('b-a2','b-a3','flow'), E('b-a3','b-a4','flow'),
+    E('b-a4','b-a5','flow'), E('b-a5','b-a6','flow'), E('b-a6','b-a7','flow'), E('b-a7','b-a8','flow'),
+  ];
+
+  const frames = [
+    F('f-b-pt','$ref: conditions.private-tracker',['b-pt-any','b-pt-l1','b-pt-l2','b-pt-l3','b-pt-l4','b-pt-l5'],'b-ref-pt','ref'),
+    F('f-b-hd','$ref: conditions.hd-content',['b-hd-all','b-hd-l1'],'b-ref-hd','ref'),
+    F('f-b-tv','$ref: conditions.tv-show',['b-tv-all','b-tv-l1'],'b-ref-tv','ref'),
+    F('f-b-act1','$ref: actions.process-hd-content',['b-a1','b-a2','b-a3'],null,'action'),
+    F('f-b-act2','$ref: actions.force-seed-private',['b-a4','b-a5','b-a6'],null,'action'),
+  ];
+
+  const anchors = {
+    'b-pt-l1':'b-ref-pt','b-pt-l2':'b-ref-pt','b-pt-l3':'b-ref-pt','b-pt-l4':'b-ref-pt','b-pt-l5':'b-ref-pt','b-pt-any':'b-ref-pt',
+    'b-hd-l1':'b-ref-hd','b-hd-all':'b-ref-hd',
+    'b-tv-l1':'b-ref-tv','b-tv-all':'b-ref-tv',
+    'b-a1':'f-b-act1','b-a2':'f-b-act1','b-a3':'f-b-act1',
+    'b-a4':'f-b-act2','b-a5':'f-b-act2','b-a6':'f-b-act2',
+  };
+
+  const source = [
+    {id:null,text:'rules:'},
+    {id:'b-header',text:'  - name: "Special handling for private tracker HD TV shows"'},
+    {id:'b-header',text:'    enabled: true'},
+    {id:'b-header',text:'    context: torrent-imported'},
+    {id:'b-header',text:'    stop_on_match: false'},
+    {id:'b-root',text:'    conditions:'},
+    {id:'b-ref-pt',text:'      - $ref: conditions.private-tracker'},
+    {id:'b-ref-hd',text:'      - $ref: conditions.hd-content'},
+    {id:'b-ref-tv',text:'      - $ref: conditions.tv-show'},
+    {id:'b-inline-all',text:'      - all:  # inline, mixed with refs above'},
+    ...leafLines(bInlineL1,'          ','            ','source'),
+    {id:null,text:'    actions:'},
+    {id:'f-b-act1',text:'      - $ref: actions.process-hd-content'},
+    {id:'f-b-act2',text:'      - $ref: actions.force-seed-private'},
+    ...actionLines(bA7,'      ','        ','inline'),
+    ...actionLines(bA8,'      ','        ','inline'),
+  ];
+
+  const resolved = [
+    {id:null,text:'rules:'},
+    {id:'b-header',text:'  - name: "Special handling for private tracker HD TV shows"'},
+    {id:'b-header',text:'    enabled: true'},
+    {id:'b-header',text:'    context: torrent-imported'},
+    {id:'b-header',text:'    stop_on_match: false'},
+    {id:'b-root',text:'    conditions:'},
+    {id:'b-pt-any',text:'      - any:  # conditions.private-tracker'},
+    ...leafLines(bPtL1,'          ','            ','resolved'),
+    ...leafLines(bPtL2,'          ','            ','resolved'),
+    ...leafLines(bPtL3,'          ','            ','resolved'),
+    ...leafLines(bPtL4,'          ','            ','resolved'),
+    ...leafLines(bPtL5,'          ','            ','resolved'),
+    {id:'b-hd-all',text:'      - all:  # conditions.hd-content'},
+    ...leafLines(bHdL1,'          ','            ','resolved'),
+    {id:'b-tv-all',text:'      - all:  # conditions.tv-show'},
+    ...leafLines(bTvL1,'          ','            ','resolved'),
+    {id:'b-inline-all',text:'      - all:  # inline, mixed with refs above'},
+    ...leafLines(bInlineL1,'          ','            ','resolved','> 2 GB per episode'),
+    {id:null,text:'    actions:'},
+    ...actionLines(bA1,'      ','        ','actions.process-hd-content [1/3]'),
+    ...actionLines(bA2,'      ','        ','[2/3]'),
+    ...actionLines(bA3,'      ','        ','[3/3]'),
+    ...actionLines(bA4,'      ','        ','actions.force-seed-private [1/3]'),
+    ...actionLines(bA5,'      ','        ','[2/3]'),
+    ...actionLines(bA6,'      ','        ','[3/3]'),
+    ...actionLines(bA7,'      ','        ','inline'),
+    ...actionLines(bA8,'      ','        ','inline'),
+  ];
+
+  return {key:'ruleB', name:'Rule 9 · Private HD TV shows', context:'torrent-imported', nodes, edges, frames, anchors, source, resolved};
+}
+
+const RULES = { ruleA: buildRuleA(), ruleB: buildRuleB() };
+
+function editableSnapshot(n){
+  if(n.kind==='leaf') return {field:n.field, operator:n.operator, valueType:n.valueType, value:n.value, varRef:n.varRef||null, unit:n.unit||null};
+  if(n.kind==='action') return {type:n.type, params:n.params};
+  if(n.kind==='ref') return {path:n.path, summary:n.summary};
+  if(n.kind==='gate') return {label:n.label};
+  return null;
+}
+function snapshotOriginals(rule){
+  rule._orig = {};
+  rule.nodes.forEach(n=>{ rule._orig[n.id] = JSON.parse(JSON.stringify(editableSnapshot(n))); });
+}
+Object.values(RULES).forEach(snapshotOriginals);
+
+/* ======================================================================
+   State
+   ====================================================================== */
+const state = {
+  ruleKey:'ruleA',
+  pan:{x:80,y:40}, zoom:1,
+  selectedId:null,
+  yamlMode:'source',
+  panning:false, panStart:null,
+  dragging:null,
+  nextScratch:1,
+};
+
+const el = {
+  wrap: document.getElementById('canvasWrap'),
+  world: document.getElementById('world'),
+  frames: document.getElementById('framesLayer'),
+  svg: document.getElementById('edgesSvg'),
+  nodes: document.getElementById('nodesLayer'),
+  yamlOut: document.getElementById('yamlOut'),
+  yamlPanel: document.getElementById('yamlPanel'),
+  workspace: document.getElementById('workspace'),
+  minimap: document.getElementById('minimapSvg'),
+  zoomReadout: document.getElementById('zoomReadout'),
+  ruleTabs: document.getElementById('ruleTabs'),
+  inspBody: document.getElementById('inspBody'),
+  statusLeft: document.getElementById('statusLeft'),
+};
+
+let nodeEls = {};
+
+function currentRule(){ return RULES[state.ruleKey]; }
+function findNode(id){ return currentRule().nodes.find(n=>n.id===id); }
+
+function isGated(gateId){
+  if(!gateId) return false;
+  const ref = findNode(gateId);
+  return !!(ref && ref.collapsed);
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ======================================================================
+   Edited-state tracking + validation
+   ====================================================================== */
+function isEdited(n){
+  if(!['leaf','action','ref','gate'].includes(n.kind)) return false;
+  const rule = currentRule();
+  const orig = rule._orig && rule._orig[n.id];
+  if(!orig) return false;
+  return JSON.stringify(editableSnapshot(n)) !== JSON.stringify(orig);
+}
+function resetNode(n){
+  const rule = currentRule();
+  const orig = rule._orig[n.id];
+  if(!orig) return;
+  Object.assign(n, JSON.parse(JSON.stringify(orig)));
+  fullUpdate();
+  el.statusLeft.textContent = `Reset "${n.id}" to its originally-loaded params.`;
+}
+function validateNode(n){
+  const errors = {};
+  if(n.kind==='leaf'){
+    if(!n.field || !n.field.trim()) errors.field = 'Field is required';
+    if(!n.varRef){
+      switch(n.valueType){
+        case 'number': {
+          if(typeof n.value!=='number' || isNaN(n.value)) errors.value='Must be a number';
+          else { const ft=fieldTypeOf(n.field); if(ft.min!=null && n.value<ft.min) errors.value=`Must be ≥ ${ft.min}`; }
+          break;
+        }
+        case 'bytes': if(!(n.value>=0)) errors.value='Must be a non-negative byte count'; break;
+        case 'duration': if(!(n.value>0)) errors.value='Duration must be greater than 0'; break;
+        case 'enum': if(!Array.isArray(n.value) || !n.value.length) errors.value='Select at least one value'; break;
+        case 'regex':
+          if(!n.value) errors.value='Pattern is required';
+          else { try{ new RegExp(n.value); }catch(e){ errors.value='Invalid regular expression'; } }
+          break;
+        case 'taglist': if(!Array.isArray(n.value) || !n.value.length) errors.value='Add at least one tag'; break;
+        case 'string': if(n.value==null || !String(n.value).trim()) errors.value='Value is required'; break;
+      }
+    }
+  } else if(n.kind==='action'){
+    const meta = ACTION_TYPES[n.type];
+    if(meta && meta.paramKind==='taglist' && (!n.params[meta.paramKey] || !n.params[meta.paramKey].length)) errors.params='Add at least one tag';
+    if(meta && meta.paramKind==='category' && (!n.params.category || !String(n.params.category).trim())) errors.params='Category is required';
+    if(meta && meta.paramKind==='limit' && (n.params.limit==null || isNaN(n.params.limit))) errors.params='Limit must be a number (-1 = unlimited)';
+  }
+  return {valid:Object.keys(errors).length===0, errors};
+}
+function reinferFieldType(n){
+  const ft = fieldTypeOf(n.field);
+  if(ft.valueType === n.valueType) return;
+  n.valueType = ft.valueType;
+  n.varRef = null;
+  if(!ft.ops.includes(n.operator)) n.operator = ft.ops[0];
+  switch(ft.valueType){
+    case 'number': n.value = ft.min ?? 0; break;
+    case 'bytes': n.value = 1048576; n.byteUnit = 'MB'; break;
+    case 'duration': n.value = 30; n.unit = 'days'; break;
+    case 'enum': n.value = ft.options ? [ft.options[0]] : []; break;
+    case 'regex': n.value = '.*'; break;
+    case 'taglist': n.value = []; break;
+    default: n.value = '';
+  }
+}
+
+/* ======================================================================
+   Rendering: tabs
+   ====================================================================== */
+function renderTabs(){
+  el.ruleTabs.innerHTML = '';
+  Object.values(RULES).forEach(r=>{
+    const b = document.createElement('button');
+    b.className = 'rule-tab' + (r.key===state.ruleKey ? ' active':'');
+    b.innerHTML = `${escapeHtml(r.name)} <span class="ctx">on:${r.context}</span>`;
+    b.addEventListener('click', ()=>{
+      if(state.ruleKey===r.key) return;
+      state.ruleKey = r.key; state.selectedId = null;
+      renderTabs(); renderInspector(); renderAll(); fitView();
+    });
+    el.ruleTabs.appendChild(b);
+  });
+}
+
+/* ======================================================================
+   Rendering: frames + nodes + edges
+   ====================================================================== */
+function boundsOf(ids){
+  const rule = currentRule();
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity, any=false;
+  ids.forEach(id=>{
+    const n = rule.nodes.find(x=>x.id===id);
+    if(!n) return;
+    any = true;
+    minX=Math.min(minX,n.x); minY=Math.min(minY,n.y);
+    maxX=Math.max(maxX,n.x+n.w); maxY=Math.max(maxY,n.y+n.h);
+  });
+  if(!any) return null;
+  return {x:minX,y:minY,w:maxX-minX,h:maxY-minY};
+}
+
+function gateIconFor(op){ return op==='all'?'i-and':(op==='any'?'i-any':'i-none'); }
+
+function nodeInner(n, incomingMap){
+  if(n.kind==='header'){
+    return `<div class="hdr-bar"></div>
+      <div class="hdr-title">${escapeHtml(n.title)}</div>
+      <div class="hdr-badges">
+        <span class="pill trigger">on: ${escapeHtml(n.context)}</span>
+        <span class="pill ${n.stopOnMatch?'stop':''}">stop_on_match: ${n.stopOnMatch}</span>
+        <span class="pill on" data-toggle-enabled="${n.id}">● enabled: ${n.enabled}</span>
+      </div>`;
+  }
+  const handles = incomingMap[n.id] || [];
+  const count = Math.max(handles.length,1);
+  const inHandles = handles.map((src,i)=>`<div class="handle" style="top:${((i+0.5)/count*100).toFixed(2)}%"></div>`).join('');
+
+  if(n.kind==='gate'){
+    return `<div class="handles-in">${inHandles}</div>
+      <div class="gate-badge"><svg class="gicon"><use href="#${gateIconFor(n.op)}"/></svg>${n.op.toUpperCase()}</div>
+      <div class="gate-label">${escapeHtml(n.label)}</div>
+      <div class="handle out"></div>`;
+  }
+  if(n.kind==='ref'){
+    return `<div class="handles-in">${inHandles}</div>
+      <div class="ref-top">
+        <span class="ref-eyebrow">🔗 REF</span>
+        <button class="ref-toggle" data-toggle-ref="${n.id}">${n.collapsed?'▸':'▾'}</button>
+      </div>
+      <div class="ref-path">${escapeHtml(n.path)}</div>
+      <div class="ref-summary">${escapeHtml(n.summary)}${n.collapsed?' · collapsed':' · expanded'}</div>
+      <div class="handle out"></div>`;
+  }
+  if(n.kind==='leaf'){
+    return `<div class="leaf-field"><b>${escapeHtml(n.field)}</b> ${escapeHtml(opLabel(n.operator))}</div>
+      <div class="leaf-value" data-quick-value title="Double-click to quick-edit on canvas">${escapeHtml(leafDisplayValue(n))}</div>
+      <div class="handle out"></div>`;
+  }
+  if(n.kind==='action'){
+    return `<div class="handles-in">${inHandles}</div>
+      <div class="act-step">${n.step}</div>
+      <div class="act-body"><div class="act-type">${escapeHtml(n.type)}</div><div class="act-params" data-quick-params title="Double-click to quick-edit on canvas">${escapeHtml(actionDisplaySummary(n))}</div></div>
+      <div class="handle out"></div>`;
+  }
+  return '';
+}
+
+function buildIncomingMap(rule){
+  const map = {};
+  rule.edges.forEach(e=>{
+    if(isGated(e.gate)) return;
+    if(isGated(findNode(e.from) && findNode(e.from).gate)) return;
+    (map[e.to] = map[e.to] || []).push(e.from);
+  });
+  Object.keys(map).forEach(k=>{
+    map[k].sort((a,b)=>{ const na=findNode(a), nb=findNode(b); return (na?na.y:0)-(nb?nb.y:0); });
+  });
+  return map;
+}
+
+function renderAll(){
+  const rule = currentRule();
+  const incomingMap = buildIncomingMap(rule);
+
+  // frames
+  el.frames.innerHTML = '';
+  rule.frames.forEach(f=>{
+    if(isGated(f.gate)) return;
+    const b = boundsOf(f.members);
+    if(!b) return;
+    const div = document.createElement('div');
+    div.className = 'frame' + (f.color==='action' ? ' frame-action' : '');
+    div.style.left = (b.x-18)+'px'; div.style.top = (b.y-18)+'px';
+    div.style.width = (b.w+36)+'px'; div.style.height = (b.h+36)+'px';
+    div.innerHTML = `<span class="frame-tab">${escapeHtml(f.label)}</span>`;
+    el.frames.appendChild(div);
+  });
+
+  // nodes
+  el.nodes.innerHTML = '';
+  nodeEls = {};
+  rule.nodes.forEach(n=>{
+    if(isGated(n.gate)) return;
+    const div = document.createElement('div');
+    const editedCls = isEdited(n) ? ' edited' : '';
+    const invalidCls = (n.kind==='leaf'||n.kind==='action') && !validateNode(n).valid ? ' invalid' : '';
+    div.className = 'node k-'+n.kind + (n.kind==='gate' ? ' op-'+n.op : '') +
+      (state.selectedId===n.id ? ' selected':'') + (n.unattached ? ' unattached':'') + editedCls + invalidCls;
+    div.style.left = n.x+'px'; div.style.top = n.y+'px'; div.style.width = n.w+'px'; div.style.height = n.h+'px';
+    div.dataset.id = n.id;
+    div.innerHTML = nodeInner(n, incomingMap);
+    el.nodes.appendChild(div);
+    nodeEls[n.id] = div;
+  });
+
+  applyFocusDim();
+  drawEdges(incomingMap);
+  drawMinimap();
+}
+
+/* ---- edges ---- */
+function pathH(x1,y1,x2,y2){
+  if(Math.abs(y1-y2) < 0.5) return `M${x1} ${y1} L${x2} ${y2}`;
+  if(x2 < x1+44){
+    const midY=(y1+y2)/2;
+    return `M${x1} ${y1} L${x1+28} ${y1} L${x1+28} ${midY} L${x2-28} ${midY} L${x2-28} ${y2} L${x2} ${y2}`;
+  }
+  const midX=(x1+x2)/2;
+  return `M${x1} ${y1} L${midX} ${y1} L${midX} ${y2} L${x2} ${y2}`;
+}
+function pathV(x1,y1,x2,y2){
+  const midY=(y1+y2)/2;
+  return `M${x1} ${y1} L${x1} ${midY} L${x2} ${midY} L${x2} ${y2}`;
+}
+
+function drawEdges(incomingMap){
+  const rule = currentRule();
+  incomingMap = incomingMap || buildIncomingMap(rule);
+  el.svg.innerHTML = '';
+  const frag = document.createDocumentFragment();
+
+  rule.edges.forEach(e=>{
+    if(isGated(e.gate)) return;
+    const n1 = findNode(e.from), n2 = findNode(e.to);
+    if(!n1 || !n2) return;
+    if(isGated(n1.gate) || isGated(n2.gate)) return;
+
+    let x1,y1,x2,y2,d;
+    if(e.dir==='v'){
+      x1 = n1.x + n1.w/2; y1 = n1.y + n1.h;
+      x2 = n2.x + n2.w/2; y2 = n2.y;
+      d = pathV(x1,y1,x2,y2);
+    } else {
+      x1 = n1.x + n1.w; y1 = n1.y + n1.h/2;
+      const order = incomingMap[e.to] || [e.from];
+      const idx = Math.max(order.indexOf(e.from),0);
+      const count = Math.max(order.length,1);
+      x2 = n2.x; y2 = n2.y + ((idx+0.5)/count) * n2.h;
+      d = pathH(x1,y1,x2,y2);
+    }
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    let cls = 'edge ';
+    let marker = 'mk-cond';
+    if(e.kind==='ref'){ cls += 'edge-ref'; marker='mk-ref'; }
+    else if(e.kind==='flow'){
+      cls += 'edge-flow' + (n1.kind==='gate' ? ' edge-trigger':'');
+      marker = n1.kind==='gate' ? 'mk-trigger' : 'mk-flow';
+    } else { cls += 'edge-cond'; }
+
+    const hl = state.selectedId && (e.from===state.selectedId || e.to===state.selectedId);
+    if(hl) cls += ' hl';
+    else if(state.selectedId) cls += ' dim';
+
+    path.setAttribute('d', d);
+    path.setAttribute('class', cls);
+    path.setAttribute('marker-end', `url(#${marker})`);
+    path.dataset.from = e.from; path.dataset.to = e.to;
+    frag.appendChild(path);
+  });
+
+  el.svg.appendChild(frag);
+}
+
+function applyFocusDim(){
+  const sel = state.selectedId;
+  Object.entries(nodeEls).forEach(([id,d])=>{
+    d.classList.toggle('selected', id===sel);
+    if(!sel){ d.classList.remove('dim'); return; }
+    const rule = currentRule();
+    const connected = id===sel || rule.edges.some(e => !isGated(e.gate) && ((e.from===sel && e.to===id) || (e.to===sel && e.from===id)));
+    d.classList.toggle('dim', !connected);
+  });
+}
+
+/* ---- minimap ---- */
+function drawMinimap(){
+  const rule = currentRule();
+  const visible = rule.nodes.filter(n=>!isGated(n.gate));
+  if(!visible.length){ el.minimap.innerHTML=''; return; }
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  visible.forEach(n=>{ minX=Math.min(minX,n.x); minY=Math.min(minY,n.y); maxX=Math.max(maxX,n.x+n.w); maxY=Math.max(maxY,n.y+n.h); });
+  const pad = 40;
+  minX-=pad; minY-=pad; maxX+=pad; maxY+=pad;
+  const w = maxX-minX, h = maxY-minY;
+  const scale = Math.min(200/w, 128/h);
+  const offX = (200-w*scale)/2, offY = (128-h*scale)/2;
+  const mx = wx => (wx-minX)*scale+offX, my = wy => (wy-minY)*scale+offY;
+
+  let svg = '';
+  visible.forEach(n=>{
+    let color = 'var(--border-strong)';
+    if(n.kind==='gate') color = n.op==='all'?'var(--c-all)':n.op==='any'?'var(--c-any)':'var(--c-none)';
+    else if(n.kind==='ref') color='var(--c-ref)';
+    else if(n.kind==='leaf') color='var(--c-leaf)';
+    else if(n.kind==='action') color='var(--c-action)';
+    else if(n.kind==='header') color='var(--accent)';
+    svg += `<rect x="${mx(n.x).toFixed(1)}" y="${my(n.y).toFixed(1)}" width="${Math.max(n.w*scale,2).toFixed(1)}" height="${Math.max(n.h*scale,2).toFixed(1)}" rx="1.5" fill="${color}" opacity="${state.selectedId && state.selectedId!==n.id ? .35:.9}"/>`;
+  });
+
+  const rect = el.wrap.getBoundingClientRect();
+  const vx = (0-state.pan.x)/state.zoom, vy=(0-state.pan.y)/state.zoom;
+  const vw = rect.width/state.zoom, vh = rect.height/state.zoom;
+  svg += `<rect id="mmViewport" x="${mx(vx).toFixed(1)}" y="${my(vy).toFixed(1)}" width="${Math.max(vw*scale,4).toFixed(1)}" height="${Math.max(vh*scale,4).toFixed(1)}" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.2"/>`;
+
+  el.minimap.innerHTML = svg;
+  el.minimap.dataset.minX=minX; el.minimap.dataset.minY=minY; el.minimap.dataset.scale=scale;
+  el.minimap.dataset.offX=offX; el.minimap.dataset.offY=offY;
+}
+
+function minimapToWorld(mxPx,myPx){
+  const minX=+el.minimap.dataset.minX, minY=+el.minimap.dataset.minY, scale=+el.minimap.dataset.scale;
+  const offX=+el.minimap.dataset.offX, offY=+el.minimap.dataset.offY;
+  return { x:(mxPx-offX)/scale+minX, y:(myPx-offY)/scale+minY };
+}
+
+/* ======================================================================
+   YAML preview — generated live from node state (leaf/action lines are
+   function-backed, see leafLines()/actionLines() above)
+   ====================================================================== */
+function colorizeYamlLine(text){
+  const hashIdx = text.indexOf('#');
+  let code = text, comment = '';
+  if(hashIdx >= 0){ code = text.slice(0,hashIdx); comment = text.slice(hashIdx); }
+
+  const leadMatch = code.match(/^(\s*(?:-\s*)?)/);
+  const lead = leadMatch ? leadMatch[0] : '';
+  let rest = code.slice(lead.length);
+  let out = escapeHtml(lead);
+
+  const kvMatch = rest.match(/^([A-Za-z_][\w.]*)\s*:\s*(.*)$/);
+  if(kvMatch){
+    const key = kvMatch[1], val = kvMatch[2];
+    out += `<span class="yk">${escapeHtml(key)}</span><span class="yp">:</span>` + (val ? ' ' + colorizeValue(val) : '');
+  } else if(rest.trim().startsWith('$ref:')){
+    const afterColon = rest.trim().slice(5).trim();
+    out += `<span class="yr">$ref</span><span class="yp">:</span> <span class="yr">${escapeHtml(afterColon)}</span>`;
+  } else {
+    out += colorizeValue(rest);
+  }
+  if(comment) out += `<span class="yc">${escapeHtml(comment)}</span>`;
+  return out;
+}
+function colorizeValue(v){
+  const t = v.trim();
+  if(!t) return '';
+  if(t.startsWith('$ref:')) return `<span class="yr">${escapeHtml(t)}</span>`;
+  if(/\$\{[^}]+\}/.test(t)){
+    const parts = t.split(/(\$\{[^}]+\})/g);
+    return parts.map(p => /^\$\{[^}]+\}$/.test(p) ? `<span class="yr">${escapeHtml(p)}</span>` : colorizeValuePlain(p)).join('');
+  }
+  return colorizeValuePlain(t);
+}
+function colorizeValuePlain(t){
+  if(!t) return '';
+  if(/^["'].*["']$/.test(t)) return `<span class="ys">${escapeHtml(t)}</span>`;
+  if(/^-?\d+(\.\d+)?$/.test(t)) return `<span class="yn">${escapeHtml(t)}</span>`;
+  if(/^(true|false)$/.test(t)) return `<span class="yn">${escapeHtml(t)}</span>`;
+  if(t.startsWith('[') || t.startsWith('{')) return `<span class="yp">${escapeHtml(t)}</span>`;
+  return escapeHtml(t);
+}
+
+function renderYaml(){
+  const rule = currentRule();
+  const lines = state.yamlMode==='source' ? rule.source : rule.resolved;
+  const sel = state.selectedId;
+  let html = '';
+  let firstHlIdx = -1;
+  lines.forEach((ln,i)=>{
+    const text = typeof ln.text === 'function' ? ln.text() : ln.text;
+    let hl = false;
+    if(sel){
+      if(ln.id === sel) hl = true;
+      else if(state.yamlMode==='source' && rule.anchors[sel] === ln.id) hl = true;
+    }
+    if(hl && firstHlIdx<0) firstHlIdx = i;
+    html += `<div class="yline${hl?' hl':''}">${colorizeYamlLine(text)}</div>`;
+  });
+  el.yamlOut.innerHTML = html || '<span class="yc"># (empty)</span>';
+
+  if(firstHlIdx>=0){
+    const rows = el.yamlOut.children;
+    if(rows[firstHlIdx]) rows[firstHlIdx].scrollIntoView({block:'nearest'});
+  }
+}
+
+/* ======================================================================
+   Inspector — typed, constrained param controls
+   ====================================================================== */
+function typeBadge(valueType){
+  const map = {number:'number', bytes:'bytes', duration:'duration', enum:'enum', regex:'regex', string:'string', taglist:'tag-list'};
+  return `<span class="type-badge">${map[valueType]||valueType}</span>`;
+}
+
+function numberControl(n){
+  const ft = fieldTypeOf(n.field);
+  const min = ft.min ?? 0, max = ft.max ?? Math.max(n.value*2, 10, min+10), step = ft.step ?? 1;
+  return `<div class="value-row">
+    <label>Value</label>
+    <div class="num-combo">
+      <input type="number" step="${step}" data-set-number value="${n.value}">
+      <input type="range" min="${min}" max="${max}" step="${step}" data-set-number-range value="${n.value}">
+    </div>
+  </div>`;
+}
+function bytesControl(n){
+  const unit = n.byteUnit || bytesToUnit(n.value).unit;
+  const factor = {B:1,KB:1024,MB:1048576,GB:1073741824}[unit];
+  const mag = +(n.value/factor).toFixed(3);
+  return `<div class="value-row">
+    <label>Value</label>
+    <div class="num-combo">
+      <input type="number" min="0" step="0.01" data-set-bytes-mag value="${mag}">
+      <select data-set-bytes-unit>
+        ${['B','KB','MB','GB'].map(u=>`<option value="${u}" ${u===unit?'selected':''}>${u}</option>`).join('')}
+      </select>
+    </div>
+    <div class="hint-line">${Number(n.value).toLocaleString()} bytes</div>
+  </div>`;
+}
+function durationControl(n){
+  return `<div class="value-row">
+    <label>Value</label>
+    <div class="num-combo">
+      <input type="number" min="0" step="1" data-set-dur-mag value="${n.value}">
+      <select data-set-dur-unit>
+        ${['minutes','hours','days'].map(u=>`<option value="${u}" ${u===n.unit?'selected':''}>${u}</option>`).join('')}
+      </select>
+    </div>
+  </div>`;
+}
+function enumControl(n){
+  const ft = fieldTypeOf(n.field);
+  const options = ft.options || (Array.isArray(n.value)?n.value.slice():[]);
+  const selected = Array.isArray(n.value) ? n.value : [n.value];
+  return `<div class="value-row">
+    <label>Value</label>
+    <div class="chip-picker">
+      ${options.map(o=>`<button type="button" class="chip-opt ${selected.includes(o)?'on':''}" data-toggle-enum="${escapeHtml(o)}">${escapeHtml(o)}</button>`).join('')}
+      ${selected.filter(s=>!options.includes(s)).map(o=>`<button type="button" class="chip-opt on" data-toggle-enum="${escapeHtml(o)}">${escapeHtml(o)}</button>`).join('')}
+    </div>
+    ${ft.allowCustom ? `<div class="chip-add-row"><input type="text" placeholder="+ add custom value, Enter" data-add-enum-custom></div>` : ''}
+  </div>`;
+}
+function tagListControl(tags, scope){
+  tags = tags || [];
+  return `<div class="value-row">
+    <label>${scope==='action' ? 'Tags' : 'Value (tags)'}</label>
+    <div class="chip-list" data-tag-list="${scope}">
+      ${tags.map((t,i)=>`<span class="chip">${escapeHtml(t)}<button type="button" class="chip-x" data-remove-tag="${i}">×</button></span>`).join('')}
+      <input type="text" class="chip-add-input" placeholder="+ add tag, Enter" data-add-tag>
+    </div>
+  </div>`;
+}
+function regexControl(n){
+  const {cls, label} = testRegex(n.value, n.sample);
+  return `<div class="value-row">
+    <label>Pattern</label>
+    <input type="text" data-set-regex value="${escapeHtml(n.value)}">
+    <div class="regex-test-row">
+      <input type="text" data-set-regex-sample value="${escapeHtml(n.sample||'')}" placeholder="test string, e.g. Show.S01E02.1080p.mkv">
+      ${label ? `<span class="regex-result ${cls}">${label}</span>` : ''}
+    </div>
+  </div>`;
+}
+function stringControl(n){
+  return `<div class="value-row">
+    <label>Value</label>
+    <input type="text" data-set-string value="${escapeHtml(n.value)}">
+  </div>`;
+}
+function varLinkedBlock(n){
+  return `<div class="var-link-chip">
+    <span>🔗</span><span class="vlc-path">\${${n.varRef}}</span>
+    <span class="vlc-resolved">= ${escapeHtml(rawVarDisplayString(n.varRef))}</span>
+    <button type="button" class="vlc-unlink" data-unlink-var>Unlink</button>
+  </div>`;
+}
+function varPickerBlock(n, compat){
+  return `<button type="button" class="link-var-btn" data-open-var-picker>🔗 Link to var…</button>
+    <div class="var-picker" hidden>
+      <input type="text" placeholder="search refs.vars…" data-var-search>
+      <div class="var-picker-list">
+        ${compat.map(([k,v])=>`<button type="button" class="var-opt" data-pick-var="${k}"><span>${k.replace('vars.','')}</span><span class="vo-val">${escapeHtml(rawVarDisplayString(k))}</span></button>`).join('')}
+      </div>
+    </div>`;
+}
+function valueSection(n){
+  if(n.varRef) return varLinkedBlock(n);
+  let html = '';
+  switch(n.valueType){
+    case 'number': html = numberControl(n); break;
+    case 'bytes': html = bytesControl(n); break;
+    case 'duration': html = durationControl(n); break;
+    case 'enum': html = enumControl(n); break;
+    case 'regex': html = regexControl(n); break;
+    case 'taglist': html = tagListControl(n.value, 'leaf'); break;
+    default: html = stringControl(n); break;
+  }
+  const compat = compatibleVars(n.valueType);
+  if(compat.length) html += varPickerBlock(n, compat);
+  return html;
+}
+
+function renderLeafInspector(n){
+  const ft = fieldTypeOf(n.field);
+  const v = validateNode(n);
+  return `
+    <div class="insp-field">
+      <label>Field</label>
+      <div class="field-row"><input type="text" data-set-field value="${escapeHtml(n.field)}">${typeBadge(n.valueType)}</div>
+      ${v.errors.field ? `<div class="field-error">${v.errors.field}</div>` : ''}
+    </div>
+    <div class="insp-field">
+      <label>Operator</label>
+      <div class="op-seg">${(ft.ops||DEFAULT_TYPE.ops).map(op=>`<button type="button" class="op-btn ${op===n.operator?'active':''}" data-set-op="${op}">${escapeHtml(opLabel(op))}</button>`).join('')}</div>
+    </div>
+    <div class="insp-field">
+      ${valueSection(n)}
+      ${v.errors.value ? `<div class="field-error">${v.errors.value}</div>` : ''}
+    </div>`;
+}
+
+function limitControl(limit){
+  const unlimited = limit === -1;
+  return `<label>Upload limit</label>
+    <div class="limit-row">
+      <label class="bool-toggle"><input type="checkbox" data-toggle-unlimited ${unlimited?'checked':''}> Unlimited (-1)</label>
+      ${!unlimited ? `<div class="num-combo"><input type="number" min="0" step="1" data-set-limit-kb value="${Math.round((limit||0)/1024)}"><span class="unit-fixed">KB/s</span></div>` : ''}
+    </div>`;
+}
+function renderActionInspector(n){
+  const v = validateNode(n);
+  const types = Object.keys(ACTION_TYPES);
+  const meta = ACTION_TYPES[n.type];
+  let paramsHtml;
+  if(!meta || meta.paramKind==='none'){
+    paramsHtml = `<div class="insp-note">No parameters for this action type.</div>`;
+  } else if(meta.paramKind==='taglist'){
+    paramsHtml = tagListControl(n.params[meta.paramKey], 'action');
+  } else if(meta.paramKind==='category'){
+    paramsHtml = `<label>Category</label>
+      <input type="text" list="dl-categories-${n.id}" data-set-category value="${escapeHtml(n.params.category||'')}">
+      <datalist id="dl-categories-${n.id}">${CATEGORY_OPTIONS.map(c=>`<option value="${c}">`).join('')}</datalist>`;
+  } else if(meta.paramKind==='limit'){
+    paramsHtml = limitControl(n.params.limit);
+  }
+  return `
+    <div class="insp-field">
+      <label>Action type</label>
+      <select data-set-type>${types.map(t=>`<option value="${t}" ${t===n.type?'selected':''}>${t}</option>`).join('')}</select>
+    </div>
+    <div class="insp-field">
+      ${paramsHtml}
+      ${v.errors.params ? `<div class="field-error">${v.errors.params}</div>` : ''}
+    </div>`;
+}
+
+function renderRefInspector(n){
+  return `<div class="insp-field"><label>Ref path</label><input type="text" data-edit="path" value="${escapeHtml(n.path)}"></div>
+    <div class="insp-field"><label>Summary</label><input type="text" data-edit="summary" value="${escapeHtml(n.summary)}"></div>
+    <div class="insp-note">Click the ▸/▾ on the chip itself to resolve/collapse its subtree on the canvas.</div>`;
+}
+function renderGateInspector(n){
+  return `<div class="insp-field"><label>Label</label><input type="text" data-edit="label" value="${escapeHtml(n.label)}"></div>
+    <div class="insp-note">${n.op.toUpperCase()} groups combine child conditions. Drag more leaves or refs onto the canvas and this gate is where they'd connect.</div>`;
+}
+function renderHeaderInspector(n){
+  return `<div class="insp-note">Rule "${escapeHtml(n.title)}" · triggered on <b style="color:var(--fg)">${escapeHtml(n.context)}</b>. Toggle the enabled pill on the banner to flip it live.</div>`;
+}
+
+function renderInspector(){
+  const n = state.selectedId ? findNode(state.selectedId) : null;
+  if(!n){
+    el.inspBody.innerHTML = '<div class="insp-empty">Click any node on the canvas to inspect and tweak its parameters with typed controls. Edits sync live to the YAML preview.</div>';
+    return;
+  }
+  const kindColor = {gate:'var(--c-'+(n.op||'all')+')', ref:'var(--c-ref)', leaf:'var(--c-leaf)', action:'var(--c-action)', header:'var(--accent)'}[n.kind] || 'var(--muted)';
+  const edited = isEdited(n);
+  let html = `<div class="insp-head-row">
+    <span class="insp-kind" style="color:${kindColor};background:color-mix(in srgb, ${kindColor} 18%, transparent)">${n.kind}${n.op?(' · '+n.op):''}</span>
+    ${edited ? `<span class="edited-badge">edited</span><button type="button" class="reset-btn" data-reset-node>Reset</button>` : ''}
+  </div>`;
+
+  if(n.kind==='leaf') html += renderLeafInspector(n);
+  else if(n.kind==='action') html += renderActionInspector(n);
+  else if(n.kind==='ref') html += renderRefInspector(n);
+  else if(n.kind==='gate') html += renderGateInspector(n);
+  else if(n.kind==='header') html += renderHeaderInspector(n);
+
+  if(n.unattached){
+    html += `<div class="insp-note">This node was just dropped from the palette and isn't wired into the rule tree, so it won't show up in the YAML preview yet.</div>`;
+  }
+  el.inspBody.innerHTML = html;
+}
+
+function lightUpdate(){ renderAll(); renderYaml(); }
+function fullUpdate(){ renderAll(); renderYaml(); renderInspector(); }
+
+/* ---- inspector event delegation (input = light, no inspector rebuild so focus survives) ---- */
+function syncRangeMirror(numInput, v){ const row=numInput.closest('.num-combo'); const range=row && row.querySelector('[data-set-number-range]'); if(range) range.value=v; }
+function syncNumberMirror(rangeInput, v){ const row=rangeInput.closest('.num-combo'); const num=row && row.querySelector('[data-set-number]'); if(num) num.value=v; }
+function recalcBytesFromMag(n, magInput){
+  const row = magInput.closest('.num-combo');
+  const unitSel = row && row.querySelector('[data-set-bytes-unit]');
+  const unit = unitSel ? unitSel.value : (n.byteUnit || 'B');
+  n.byteUnit = unit;
+  const mag = parseFloat(magInput.value);
+  if(!isNaN(mag)) n.value = unitToBytes(mag, unit);
+  const hint = magInput.closest('.value-row').querySelector('.hint-line');
+  if(hint) hint.textContent = Number(n.value).toLocaleString() + ' bytes';
+}
+function recalcBytesFromUnit(n, unitSel){
+  // reinterpret the currently-shown magnitude number in the newly chosen unit
+  const row = unitSel.closest('.num-combo');
+  const magInput = row && row.querySelector('[data-set-bytes-mag]');
+  const mag = magInput ? parseFloat(magInput.value) : 0;
+  n.byteUnit = unitSel.value;
+  if(!isNaN(mag)) n.value = unitToBytes(mag, unitSel.value);
+}
+function toggleBad(input, bad){ input.classList.toggle('bad', !!bad); }
+function updateRegexResultInline(n, sampleInput){
+  const row = sampleInput && sampleInput.closest('.regex-test-row');
+  if(!row) return;
+  let badge = row.querySelector('.regex-result');
+  const {cls, label} = testRegex(n.value, n.sample);
+  if(label){
+    if(!badge){ badge = document.createElement('span'); row.appendChild(badge); }
+    badge.className = 'regex-result '+cls;
+    badge.textContent = label;
+  } else if(badge){ badge.remove(); }
+}
+
+el.inspBody.addEventListener('input', e=>{
+  const n = state.selectedId ? findNode(state.selectedId) : null;
+  if(!n) return;
+  const t = e.target;
+  if(t.matches('[data-edit]')){
+    n[t.dataset.edit] = t.value;
+    lightUpdate();
+    return;
+  }
+  if(t.matches('[data-set-field]')){
+    n.field = t.value; lightUpdate(); return;
+  }
+  if(t.matches('[data-set-string]')){
+    n.value = t.value; toggleBad(t, !t.value.trim()); lightUpdate(); return;
+  }
+  if(t.matches('[data-set-regex]')){
+    n.value = t.value;
+    let bad = false; try{ new RegExp(t.value); }catch(e2){ bad = true; }
+    toggleBad(t, bad || !t.value);
+    const row = t.closest('.value-row');
+    const sampleInput = row && row.querySelector('[data-set-regex-sample]');
+    updateRegexResultInline(n, sampleInput);
+    lightUpdate(); return;
+  }
+  if(t.matches('[data-set-regex-sample]')){
+    n.sample = t.value;
+    updateRegexResultInline(n, t);
+    return; // sample is scratch-only (not part of the YAML) — no canvas/YAML re-render needed
+  }
+  if(t.matches('[data-set-number]')){
+    const v = parseFloat(t.value);
+    if(!isNaN(v)){ n.value = v; syncRangeMirror(t, v); }
+    lightUpdate(); return;
+  }
+  if(t.matches('[data-set-number-range]')){
+    const v = parseFloat(t.value);
+    if(!isNaN(v)){ n.value = v; syncNumberMirror(t, v); }
+    lightUpdate(); return;
+  }
+  if(t.matches('[data-set-bytes-mag]')){
+    recalcBytesFromMag(n, t); lightUpdate(); return;
+  }
+  if(t.matches('[data-set-dur-mag]')){
+    const v = parseFloat(t.value);
+    if(!isNaN(v)) n.value = v;
+    lightUpdate(); return;
+  }
+  if(t.matches('[data-set-limit-kb]')){
+    const v = parseFloat(t.value);
+    if(!isNaN(v)) n.params.limit = Math.round(v*1024);
+    lightUpdate(); return;
+  }
+  if(t.matches('[data-set-category]')){
+    n.params.category = t.value; lightUpdate(); return;
+  }
+  if(t.matches('[data-var-search]')){
+    const q = t.value.toLowerCase();
+    const list = t.closest('.var-picker').querySelector('.var-picker-list');
+    list.querySelectorAll('.var-opt').forEach(btn=>{ btn.style.display = btn.textContent.toLowerCase().includes(q) ? '' : 'none'; });
+    return;
+  }
+});
+
+el.inspBody.addEventListener('change', e=>{
+  const n = state.selectedId ? findNode(state.selectedId) : null;
+  if(!n) return;
+  const t = e.target;
+  if(t.matches('[data-set-field]')){ reinferFieldType(n); fullUpdate(); return; }
+  if(t.matches('[data-set-bytes-unit]')){ recalcBytesFromUnit(n, t); fullUpdate(); return; }
+  if(t.matches('[data-set-dur-unit]')){ n.unit = t.value; fullUpdate(); return; }
+  if(t.matches('[data-set-type]')){
+    n.type = t.value;
+    const meta = ACTION_TYPES[n.type];
+    if(meta){
+      if(meta.paramKind==='taglist' && !Array.isArray(n.params[meta.paramKey])) n.params[meta.paramKey] = [];
+      if(meta.paramKind==='category' && n.params.category==null) n.params.category = '';
+      if(meta.paramKind==='limit' && n.params.limit==null) n.params.limit = -1;
+    }
+    fullUpdate(); return;
+  }
+  if(t.matches('[data-toggle-unlimited]')){
+    n.params.limit = t.checked ? -1 : 5242880;
+    fullUpdate(); return;
+  }
+});
+
+el.inspBody.addEventListener('click', e=>{
+  const n = state.selectedId ? findNode(state.selectedId) : null;
+  if(!n) return;
+
+  const opBtn = e.target.closest('[data-set-op]');
+  if(opBtn){ n.operator = opBtn.dataset.setOp; fullUpdate(); return; }
+
+  const enumBtn = e.target.closest('[data-toggle-enum]');
+  if(enumBtn){
+    const val = enumBtn.dataset.toggleEnum;
+    const arr = Array.isArray(n.value) ? n.value.slice() : [];
+    const i = arr.indexOf(val);
+    if(i>=0) arr.splice(i,1); else arr.push(val);
+    n.value = arr; fullUpdate(); return;
+  }
+
+  const chipX = e.target.closest('[data-remove-tag]');
+  if(chipX){
+    const idx = +chipX.dataset.removeTag;
+    const list = chipX.closest('[data-tag-list]');
+    const scope = list.dataset.tagList;
+    const arr = scope==='action' ? n.params[ACTION_TYPES[n.type].paramKey] : n.value;
+    if(Array.isArray(arr)) arr.splice(idx,1);
+    fullUpdate(); return;
+  }
+
+  const unlinkBtn = e.target.closest('[data-unlink-var]');
+  if(unlinkBtn){
+    const v = REF_VARS[n.varRef];
+    if(v){
+      if(v.type==='duration'){
+        const m = String(v.value).match(/^([\d.]+)\s*(\w+)/);
+        n.value = m ? parseFloat(m[1]) : v.value; n.unit = m ? m[2] : 'days';
+      } else if(v.type==='enum'){
+        n.value = v.value.slice();
+      } else {
+        n.value = v.value;
+      }
+    }
+    n.varRef = null; fullUpdate(); return;
+  }
+
+  const openPicker = e.target.closest('[data-open-var-picker]');
+  if(openPicker){
+    const picker = openPicker.nextElementSibling;
+    picker.hidden = !picker.hidden;
+    if(!picker.hidden){ const s = picker.querySelector('[data-var-search]'); s && s.focus(); }
+    return;
+  }
+  const pickVar = e.target.closest('[data-pick-var]');
+  if(pickVar){ n.varRef = pickVar.dataset.pickVar; fullUpdate(); return; }
+
+  const resetBtn = e.target.closest('[data-reset-node]');
+  if(resetBtn){ resetNode(n); return; }
+});
+
+el.inspBody.addEventListener('keydown', e=>{
+  const n = state.selectedId ? findNode(state.selectedId) : null;
+  if(!n) return;
+  if(e.target.matches('[data-add-tag]') && e.key==='Enter'){
+    e.preventDefault();
+    const val = e.target.value.trim();
+    if(val){
+      if(n.kind==='action'){ const meta = ACTION_TYPES[n.type]; n.params[meta.paramKey] = n.params[meta.paramKey] || []; n.params[meta.paramKey].push(val); }
+      else { n.value = Array.isArray(n.value) ? n.value : []; n.value.push(val); }
+      fullUpdate();
+    }
+  } else if(e.target.matches('[data-add-enum-custom]') && e.key==='Enter'){
+    e.preventDefault();
+    const val = e.target.value.trim();
+    if(val){
+      n.value = Array.isArray(n.value) ? n.value.slice() : [];
+      if(!n.value.includes(val)) n.value.push(val);
+      fullUpdate();
+    }
+  }
+});
+
+/* ======================================================================
+   Transform / pan / zoom
+   ====================================================================== */
+function applyTransform(){
+  el.world.style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${state.zoom})`;
+  el.zoomReadout.textContent = Math.round(state.zoom*100)+'%';
+  drawMinimap();
+}
+
+function screenToWorld(sx,sy){
+  const r = el.wrap.getBoundingClientRect();
+  const lx = sx - r.left, ly = sy - r.top;
+  return { x:(lx-state.pan.x)/state.zoom, y:(ly-state.pan.y)/state.zoom, lx, ly };
+}
+
+function zoomAt(newZoom, sx, sy){
+  newZoom = Math.min(2, Math.max(0.25, newZoom));
+  const r = el.wrap.getBoundingClientRect();
+  const lx = sx - r.left, ly = sy - r.top;
+  const wx = (lx-state.pan.x)/state.zoom, wy = (ly-state.pan.y)/state.zoom;
+  state.zoom = newZoom;
+  state.pan.x = lx - wx*state.zoom;
+  state.pan.y = ly - wy*state.zoom;
+  applyTransform();
+}
+
+function fitView(){
+  const rule = currentRule();
+  const visible = rule.nodes.filter(n=>!isGated(n.gate));
+  if(!visible.length) return;
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  visible.forEach(n=>{ minX=Math.min(minX,n.x); minY=Math.min(minY,n.y); maxX=Math.max(maxX,n.x+n.w); maxY=Math.max(maxY,n.y+n.h); });
+  const pad=60; minX-=pad; minY-=pad; maxX+=pad; maxY+=pad;
+  const r = el.wrap.getBoundingClientRect();
+  const z = Math.min(r.width/(maxX-minX), r.height/(maxY-minY), 1.05);
+  state.zoom = Math.max(0.25, Math.min(1.05, z));
+  state.pan.x = r.width/2 - state.zoom*(minX+maxX)/2;
+  state.pan.y = r.height/2 - state.zoom*(minY+maxY)/2;
+  applyTransform();
+}
+
+/* ======================================================================
+   Events: canvas pan/zoom, node drag, select
+   ====================================================================== */
+el.wrap.addEventListener('wheel', e=>{
+  e.preventDefault();
+  const delta = -e.deltaY * 0.0016;
+  zoomAt(state.zoom * (1+delta), e.clientX, e.clientY);
+}, {passive:false});
+
+el.wrap.addEventListener('pointerdown', e=>{
+  if(e.target.closest('.node') || e.target.closest('.quick-edit-input')) return;
+  state.panning = true;
+  state.panStart = { x:e.clientX, y:e.clientY, panX:state.pan.x, panY:state.pan.y };
+  el.wrap.classList.add('panning');
+  el.wrap.setPointerCapture(e.pointerId);
+  if(!e.target.closest('.minimap-br')) deselect();
+});
+
+el.wrap.addEventListener('pointermove', e=>{
+  if(state.panning){
+    state.pan.x = state.panStart.panX + (e.clientX-state.panStart.x);
+    state.pan.y = state.panStart.panY + (e.clientY-state.panStart.y);
+    applyTransform();
+  } else if(state.dragging){
+    const d = state.dragging;
+    const dx = (e.clientX-d.startX)/state.zoom, dy=(e.clientY-d.startY)/state.zoom;
+    d.node.x = d.origX+dx; d.node.y = d.origY+dy;
+    const nd = nodeEls[d.node.id];
+    if(nd){ nd.style.left=d.node.x+'px'; nd.style.top=d.node.y+'px'; }
+    refreshFrames();
+    drawEdges();
+    drawMinimap();
+  }
+});
+
+function endDrag(e){
+  if(state.panning){ state.panning=false; el.wrap.classList.remove('panning'); }
+  if(state.dragging){ state.dragging=null; }
+  try{ el.wrap.releasePointerCapture(e.pointerId); }catch(err){}
+}
+el.wrap.addEventListener('pointerup', endDrag);
+el.wrap.addEventListener('pointercancel', endDrag);
+
+function refreshFrames(){
+  const rule = currentRule();
+  const frameEls = el.frames.children;
+  const visibleFrames = rule.frames.filter(f=>!isGated(f.gate));
+  visibleFrames.forEach((f,i)=>{
+    const b = boundsOf(f.members);
+    const div = frameEls[i];
+    if(!b || !div) return;
+    div.style.left=(b.x-18)+'px'; div.style.top=(b.y-18)+'px';
+    div.style.width=(b.w+36)+'px'; div.style.height=(b.h+36)+'px';
+  });
+}
+
+/* node select + drag, ref collapse toggle, header enabled toggle */
+el.nodes.addEventListener('pointerdown', e=>{
+  const toggleRef = e.target.closest('[data-toggle-ref]');
+  if(toggleRef){
+    e.stopPropagation();
+    const id = toggleRef.dataset.toggleRef;
+    const ref = findNode(id);
+    ref.collapsed = !ref.collapsed;
+    renderAll();
+    return;
+  }
+  const toggleEn = e.target.closest('[data-toggle-enabled]');
+  if(toggleEn){
+    e.stopPropagation();
+    const id = toggleEn.dataset.toggleEnabled;
+    const h = findNode(id);
+    h.enabled = !h.enabled;
+    nodeEls[id].innerHTML = nodeInner(h,{});
+    return;
+  }
+  const nodeDiv = e.target.closest('.node');
+  if(!nodeDiv) return;
+  e.stopPropagation();
+  const id = nodeDiv.dataset.id;
+  const n = findNode(id);
+  select(id);
+  if(n.kind==='header') return;
+  state.dragging = { node:n, startX:e.clientX, startY:e.clientY, origX:n.x, origY:n.y };
+  el.wrap.setPointerCapture(e.pointerId);
+});
+
+/* on-canvas quick edit: double-click a leaf's value or an action's params */
+function applyQuickValue(n, raw){
+  switch(n.valueType){
+    case 'number': { const v=parseFloat(raw); if(!isNaN(v)) n.value=v; break; }
+    case 'bytes': { const v=parseInt(raw,10); if(!isNaN(v)) n.value=v; break; }
+    case 'duration': { const m=raw.match(/^\s*([\d.]+)\s*(\w+)?/); if(m){ n.value=parseFloat(m[1]); if(m[2]) n.unit=m[2]; } break; }
+    case 'enum': n.value = raw.split(',').map(s=>s.trim()).filter(Boolean); break;
+    case 'taglist': n.value = raw.split(',').map(s=>s.trim()).filter(Boolean); break;
+    case 'regex': n.value = raw; break;
+    default: n.value = raw;
+  }
+}
+function openQuickEdit(targetEl, initialText, onCommit){
+  const wrapRect = el.wrap.getBoundingClientRect();
+  const rect = targetEl.getBoundingClientRect();
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'quick-edit-input';
+  input.value = initialText;
+  input.style.left = (rect.left - wrapRect.left) + 'px';
+  input.style.top = (rect.top - wrapRect.top - 2) + 'px';
+  input.style.width = Math.max(rect.width + 20, 100) + 'px';
+  el.wrap.appendChild(input);
+  targetEl.style.visibility = 'hidden';
+  input.addEventListener('pointerdown', ev=>ev.stopPropagation());
+  input.focus(); input.select();
+  let done = false;
+  function finish(commit){
+    if(done) return; done = true;
+    if(commit) onCommit(input.value);
+    input.remove();
+    targetEl.style.visibility = '';
+    fullUpdate();
+  }
+  input.addEventListener('keydown', ev=>{
+    if(ev.key==='Enter') finish(true);
+    else if(ev.key==='Escape') finish(false);
+  });
+  input.addEventListener('blur', ()=>finish(true));
+}
+el.nodes.addEventListener('dblclick', e=>{
+  const valueEl = e.target.closest('[data-quick-value]');
+  if(valueEl){
+    e.stopPropagation();
+    const nodeDiv = valueEl.closest('.node');
+    const n = findNode(nodeDiv.dataset.id);
+    if(n.varRef){
+      el.statusLeft.textContent = `"${n.id}" is linked to \${${n.varRef}} — unlink it in the Inspector to hardcode a value.`;
+      return;
+    }
+    select(n.id);
+    const initial = n.valueType==='enum' || n.valueType==='taglist'
+      ? (Array.isArray(n.value)? n.value.join(', ') : String(n.value))
+      : n.valueType==='duration' ? `${n.value} ${n.unit}`
+      : String(n.value);
+    openQuickEdit(valueEl, initial, raw=>applyQuickValue(n, raw));
+    return;
+  }
+  const paramsEl = e.target.closest('[data-quick-params]');
+  if(paramsEl){
+    e.stopPropagation();
+    const nodeDiv = paramsEl.closest('.node');
+    const n = findNode(nodeDiv.dataset.id);
+    const meta = ACTION_TYPES[n.type];
+    if(!meta || meta.paramKind==='none') return;
+    select(n.id);
+    let initial = '';
+    if(meta.paramKind==='taglist') initial = (n.params[meta.paramKey]||[]).join(', ');
+    else if(meta.paramKind==='category') initial = n.params.category || '';
+    else if(meta.paramKind==='limit') initial = String(n.params.limit);
+    openQuickEdit(paramsEl, initial, raw=>{
+      if(meta.paramKind==='taglist') n.params[meta.paramKey] = raw.split(',').map(s=>s.trim()).filter(Boolean);
+      else if(meta.paramKind==='category') n.params.category = raw.trim();
+      else if(meta.paramKind==='limit'){ const v=parseInt(raw,10); if(!isNaN(v)) n.params.limit = v; }
+    });
+  }
+});
+
+function select(id){
+  state.selectedId = id;
+  renderInspectorAndFocus();
+}
+function deselect(){
+  if(!state.selectedId) return;
+  state.selectedId = null;
+  renderInspectorAndFocus();
+}
+function renderInspectorAndFocus(){
+  applyFocusDim();
+  drawEdges();
+  drawMinimap();
+  renderInspector();
+  renderYaml();
+}
+
+/* ======================================================================
+   Controls: zoom buttons, fit, yaml toggle, mode buttons, tabs
+   ====================================================================== */
+document.getElementById('btnZoomIn').addEventListener('click', ()=>{
+  const r = el.wrap.getBoundingClientRect();
+  zoomAt(state.zoom*1.2, r.left+r.width/2, r.top+r.height/2);
+});
+document.getElementById('btnZoomOut').addEventListener('click', ()=>{
+  const r = el.wrap.getBoundingClientRect();
+  zoomAt(state.zoom/1.2, r.left+r.width/2, r.top+r.height/2);
+});
+document.getElementById('btnFit').addEventListener('click', fitView);
+
+document.getElementById('btnYamlToggle').addEventListener('click', toggleYamlPanel);
+document.getElementById('yamlTab').addEventListener('click', toggleYamlPanel);
+function toggleYamlPanel(){
+  el.workspace.classList.toggle('no-yaml');
+  const btn = document.getElementById('btnYamlToggle');
+  btn.textContent = el.workspace.classList.contains('no-yaml') ? 'YAML ◂' : 'YAML ▸';
+}
+
+document.getElementById('btnLegend').addEventListener('click', (e)=>{
+  const block = document.getElementById('legendBlock');
+  const on = block.style.display !== 'none';
+  block.style.display = on ? 'none' : 'flex';
+  e.target.classList.toggle('on', !on);
+});
+
+document.querySelectorAll('.yaml-mode-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    state.yamlMode = btn.dataset.mode;
+    document.querySelectorAll('.yaml-mode-btn').forEach(b=>b.classList.toggle('active', b===btn));
+    renderYaml();
+  });
+});
+
+/* ======================================================================
+   Minimap interaction
+   ====================================================================== */
+document.getElementById('minimapWrap').addEventListener('pointerdown', e=>{
+  e.stopPropagation();
+  const rect = el.minimap.getBoundingClientRect();
+  const mx = (e.clientX-rect.left) * (200/rect.width);
+  const my = (e.clientY-rect.top) * (128/rect.height);
+  const w = minimapToWorld(mx,my);
+  centerOn(w.x, w.y);
+  const move = (ev)=>{
+    const mx2 = (ev.clientX-rect.left) * (200/rect.width);
+    const my2 = (ev.clientY-rect.top) * (128/rect.height);
+    const w2 = minimapToWorld(mx2,my2);
+    centerOn(w2.x, w2.y);
+  };
+  const up = ()=>{ window.removeEventListener('pointermove',move); window.removeEventListener('pointerup',up); };
+  window.addEventListener('pointermove',move);
+  window.addEventListener('pointerup',up);
+});
+function centerOn(wx,wy){
+  const r = el.wrap.getBoundingClientRect();
+  state.pan.x = r.width/2 - state.zoom*wx;
+  state.pan.y = r.height/2 - state.zoom*wy;
+  applyTransform();
+}
+
+/* ======================================================================
+   Palette drag & drop -> new scratch nodes
+   ====================================================================== */
+document.querySelectorAll('.pal-item').forEach(item=>{
+  item.addEventListener('dragstart', e=>{
+    e.dataTransfer.setData('text/plain', JSON.stringify({kind:item.dataset.newkind, op:item.dataset.newop||null}));
+    e.dataTransfer.effectAllowed = 'copy';
+  });
+});
+el.wrap.addEventListener('dragover', e=>{ e.preventDefault(); e.dataTransfer.dropEffect='copy'; });
+el.wrap.addEventListener('drop', e=>{
+  e.preventDefault();
+  let payload;
+  try{ payload = JSON.parse(e.dataTransfer.getData('text/plain')); } catch(err){ return; }
+  const w = screenToWorld(e.clientX, e.clientY);
+  const rule = currentRule();
+  const idx = state.nextScratch++;
+  const id = 'scratch-'+idx;
+  let n;
+  if(payload.kind==='gate'){
+    n = G(id, payload.op, w.x-70, w.y-39, 'new '+payload.op+' group');
+  } else if(payload.kind==='ref'){
+    n = R(id, w.x-112, w.y-30, 'conditions.new-ref', 'unresolved');
+  } else if(payload.kind==='action'){
+    n = A(id, w.x-100, w.y-30, 200, 'add_tag', {tags:['new-tag']}, '＋');
+  } else {
+    n = L(id, w.x-125, w.y-26, 'info.ratio', '>=', {valueType:'number', value:0});
+  }
+  n.unattached = true;
+  rule.nodes.push(n);
+  renderAll();
+  select(id);
+  el.statusLeft.textContent = `Added an unattached ${payload.kind} node — connect it to include it in the rule.`;
+});
+
+/* ======================================================================
+   Boot
+   ====================================================================== */
+renderTabs();
+renderAll();
+renderInspector();
+renderYaml();
+requestAnimationFrame(fitView);
+window.addEventListener('resize', ()=>{ applyTransform(); });
+
+})();
+</script>
+</body>
+</html>
