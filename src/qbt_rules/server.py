@@ -117,6 +117,13 @@ def create_app(
     app.config['JSON_SORT_KEYS'] = False
     app.jinja_env.filters['timeago'] = _timeago
 
+    @app.context_processor
+    def _inject_version():
+        """Makes {{ version }} available in every dashboard template via
+        base.html's shared topbar, without threading it through every
+        individual route's render_template() call."""
+        return {'version': __version__}
+
     # Disable Flask's default logger (use our configured logger instead)
     app.logger.disabled = True
     logging.getLogger('werkzeug').setLevel(logging.WARNING)
@@ -571,9 +578,8 @@ def register_dashboard_routes(app: Flask):
     @app.route('/', methods=['GET'])
     @require_api_key_dashboard
     def dashboard_overview():
-        """Dashboard home: worker/queue status + job counts by status"""
+        """Dashboard home: job counts by status, recent activity, rules summary"""
         queue_stats = queue.get_stats()
-        worker_status = worker.get_status()
         recent_jobs = queue.list_jobs(limit=5)
 
         rules = dashboard_config.get_rules() if dashboard_config is not None else None
@@ -587,10 +593,7 @@ def register_dashboard_routes(app: Flask):
             'dashboard.html',
             active='overview',
             api_key=request.args.get('key', ''),
-            queue_backend=queue.__class__.__name__,
             queue_stats=queue_stats,
-            worker_status=worker_status,
-            version=__version__,
             recent_jobs=recent_jobs,
             rules_summary=rules_summary,
         )

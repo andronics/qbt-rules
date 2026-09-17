@@ -1391,7 +1391,7 @@ class TestDashboardRoutes:
 
     # -- Overview ---------------------------------------------------------
 
-    def test_overview_renders_stats(self, client, mock_queue, mock_worker):
+    def test_overview_renders_stats(self, client, mock_queue):
         mock_queue.get_stats.return_value = {
             'total_jobs': 42, 'pending': 1, 'processing': 2,
             'completed': 35, 'failed': 3, 'cancelled': 1,
@@ -1401,16 +1401,27 @@ class TestDashboardRoutes:
 
         assert response.status_code == 200
         body = response.data.decode()
-        assert '42' in body
-        assert 'SQLiteQueue' in body
-        assert __version__ in body
+        assert '35' in body  # completed count, "Jobs by status"
+        assert __version__ in body  # topbar brand, every dashboard page
 
-    def test_overview_shows_stopped_worker(self, client, mock_worker):
+    @pytest.mark.parametrize('path', ['/', '/jobs', '/rules'])
+    def test_version_appears_in_topbar_on_every_page(self, client, path):
+        """version is injected via a context processor (base.html's shared
+        topbar), not threaded through each route's render_template() call
+        -- confirm it actually reaches pages other than the overview."""
+        response = client.get(f'{path}?key=test-api-key-12345')
+
+        assert __version__ in response.data.decode()
+
+    def test_overview_no_longer_shows_worker_status(self, client, mock_worker):
+        """The Status card (Worker/Queue backend/Total jobs/Version) was
+        removed from the overview page -- confirm worker.get_status() data
+        genuinely isn't rendered anywhere on it anymore."""
         mock_worker.get_status.return_value = {'running': False, 'last_job_completed': None}
         response = client.get('/?key=test-api-key-12345')
 
         assert response.status_code == 200
-        assert 'Stopped' in response.data.decode()
+        assert 'Stopped' not in response.data.decode()
 
     # -- Jobs list ----------------------------------------------------------
 

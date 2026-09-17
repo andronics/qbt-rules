@@ -3,28 +3,6 @@
 {% block content %}
 
 <div class="card">
-  <h2>Status</h2>
-  <div class="stat-grid">
-    <div class="stat {{ 'ok' if worker_status.running else 'err' }}">
-      <div class="value">{{ 'Running' if worker_status.running else 'Stopped' }}</div>
-      <div class="label">Worker</div>
-    </div>
-    <div class="stat accent">
-      <div class="value">{{ queue_backend }}</div>
-      <div class="label">Queue backend</div>
-    </div>
-    <div class="stat">
-      <div class="value">{{ queue_stats.total_jobs }}</div>
-      <div class="label">Total jobs</div>
-    </div>
-    <div class="stat">
-      <div class="value">{{ version }}</div>
-      <div class="label">Version</div>
-    </div>
-  </div>
-</div>
-
-<div class="card">
   <h2>Jobs by status</h2>
   <div class="stat-grid">
     <div class="stat warn"><div class="value">{{ queue_stats.pending }}</div><div class="label">Pending</div></div>
