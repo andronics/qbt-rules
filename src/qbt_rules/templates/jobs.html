@@ -1,9 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Jobs - qbt-rules{% endblock %}
+{% block extra_style %}
+  .filter-form { display: flex; align-items: center; gap: .6rem; margin-bottom: 1rem; font-size: .85rem; }
+  .filter-form select {
+    background: var(--bg-panel-2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: .3rem .5rem; font-family: var(--font-ui); font-size: .85rem;
+  }
+{% endblock %}
 {% block content %}
 
 <div class="card">
-  <h2>Jobs{% if status %} <span class="muted">(status: {{ status }})</span>{% endif %}</h2>
+  <h2>Jobs</h2>
+  <form class="filter-form" method="get">
+    <input type="hidden" name="key" value="{{ api_key }}">
+    <label for="status">Status:</label>
+    <select id="status" name="status" onchange="this.form.submit()">
+      <option value="" {{ 'selected' if not status else '' }}>All</option>
+      {% for s in ['pending', 'processing', 'completed', 'failed', 'cancelled'] %}
+      <option value="{{ s }}" {{ 'selected' if status == s else '' }}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </form>
   {% if jobs %}
   <table>
     <thead>

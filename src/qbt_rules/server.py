@@ -13,6 +13,7 @@ import re
 import secrets
 import time
 import logging
+import yaml
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from functools import wraps
@@ -459,6 +460,14 @@ def register_dashboard_routes(app: Flask):
         """Dashboard home: worker/queue status + job counts by status"""
         queue_stats = queue.get_stats()
         worker_status = worker.get_status()
+        recent_jobs = queue.list_jobs(limit=5)
+
+        rules = dashboard_config.get_rules() if dashboard_config is not None else None
+        rules_summary = {
+            'total': len(rules),
+            'enabled': sum(1 for r in rules if r.get('enabled', True)),
+            'preview': rules[:5],
+        } if rules is not None else None
 
         return render_template(
             'dashboard.html',
@@ -468,6 +477,8 @@ def register_dashboard_routes(app: Flask):
             queue_stats=queue_stats,
             worker_status=worker_status,
             version=__version__,
+            recent_jobs=recent_jobs,
+            rules_summary=rules_summary,
         )
 
     @app.route('/dashboard/jobs', methods=['GET'])
@@ -515,11 +526,21 @@ def register_dashboard_routes(app: Flask):
         Config.get_rules() the rules engine itself uses"""
         rules = dashboard_config.get_rules() if dashboard_config is not None else None
 
+        # Pair each rule with its own resolved-YAML text for the template's
+        # per-rule "Show resolved YAML" panel, without mutating the rule
+        # dicts get_rules() returns (those may be a direct reference to the
+        # engine's cached resolved rules, not a defensive copy).
+        rules_with_yaml = [
+            (rule, yaml.dump(rule, default_flow_style=False, sort_keys=False))
+            for rule in rules
+        ] if rules else []
+
         return render_template(
             'rules.html',
             active='rules',
             api_key=request.args.get('key', ''),
             rules=rules,
+            rules_with_yaml=rules_with_yaml,
             config_available=dashboard_config is not None,
         )
 

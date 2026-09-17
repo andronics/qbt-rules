@@ -1,29 +1,111 @@
 {% extends "base.html" %}
 {% block title %}Rules - qbt-rules{% endblock %}
+{% block extra_style %}
+  .rule-card { padding: 0; overflow: hidden; }
+  .rule-card summary {
+    list-style: none; cursor: pointer; padding: .85rem 1.1rem; display: flex;
+    align-items: center; gap: .6rem; flex-wrap: wrap;
+  }
+  .rule-card summary::-webkit-details-marker { display: none; }
+  .rule-card summary::before { content: '▸'; color: var(--muted); font-size: .7rem; }
+  .rule-card[open] summary::before { content: '▾'; }
+  .rc-idx { font-family: var(--font-mono); color: var(--muted); font-size: .78rem; }
+  .rc-name { font-weight: 600; }
+  .rule-body { padding: 0 1.1rem 1.1rem; border-top: 1px solid var(--border); }
+  .rule-body h4 { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 1rem 0 .5rem; }
+
+  .tnode { border-radius: 9px; border: 1px solid var(--border); padding: .5rem .7rem; background: var(--bg-panel-2); margin-bottom: .4rem; }
+  .tnode.gate { border-left: 3px solid #8b5cf6; }
+  .tnode.gate.op-any { border-left-color: #f59e0b; }
+  .tnode.gate.op-none { border-left-color: var(--danger); }
+  .gate-head { font-family: var(--font-mono); font-weight: 800; font-size: .72rem; letter-spacing: .05em; color: var(--fg-dim); }
+  .gate-label { font-family: var(--font-ui); font-weight: 500; font-size: .68rem; color: var(--muted); }
+  .tree-children { margin-top: .4rem; padding-left: 1rem; border-left: 1px dashed var(--border-strong); }
+  .tnode.leaf { border-left: 3px solid var(--accent); display: flex; gap: .5rem; flex-wrap: wrap; font-family: var(--font-mono); font-size: .78rem; }
+  .leaf-field { color: var(--accent); }
+  .leaf-op { color: var(--muted); }
+  .tnode.action { border-left: 3px solid var(--ok); display: flex; gap: .6rem; align-items: baseline; }
+  .act-step { font-family: var(--font-mono); font-size: .68rem; color: var(--muted); }
+  .act-type { font-family: var(--font-mono); font-weight: 700; font-size: .8rem; }
+  .act-params { font-family: var(--font-mono); font-size: .72rem; color: var(--fg-dim); }
+
+  .yaml-details summary { font-size: .78rem; color: var(--muted); padding: 0; margin-top: .75rem; }
+  .yaml-details pre { margin-top: .5rem; }
+{% endblock %}
 {% block content %}
+
+{% macro render_condition_node(node) %}
+  {% if node is mapping and (node.all is defined or node.any is defined or node.none is defined) %}
+    {% set op = 'all' if node.all is defined else ('any' if node.any is defined else 'none') %}
+    <div class="tnode gate op-{{ op }}">
+      <div class="gate-head">{{ op.upper() }} <span class="gate-label">({{ node[op]|length }} condition{{ '' if node[op]|length == 1 else 's' }})</span></div>
+      <div class="tree-children">
+        {% for child in node[op] %}{{ render_condition_node(child) }}{% endfor %}
+      </div>
+    </div>
+  {% elif node is mapping and node.field is defined %}
+    <div class="tnode leaf">
+      <span class="leaf-field">{{ node.field }}</span>
+      <span class="leaf-op">{{ node.operator }}</span>
+      <span class="leaf-val">{{ node.value }}</span>
+    </div>
+  {% endif %}
+{% endmacro %}
+
+{% macro render_conditions(conditions) %}
+  {% if conditions is mapping %}
+    {{ render_condition_node(conditions) }}
+  {% elif conditions %}
+    <div class="tnode gate op-all">
+      <div class="gate-head">ALL <span class="gate-label">(implicit &mdash; top-level lists resolve as ALL)</span></div>
+      <div class="tree-children">
+        {% for child in conditions %}{{ render_condition_node(child) }}{% endfor %}
+      </div>
+    </div>
+  {% else %}
+    <p class="muted">No conditions &mdash; matches every torrent.</p>
+  {% endif %}
+{% endmacro %}
 
 <div class="card">
   <h2>Rules</h2>
   {% if not config_available %}
   <p class="empty">Rules view is unavailable (server started without a config reference).</p>
   {% elif rules %}
-  <table>
-    <thead>
-      <tr><th>#</th><th>Name</th><th>Enabled</th><th>Context</th><th>stop_on_match</th></tr>
-    </thead>
-    <tbody>
-      {% for rule in rules %}
-      <tr>
-        <td>{{ loop.index }}</td>
-        <td>{{ rule.name }}</td>
-        <td>{{ 'Yes' if rule.get('enabled', True) else 'No' }}</td>
-        <td>{{ rule.context or '(any)' }}</td>
-        <td>{{ 'Yes' if rule.get('stop_on_match', False) else 'No' }}</td>
-      </tr>
+  <p class="muted">{{ rules|length }} rule{{ '' if rules|length == 1 else 's' }}, executed top to bottom in the order listed below.</p>
+  {% for rule, rule_yaml in rules_with_yaml %}
+  <details class="card rule-card">
+    <summary>
+      <span class="rc-idx">#{{ loop.index }}</span>
+      <span class="rc-name">{{ rule.name }}</span>
+      <span class="badge {{ 'badge-completed' if rule.get('enabled', True) else 'badge-cancelled' }}">{{ 'enabled' if rule.get('enabled', True) else 'disabled' }}</span>
+      <span class="muted">{{ rule.context or 'any' }}</span>
+      {% if rule.get('stop_on_match') %}<span class="badge badge-pending">stop_on_match</span>{% endif %}
+    </summary>
+    <div class="rule-body">
+      <h4>Conditions</h4>
+      {{ render_conditions(rule.get('conditions', [])) }}
+
+      <h4>Actions</h4>
+      {% for action in rule.get('actions', []) %}
+      <div class="tnode action">
+        <span class="act-step">{{ loop.index }}</span>
+        <span class="act-type">{{ action.type }}</span>
+        {% if action.params %}
+        <span class="act-params">{% for k, v in action.params.items() %}{{ k }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
+        {% endif %}
+      </div>
+      {% else %}
+      <p class="muted">No actions.</p>
       {% endfor %}
-    </tbody>
-  </table>
-  <p class="muted">Rules execute top to bottom, in the order listed above.</p>
+
+      <details class="yaml-details">
+        <summary>Show resolved YAML</summary>
+        <pre>{{ rule_yaml }}</pre>
+      </details>
+    </div>
+  </details>
+  {% endfor %}
   {% else %}
   <p class="empty">No rules configured.</p>
   {% endif %}

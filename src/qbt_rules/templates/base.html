@@ -6,83 +6,122 @@
   <title>{% block title %}qbt-rules{% endblock %}</title>
   <style>
     :root {
-      color-scheme: light dark;
-      --bg: #f7f7f8; --fg: #1a1a1a; --card-bg: #fff; --border: #e0e0e0;
-      --accent: #2563eb; --muted: #6b7280;
-      --ok: #16a34a; --warn: #ca8a04; --err: #dc2626;
+      color-scheme: dark;
+      --bg-app: #0a0c11;
+      --bg-panel: #12151c;
+      --bg-panel-2: #171b25;
+      --border: #262b38;
+      --border-strong: #3a4152;
+      --fg: #e7e9f0;
+      --fg-dim: #aab0c0;
+      --muted: #747c90;
+      --accent: #5b8cff;
+      --accent-soft: rgba(91,140,255,.16);
+      --danger: #f43f5e;
+      --ok: #22c55e;       --ok-bg: rgba(34,197,94,.14);
+      --warn: #f59e0b;     --warn-bg: rgba(245,158,11,.14);
+      --err: #f43f5e;      --err-bg: rgba(244,63,94,.14);
+      --radius: 10px;
+      --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Code", Consolas, "Liberation Mono", monospace;
     }
-    @media (prefers-color-scheme: dark) {
-      :root { --bg: #121212; --fg: #e5e5e5; --card-bg: #1c1c1e; --border: #333333; --muted: #9ca3af; }
+    @media (prefers-color-scheme: light) {
+      :root {
+        color-scheme: light;
+        --bg-app: #eef0f4; --bg-panel: #ffffff; --bg-panel-2: #f5f6f9;
+        --border: #dbdfe8; --border-strong: #c2c8d6;
+        --fg: #161a22; --fg-dim: #454d5e; --muted: #6b7280;
+        --accent: #2f5ce0; --accent-soft: rgba(47,92,224,.12);
+        --ok-bg: rgba(34,197,94,.10); --warn-bg: rgba(245,158,11,.10); --err-bg: rgba(244,63,94,.10);
+      }
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg);
+      font-family: var(--font-ui);
+      background: var(--bg-app);
       color: var(--fg);
+      -webkit-font-smoothing: antialiased;
     }
-    header {
+    header.topbar {
       display: flex;
       align-items: center;
-      gap: 1.5rem;
-      padding: 1rem 1.5rem;
+      gap: 1.25rem;
+      padding: .65rem 1.25rem;
       border-bottom: 1px solid var(--border);
-      background: var(--card-bg);
+      background: var(--bg-panel);
     }
-    header h1 { font-size: 1.1rem; margin: 0; }
-    nav { display: flex; gap: 1rem; }
-    nav a { color: var(--muted); text-decoration: none; font-size: 0.9rem; }
-    nav a.active, nav a:hover { color: var(--accent); }
+    .brand { display: flex; align-items: baseline; gap: .5rem; white-space: nowrap; }
+    .brand b { font-size: .95rem; letter-spacing: .02em; }
+    .brand span { font-size: .72rem; color: var(--muted); font-family: var(--font-mono); }
+    nav.nav-tabs { display: flex; gap: .4rem; }
+    nav.nav-tabs a {
+      appearance: none; border: 1px solid var(--border); background: var(--bg-panel-2);
+      color: var(--fg-dim); border-radius: 999px; padding: .35rem .8rem; font-size: .78rem;
+      text-decoration: none;
+    }
+    nav.nav-tabs a:hover { border-color: var(--border-strong); color: var(--fg); }
+    nav.nav-tabs a.active { background: var(--accent-soft); border-color: var(--accent); color: var(--fg); }
     main { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
     .card {
-      background: var(--card-bg);
+      background: var(--bg-panel);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius);
       padding: 1rem 1.25rem;
       margin-bottom: 1rem;
     }
     .card h2 { margin-top: 0; font-size: 1rem; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-    th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
-    th { color: var(--muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; }
+    table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    th, td { text-align: left; padding: .55rem .75rem; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
     tr:last-child td { border-bottom: none; }
-    tbody tr:hover td { background: rgba(37, 99, 235, 0.06); }
+    tbody tr:hover td { background: var(--bg-panel-2); }
     a { color: var(--accent); }
+    code, pre { font-family: var(--font-mono); }
     .badge {
       display: inline-block;
-      padding: 0.15rem 0.5rem;
+      padding: .18rem .55rem;
       border-radius: 999px;
-      font-size: 0.75rem;
+      font-size: .72rem;
       font-weight: 600;
+      font-family: var(--font-mono);
     }
-    .badge-completed { background: rgba(22, 163, 74, 0.15); color: var(--ok); }
-    .badge-failed { background: rgba(220, 38, 38, 0.15); color: var(--err); }
-    .badge-pending, .badge-processing { background: rgba(202, 138, 4, 0.15); color: var(--warn); }
-    .badge-cancelled { background: rgba(107, 114, 128, 0.15); color: var(--muted); }
+    .badge-completed { background: var(--ok-bg); color: var(--ok); }
+    .badge-failed { background: var(--err-bg); color: var(--err); }
+    .badge-pending, .badge-processing { background: var(--warn-bg); color: var(--warn); }
+    .badge-cancelled { background: var(--bg-panel-2); color: var(--muted); border: 1px solid var(--border); }
     .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; }
     .stat { text-align: center; }
-    .stat .value { font-size: 1.6rem; font-weight: 700; }
-    .stat .label { font-size: 0.8rem; color: var(--muted); }
+    .stat .value { font-size: 1.6rem; font-weight: 700; font-family: var(--font-mono); }
+    .stat.ok .value { color: var(--ok); }
+    .stat.warn .value { color: var(--warn); }
+    .stat.err .value { color: var(--err); }
+    .stat.accent .value { color: var(--accent); }
+    .stat .label { font-size: .78rem; color: var(--muted); margin-top: .15rem; }
+    .stat .sub { font-size: .68rem; color: var(--fg-dim); font-family: var(--font-mono); margin-top: .1rem; }
     .muted { color: var(--muted); }
     .empty { color: var(--muted); padding: 2rem 0; text-align: center; }
     pre {
       white-space: pre-wrap;
       word-break: break-word;
-      background: var(--bg);
-      padding: 0.75rem;
-      border-radius: 6px;
-      font-size: 0.85rem;
+      background: var(--bg-panel-2);
+      border: 1px solid var(--border);
+      padding: .75rem;
+      border-radius: 8px;
+      font-size: .83rem;
+      color: var(--fg-dim);
     }
-    .pagination { display: flex; gap: 1rem; align-items: center; margin-top: 1rem; font-size: 0.9rem; }
-    details { margin-top: 0.75rem; }
-    details summary { cursor: pointer; font-size: 0.85rem; }
-    details pre { margin-top: 0.5rem; }
+    .pagination { display: flex; gap: 1rem; align-items: center; margin-top: 1rem; font-size: .88rem; }
+    details { margin-top: .75rem; }
+    details summary { cursor: pointer; font-size: .82rem; color: var(--muted); }
+    details pre { margin-top: .5rem; }
+    {% block extra_style %}{% endblock %}
   </style>
 </head>
 <body>
-  <header>
-    <h1>qbt-rules</h1>
-    <nav>
+  <header class="topbar">
+    <div class="brand"><b>qbt-rules</b><span>dashboard</span></div>
+    <nav class="nav-tabs">
       <a href="{{ url_for('dashboard_overview', key=api_key) }}" class="{{ 'active' if active == 'overview' else '' }}">Overview</a>
       <a href="{{ url_for('dashboard_jobs', key=api_key) }}" class="{{ 'active' if active == 'jobs' else '' }}">Jobs</a>
       <a href="{{ url_for('dashboard_rules', key=api_key) }}" class="{{ 'active' if active == 'rules' else '' }}">Rules</a>

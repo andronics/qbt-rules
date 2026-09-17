@@ -5,11 +5,11 @@
 <div class="card">
   <h2>Status</h2>
   <div class="stat-grid">
-    <div class="stat">
+    <div class="stat {{ 'ok' if worker_status.running else 'err' }}">
       <div class="value">{{ 'Running' if worker_status.running else 'Stopped' }}</div>
       <div class="label">Worker</div>
     </div>
-    <div class="stat">
+    <div class="stat accent">
       <div class="value">{{ queue_backend }}</div>
       <div class="label">Queue backend</div>
     </div>
@@ -27,10 +27,10 @@
 <div class="card">
   <h2>Jobs by status</h2>
   <div class="stat-grid">
-    <div class="stat"><div class="value">{{ queue_stats.pending }}</div><div class="label">Pending</div></div>
-    <div class="stat"><div class="value">{{ queue_stats.processing }}</div><div class="label">Processing</div></div>
-    <div class="stat"><div class="value">{{ queue_stats.completed }}</div><div class="label">Completed</div></div>
-    <div class="stat"><div class="value">{{ queue_stats.failed }}</div><div class="label">Failed</div></div>
+    <div class="stat warn"><div class="value">{{ queue_stats.pending }}</div><div class="label">Pending</div></div>
+    <div class="stat warn"><div class="value">{{ queue_stats.processing }}</div><div class="label">Processing</div></div>
+    <div class="stat ok"><div class="value">{{ queue_stats.completed }}</div><div class="label">Completed</div></div>
+    <div class="stat err"><div class="value">{{ queue_stats.failed }}</div><div class="label">Failed</div></div>
     <div class="stat"><div class="value">{{ queue_stats.cancelled }}</div><div class="label">Cancelled</div></div>
   </div>
 </div>
@@ -41,5 +41,52 @@
   <p class="muted">Last job completed: {{ worker_status.last_job_completed or 'never' }}</p>
 </div>
 
-<p><a href="{{ url_for('dashboard_jobs', key=api_key) }}">View all jobs &rarr;</a></p>
+<div class="card">
+  <h2>Recent activity</h2>
+  {% if recent_jobs %}
+  <table>
+    <thead>
+      <tr><th>Job ID</th><th>Status</th><th>Context</th><th>Created</th></tr>
+    </thead>
+    <tbody>
+      {% for job in recent_jobs %}
+      <tr>
+        <td><a href="{{ url_for('dashboard_job_detail', job_id=job.job_id, key=api_key) }}">{{ job.job_id[:8] }}&hellip;</a></td>
+        <td><span class="badge badge-{{ job.status }}">{{ job.status }}</span></td>
+        <td>{{ job.context or 'none' }}</td>
+        <td>{{ job.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No jobs found.</p>
+  {% endif %}
+  <p><a href="{{ url_for('dashboard_jobs', key=api_key) }}">View all jobs &rarr;</a></p>
+</div>
+
+{% if rules_summary %}
+<div class="card">
+  <h2>Rules summary</h2>
+  <p class="muted">{{ rules_summary.enabled }} of {{ rules_summary.total }} rule{{ '' if rules_summary.total == 1 else 's' }} enabled.</p>
+  {% if rules_summary.preview %}
+  <table>
+    <thead>
+      <tr><th>Name</th><th>Enabled</th><th>Context</th></tr>
+    </thead>
+    <tbody>
+      {% for rule in rules_summary.preview %}
+      <tr>
+        <td>{{ rule.name }}</td>
+        <td>{{ 'Yes' if rule.get('enabled', True) else 'No' }}</td>
+        <td>{{ rule.context or '(any)' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  <p><a href="{{ url_for('dashboard_rules', key=api_key) }}">View all rules &rarr;</a></p>
+</div>
+{% endif %}
+
 {% endblock %}
