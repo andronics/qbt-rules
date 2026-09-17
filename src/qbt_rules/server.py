@@ -539,7 +539,7 @@ def register_dashboard_routes(app: Flask):
         rules_summary = {
             'total': len(rules),
             'enabled': sum(1 for r in rules if r.get('enabled', True)),
-            'preview': rules[:5],
+            'rules': rules,
         } if rules is not None else None
 
         return render_template(

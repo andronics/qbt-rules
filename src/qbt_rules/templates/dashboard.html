@@ -36,12 +36,6 @@
 </div>
 
 <div class="card">
-  <h2>Performance</h2>
-  <p class="muted">Average execution time: {{ (queue_stats.average_execution_time ~ 's') if queue_stats.average_execution_time else 'N/A' }}</p>
-  <p class="muted">Last job completed: {{ worker_status.last_job_completed or 'never' }}</p>
-</div>
-
-<div class="card">
   <h2>Recent activity</h2>
   {% if recent_jobs %}
   <table>
@@ -69,13 +63,13 @@
 <div class="card">
   <h2>Rules summary</h2>
   <p class="muted">{{ rules_summary.enabled }} of {{ rules_summary.total }} rule{{ '' if rules_summary.total == 1 else 's' }} enabled.</p>
-  {% if rules_summary.preview %}
+  {% if rules_summary.rules %}
   <table>
     <thead>
       <tr><th>Name</th><th>Enabled</th><th>Context</th></tr>
     </thead>
     <tbody>
-      {% for rule in rules_summary.preview %}
+      {% for rule in rules_summary.rules %}
       <tr>
         <td>{{ rule.name }}</td>
         <td>{{ 'Yes' if rule.get('enabled', True) else 'No' }}</td>
@@ -85,7 +79,6 @@
     </tbody>
   </table>
   {% endif %}
-  <p><a href="{{ url_for('dashboard_rules', key=api_key) }}">View all rules &rarr;</a></p>
 </div>
 {% endif %}
 
