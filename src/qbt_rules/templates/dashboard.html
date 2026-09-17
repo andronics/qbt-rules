@@ -23,7 +23,7 @@
     <tbody>
       {% for job in recent_jobs %}
       <tr>
-        <td><a href="{{ url_for('dashboard_job_detail', job_id=job.job_id, key=api_key) }}">{{ job.job_id[:8] }}&hellip;</a></td>
+        <td><a href="{{ url_for('dashboard_job_detail', job_id=job.job_id) }}">{{ job.job_id[:8] }}&hellip;</a></td>
         <td><span class="badge badge-{{ job.status }}">{{ job.status }}</span></td>
         <td>{{ job.context or 'none' }}</td>
         <td title="{{ job.created_at }}">{{ job.created_at|timeago }}</td>
@@ -34,7 +34,7 @@
   {% else %}
   <p class="empty">No jobs found.</p>
   {% endif %}
-  <p><a href="{{ url_for('dashboard_jobs', key=api_key) }}">View all jobs &rarr;</a></p>
+  <p><a href="{{ url_for('dashboard_jobs') }}">View all jobs &rarr;</a></p>
 </div>
 
 {% if rules_summary %}
@@ -49,7 +49,7 @@
     <tbody>
       {% for rule in rules_summary.rules %}
       <tr>
-        <td><a href="{{ url_for('dashboard_rules', key=api_key) }}#rule-{{ loop.index }}">{{ rule.name }}</a></td>
+        <td><a href="{{ url_for('dashboard_rules') }}#rule-{{ loop.index }}">{{ rule.name }}</a></td>
         <td>{{ 'Yes' if rule.get('enabled', True) else 'No' }}</td>
         <td>{{ rule.context or '(any)' }}</td>
       </tr>

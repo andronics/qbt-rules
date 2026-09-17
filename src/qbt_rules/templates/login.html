@@ -58,10 +58,8 @@
     <div class="brand">qbt-rules</div>
     <div class="sub">dashboard sign-in</div>
     {% if error %}<div class="error">Invalid API key.</div>{% endif %}
-    <form method="get" action="{{ next_path }}">
-      {% for k, v in next_params.items() %}
-      <input type="hidden" name="{{ k }}" value="{{ v }}">
-      {% endfor %}
+    <form method="post" action="{{ url_for('login') }}">
+      <input type="hidden" name="next" value="{{ next }}">
       <label for="key">API key</label>
       <input type="password" id="key" name="key" required autofocus>
       <button type="submit">Continue</button>

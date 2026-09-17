@@ -122,9 +122,9 @@
   <header class="topbar">
     <div class="brand"><b>qbt-rules</b><span>{{ version }}</span></div>
     <nav class="nav-tabs">
-      <a href="{{ url_for('dashboard_overview', key=api_key) }}" class="{{ 'active' if active == 'overview' else '' }}">Overview</a>
-      <a href="{{ url_for('dashboard_jobs', key=api_key) }}" class="{{ 'active' if active == 'jobs' else '' }}">Jobs</a>
-      <a href="{{ url_for('dashboard_rules', key=api_key) }}" class="{{ 'active' if active == 'rules' else '' }}">Rules</a>
+      <a href="{{ url_for('dashboard_overview') }}" class="{{ 'active' if active == 'overview' else '' }}">Overview</a>
+      <a href="{{ url_for('dashboard_jobs') }}" class="{{ 'active' if active == 'jobs' else '' }}">Jobs</a>
+      <a href="{{ url_for('dashboard_rules') }}" class="{{ 'active' if active == 'rules' else '' }}">Rules</a>
     </nav>
   </header>
   <main>

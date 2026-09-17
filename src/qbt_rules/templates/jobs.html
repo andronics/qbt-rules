@@ -12,7 +12,6 @@
 <div class="card">
   <h2>Jobs</h2>
   <form class="filter-form" method="get">
-    <input type="hidden" name="key" value="{{ api_key }}">
     <label for="status">Status:</label>
     <select id="status" name="status" onchange="this.form.submit()">
       <option value="" {{ 'selected' if not status else '' }}>All</option>
@@ -29,7 +28,7 @@
     <tbody>
       {% for job in jobs %}
       <tr>
-        <td><a href="{{ url_for('dashboard_job_detail', job_id=job.job_id, key=api_key) }}">{{ job.job_id[:8] }}&hellip;</a></td>
+        <td><a href="{{ url_for('dashboard_job_detail', job_id=job.job_id) }}">{{ job.job_id[:8] }}&hellip;</a></td>
         <td><span class="badge badge-{{ job.status }}">{{ job.status }}</span></td>
         <td>{{ job.context or 'none' }}</td>
         <td title="{{ job.created_at }}">{{ job.created_at|timeago }}</td>
@@ -40,10 +39,10 @@
   <div class="pagination">
     <span class="muted">Showing {{ jobs|length }} of {{ total }}</span>
     {% if offset > 0 %}
-      <a href="{{ url_for('dashboard_jobs', key=api_key, status=status, limit=limit, offset=[offset - limit, 0]|max) }}">&larr; Previous</a>
+      <a href="{{ url_for('dashboard_jobs', status=status, limit=limit, offset=[offset - limit, 0]|max) }}">&larr; Previous</a>
     {% endif %}
     {% if offset + limit < total %}
-      <a href="{{ url_for('dashboard_jobs', key=api_key, status=status, limit=limit, offset=offset + limit) }}">Next &rarr;</a>
+      <a href="{{ url_for('dashboard_jobs', status=status, limit=limit, offset=offset + limit) }}">Next &rarr;</a>
     {% endif %}
   </div>
   {% else %}

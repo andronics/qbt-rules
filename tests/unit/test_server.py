@@ -1357,27 +1357,59 @@ class TestDashboardRoutes:
 
         assert 'Invalid API key' not in response.data.decode()
 
-    def test_login_form_targets_next_path_and_preserves_its_params(self, client):
-        """The rendered form's action should be the bare next path, with
-        its other query params carried as hidden fields (a GET form
-        submission replaces the action URL's own query string, so those
-        params would otherwise be lost on submit)."""
+    def test_login_form_posts_to_login_with_next_as_a_hidden_field(self, client):
+        """The form posts to /login itself (not a GET straight to the
+        destination) -- the key is submitted in the POST body, so it never
+        appears in the URL bar or browser history. next is carried as one
+        opaque hidden field (path+query together), not split into a field
+        per query param, since a POST's body isn't subject to a GET form's
+        "action's own query string gets replaced by the submission"
+        behavior the way it would be split for a GET-based form."""
         response = client.get('/login?next=%2Fjobs%3Fstatus%3Dfailed')
         body = response.data.decode()
 
-        assert 'action="/jobs"' in body
-        assert 'name="status"' in body
-        assert 'value="failed"' in body
+        assert 'method="post"' in body
+        assert 'action="/login"' in body
+        assert 'name="next" value="/jobs?status=failed"' in body
 
-    def test_login_form_ignores_key_in_next_query(self, client):
-        """A stray ?key= inside next's own query string shouldn't be
-        resubmitted as a hidden field -- the visible password field is the
-        only source of the key on submission."""
+    def test_login_form_next_value_ignores_key_in_next_query(self, client):
+        """A stray ?key= inside next's own query string shouldn't survive
+        into the hidden field -- the visible password field is the only
+        source of the key on submission."""
         response = client.get('/login?next=%2Fjobs%3Fkey%3Dold-key%26status%3Dfailed')
         body = response.data.decode()
 
-        assert 'value="old-key"' not in body
-        assert 'name="status"' in body
+        assert 'old-key' not in body
+        assert 'name="next" value="/jobs?status=failed"' in body
+
+    def test_login_post_with_correct_key_redirects_to_next_without_key(self, client):
+        """A successful login redirects straight to next, with no ?key= in
+        the Location -- the whole point of moving auth into the session."""
+        response = client.post('/login', data={'key': 'test-api-key-12345', 'next': '/jobs?status=failed'})
+
+        assert response.status_code == 302
+        assert response.headers['Location'] == '/jobs?status=failed'
+
+    def test_login_post_with_wrong_key_redirects_back_with_error(self, client):
+        response = client.post('/login', data={'key': 'wrong-key', 'next': '/jobs'})
+
+        assert response.status_code == 302
+        location = response.headers['Location']
+        assert location.startswith('/login')
+        assert 'error=1' in location
+
+    def test_login_post_sanitizes_next_before_redirecting(self, client):
+        """Defense in depth: even though the hidden field is already
+        sanitized when rendered, a tampered/crafted next in the POST body
+        itself must still be neutered before being used as a redirect
+        target, since it's client-controlled input either way."""
+        response = client.post('/login', data={
+            'key': 'test-api-key-12345',
+            'next': 'https://evil.example/steal?key=test-api-key-12345',
+        })
+
+        assert response.status_code == 302
+        assert response.headers['Location'] == '/steal'
 
     def test_login_then_resubmit_reaches_destination(self, client):
         """End-to-end: get redirected to login, then submit the form's
@@ -1388,6 +1420,48 @@ class TestDashboardRoutes:
 
         response = client.get('/jobs?status=failed&key=test-api-key-12345')
         assert response.status_code == 200
+
+    def test_session_persists_auth_across_requests_without_key(self, client):
+        """The whole point of this: authenticate once (either via the
+        login POST or a direct ?key= bootstrap link), then subsequent
+        requests on the same browser session shouldn't need ?key= repeated
+        in every URL."""
+        first = client.get('/?key=test-api-key-12345')
+        assert first.status_code == 200
+
+        second = client.get('/jobs')
+        assert second.status_code == 200
+
+        third = client.get('/rules')
+        assert third.status_code == 200
+
+    def test_login_post_establishes_session_for_later_requests(self, client):
+        """Same guarantee, but arriving via the login form's POST rather
+        than a direct ?key= link."""
+        login_response = client.post('/login', data={'key': 'test-api-key-12345', 'next': '/'})
+        assert login_response.status_code == 302
+
+        response = client.get('/jobs')
+        assert response.status_code == 200
+
+    def test_no_session_still_redirects_to_login(self, client):
+        """A client that never authenticated at all still gets redirected,
+        confirming the session check doesn't accidentally allow everyone
+        through."""
+        response = client.get('/jobs')
+
+        assert response.status_code == 302
+        assert response.headers['Location'].startswith('/login')
+
+    def test_rendered_dashboard_links_never_carry_the_key(self, client):
+        """The nav, job links, and pagination should no longer embed
+        ?key= now that the session covers auth -- that was the entire
+        point of this change."""
+        client.get('/?key=test-api-key-12345')
+        response = client.get('/jobs')
+        body = response.data.decode()
+
+        assert 'key=test-api-key-12345' not in body
 
     # -- Overview ---------------------------------------------------------
 
@@ -1411,8 +1485,8 @@ class TestDashboardRoutes:
         response = client_with_config.get('/?key=test-api-key-12345')
         body = response.data.decode()
 
-        assert '/rules?key=test-api-key-12345#rule-1' in body
-        assert '/rules?key=test-api-key-12345#rule-2' in body
+        assert '/rules#rule-1' in body
+        assert '/rules#rule-2' in body
 
     def test_rules_page_details_have_matching_anchor_ids(self, client_with_config):
         """The /rules page's rule cards must expose the #rule-N ids the

@@ -11,15 +11,16 @@ Provides REST API for:
 import os
 import re
 import secrets
+import hashlib
 import time
 import logging
 import yaml
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from functools import wraps
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, urlencode
 
-from flask import Flask, request, jsonify, Response, render_template, redirect, url_for, g
+from flask import Flask, request, jsonify, Response, render_template, redirect, url_for, session, g
 
 from qbt_rules.queue_manager import QueueManager, JobStatus
 from qbt_rules.worker import Worker
@@ -117,6 +118,15 @@ def create_app(
     app.config['JSON_SORT_KEYS'] = False
     app.jinja_env.filters['timeago'] = _timeago
 
+    # Signs the dashboard session cookie -- derived deterministically from
+    # api_key rather than a fresh random value, so it's identical across
+    # every Gunicorn worker process (each runs its own create_app() call;
+    # a per-process random secret would make a session cookie signed by
+    # one worker fail to validate on another under server.workers > 1).
+    # Hashed rather than reused as-is so the raw API key is never doing
+    # double duty as both the auth credential and the cookie-signing key.
+    app.secret_key = hashlib.sha256(f'qbt-rules-dashboard-session:{api_key}'.encode()).digest()
+
     @app.context_processor
     def _inject_version():
         """Makes {{ version }} available in every dashboard template via
@@ -171,12 +181,6 @@ def _next_url_without_key() -> str:
     Build a same-origin path+query string for the current request, with
     any ?key= stripped out -- used as the "next" destination a rejected
     dashboard request redirects back to after a successful login.
-
-    Deliberately path-only (no scheme/host): url_for('login', next=...)
-    embeds this in a redirect Location header, and /login later feeds it
-    straight back into another url_for()-free redirect via the login
-    form's action attribute, so there's no way for a crafted next value
-    to send a user off-site.
     """
     args = request.args.to_dict(flat=False)
     args.pop('key', None)
@@ -184,27 +188,57 @@ def _next_url_without_key() -> str:
     return request.path + (f'?{query}' if query else '')
 
 
+def _sanitize_next(next_url: Optional[str]) -> str:
+    """
+    Reduce an arbitrary ?next= value down to a same-origin path+query,
+    discarding any scheme/host component and any embedded ?key=.
+
+    Used both when rendering the login form (so its hidden `next` field
+    only ever holds a safe value) and again right before issuing the
+    post-login redirect (defense in depth -- that hidden field is still
+    client-controlled input by the time it comes back in the POST body).
+    This is what makes a crafted next unable to send anyone off-site,
+    since redirect() only ever receives something already reduced to a
+    bare path+query, never a full URL, and can't be tricked into treating
+    a scheme-relative or absolute URL as one.
+    """
+    parsed = urlparse(next_url or '')
+    params = parse_qs(parsed.query)
+    params.pop('key', None)
+    query = urlencode(params, doseq=True)
+    return (parsed.path or '/') + (f'?{query}' if query else '')
+
+
 def require_api_key_dashboard(f):
     """
     Like require_api_key, but for browser-facing dashboard routes
 
     A scripted API client can handle a JSON 401 -- a human in a browser
-    can't do anything useful with one. On a missing or invalid key,
-    redirects to the /login form instead, carrying the originally
-    requested URL through as ?next= so a successful login lands back
-    where the user was headed.
+    can't do anything useful with one. A valid ?key=/header still works
+    as a direct, one-shot bootstrap (and refreshes the session), but
+    normal navigation no longer needs the key repeated in every URL:
+    a successful check establishes a signed session cookie, checked
+    here on every subsequent request before falling back to requiring
+    the key again. On neither a valid key nor a valid session, redirects
+    to the /login form, carrying the originally requested URL through as
+    ?next= so a successful login lands back where the user was headed.
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         key = request.args.get('key') or request.headers.get('X-API-Key')
 
         if key and secrets.compare_digest(key, api_key_config):
+            session.permanent = True
+            session['authenticated'] = True
+            return f(*args, **kwargs)
+
+        if session.get('authenticated'):
             return f(*args, **kwargs)
 
         login_kwargs = {'next': _next_url_without_key()}
         if key:
             # A key was provided but it was wrong, as opposed to a first
-            # visit with no key at all -- show an error on the form.
+            # visit with no key/session at all -- show an error on the form.
             login_kwargs['error'] = 1
         return redirect(url_for('login', **login_kwargs))
 
@@ -551,27 +585,38 @@ def register_dashboard_routes(app: Flask):
     so navigating between pages stays authenticated.
     """
 
-    @app.route('/login', methods=['GET'])
+    @app.route('/login', methods=['GET', 'POST'])
     def login():
         """
         API key entry form for browser use
 
-        Not behind require_api_key*  itself -- that would make it
-        impossible to ever reach. `next` (where to go after a successful
-        submission) is parsed down to a same-origin path + query dict
-        rather than used as a raw redirect target, so a crafted `next`
-        can't send anyone off-site: the login form's action is that path,
-        and its query params are resubmitted as hidden fields alongside
-        the newly entered key.
+        Not behind require_api_key_dashboard itself -- that would make it
+        impossible to ever reach. On success, establishes the session
+        require_api_key_dashboard checks on every subsequent request, so
+        the key doesn't need to be repeated in every URL from here on.
+
+        `next` (where to go after a successful submission) is always run
+        through _sanitize_next() before being used as a redirect target --
+        both when rendering it into the form's hidden field and again on
+        the POST that reads it back -- so a crafted next can't send anyone
+        off-site.
         """
-        next_url = request.args.get('next') or url_for('dashboard_overview')
-        parsed = urlparse(next_url)
-        next_params = {k: v[0] for k, v in parse_qs(parsed.query).items() if k != 'key'}
+        if request.method == 'POST':
+            key = request.form.get('key', '')
+            next_url = _sanitize_next(request.form.get('next'))
+
+            if key and secrets.compare_digest(key, api_key_config):
+                session.permanent = True
+                session['authenticated'] = True
+                return redirect(next_url)
+
+            return redirect(url_for('login', next=next_url, error=1))
+
+        next_url = _sanitize_next(request.args.get('next'))
 
         return render_template(
             'login.html',
-            next_path=parsed.path or url_for('dashboard_overview'),
-            next_params=next_params,
+            next=next_url,
             error=bool(request.args.get('error')),
         )
 
@@ -592,7 +637,6 @@ def register_dashboard_routes(app: Flask):
         return render_template(
             'dashboard.html',
             active='overview',
-            api_key=request.args.get('key', ''),
             queue_stats=queue_stats,
             recent_jobs=recent_jobs,
             rules_summary=rules_summary,
@@ -612,7 +656,6 @@ def register_dashboard_routes(app: Flask):
         return render_template(
             'jobs.html',
             active='jobs',
-            api_key=request.args.get('key', ''),
             jobs=jobs,
             total=total,
             limit=limit,
@@ -630,7 +673,6 @@ def register_dashboard_routes(app: Flask):
         return render_template(
             'job_detail.html',
             active='jobs',
-            api_key=request.args.get('key', ''),
             job=job,
             job_id=job_id,
             error_summary=error_summary,
@@ -655,7 +697,6 @@ def register_dashboard_routes(app: Flask):
         return render_template(
             'rules.html',
             active='rules',
-            api_key=request.args.get('key', ''),
             rules=rules,
             rules_with_yaml=rules_with_yaml,
             config_available=dashboard_config is not None,
