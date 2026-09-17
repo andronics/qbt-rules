@@ -5,14 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.1] - 2026-09-17
-
-### 🐛 Bug Fixes
-- fix: CLI job-status/list-jobs attribute bugs and config error duplication
-
-### 🔧 Maintenance
-- chore: Bump version to 0.6.0
-
+> **This file is maintained automatically by [`release.yml`](.github/workflows/release.yml)
+> from conventional commit messages (`feat:`, `fix:`, `refactor:`, `chore:`) at tag time.
+> Do not hand-edit entries — the release workflow doesn't check for an existing entry
+> before inserting its own, so a manual entry for a version gets duplicated when that
+> version is tagged.**
 
 ## [0.6.1] - 2026-09-17
 
