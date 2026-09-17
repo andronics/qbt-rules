@@ -1,0 +1,774 @@
+<!--
+  qbt-rules :: Rules dashboard — concept demo (vanilla HTML/CSS/JS + inline SVG, no
+  frameworks, no external requests). Visually forked from demo-metrics-config-dashboard.html
+  / demo-rule-builder-params.html: same dark-first :root color system, topbar/brand
+  treatment, and — verbatim classes — the docked YAML panel component (.yaml-panel/
+  .yaml-head/.yaml-body/.yline/.yk/.ys/.yn/.yr/.yc/.yp) and colorizeYamlLine() colorizer.
+
+  WHAT THIS DEMO IS: a richer evolution of the real, currently-shipped, read-only
+  /dashboard/rules page (src/qbt_rules/templates/rules.html, a flat #/Name/Enabled/
+  Context/stop_on_match table sourced from Config.get_rules() — see server.py's
+  dashboard_rules() handler, ~L511-524). This demo keeps that table as the rule picker
+  (left column) and adds, on selection, a READ-ONLY visual render of that rule's actual
+  condition tree + action sequence.
+
+  REAL DATA, NOT INVENTED: every ref (14 vars, 13 conditions, 6 actions) and all 10 rules
+  below are transcribed directly from advanced-rules-example.yml — the same example rule
+  set every other ui/demo-*.html already uses. $ref lookups resolve against the real
+  refs.conditions/refs.actions maps; ${vars.x} tokens resolve against the real refs.vars
+  map. (The source file's own section-header comments say "12 refs" for both vars and
+  conditions; the actual counts are 14 and 13 respectively — a pre-existing mismatch in
+  the source file's comments, not something introduced here.)
+
+  JUDGMENT CALLS:
+  - Condition/action tree is rendered as a flowing, indented, scrollable read-only tree
+    (new .tnode/.tree-children classes, reusing the --c-all/--c-any/--c-none/--c-leaf/
+    --c-ref/--c-action color language) rather than demo-rule-builder-params.html's
+    absolutely-positioned pan/zoom canvas nodes. That canvas requires hand-tuned x/y
+    coordinates per node (see its buildRuleA()/buildRuleB(), ~150 lines of manual layout
+    EACH, for just 2 of the 10 rules) — impractical to hand-lay-out for all 10 real rules
+    here, and a flowing tree conveys ALL/ANY/NONE nesting and $ref/leaf/action structure
+    just as legibly for rules of this size without that cost. No drag/drop, no editing,
+    matching the source canvas's read-only-in-spirit condition/action nodes anyway.
+  - A rule's top-level `conditions:` list has no explicit all/any/none wrapper in the YAML
+    (e.g. Rule 1: `conditions: [$ref: a, $ref: b, none: [...]]`). qbt-rules' resolver
+    treats a bare top-level list as an implicit ALL (see CHANGELOG v0.5.3 fix) — rendered
+    here as an explicit synthetic "ALL (implicit)" root gate, labeled as such so it isn't
+    mistaken for a literal `all:` key in the source.
+  - $ref chips default EXPANDED (showing the resolved conditions/actions inline, since the
+    point of this view is seeing real structure) with a ▾/▸ toggle to collapse, matching
+    demo-rule-builder-params.html's ref-toggle affordance.
+  - The docked side panel shows the SELECTED rule's fully resolved YAML only (not a
+    source/resolved toggle, and not the whole rules.yml file) — demo-metrics-config-
+    dashboard.html already covers the "browse the whole rules.yml/config.yml file" case;
+    duplicating that here would be redundant. This panel answers a different question:
+    "what does *this* rule actually expand to."
+  - Nav bar (Overview/Jobs/Rules/Metrics): Rules is active; Metrics links to the real
+    sibling ui/demo-metrics-config-dashboard.html; Overview/Jobs link to
+    ui/demo-dashboard-overview.html / ui/demo-dashboard-jobs.html, built concurrently by
+    sibling agents on this same branch (dev/webui-rebuild) — real relative links, not
+    inert stubs, since by the time this ships alongside them those files exist.
+
+  READ-ONLY throughout — no edit/save affordances; there is no write-back API for
+  rules.yml today, and implying one here would misrepresent what the app can currently do.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qbt-rules — Rules dashboard (concept demo)</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --bg-app:#0a0c11;
+    --bg-panel:#12151c;
+    --bg-panel-2:#171b25;
+    --bg-canvas:#0d1017;
+    --dot: rgba(255,255,255,.08);
+    --border:#262b38;
+    --border-strong:#3a4152;
+    --fg:#e7e9f0;
+    --fg-dim:#aab0c0;
+    --muted:#747c90;
+    --accent:#5b8cff;
+    --accent-soft:rgba(91,140,255,.16);
+    --danger:#f43f5e;
+
+    --c-all:#8b5cf6;   --c-all-bg:rgba(139,92,246,.14);
+    --c-any:#f59e0b;   --c-any-bg:rgba(245,158,11,.14);
+    --c-none:#f43f5e;  --c-none-bg:rgba(244,63,94,.14);
+    --c-leaf:#3b82f6;  --c-leaf-bg:rgba(59,130,246,.12);
+    --c-ref:#2dd4bf;   --c-ref-bg:rgba(45,212,191,.08);
+    --c-action:#22c55e;--c-action-bg:rgba(34,197,94,.12);
+
+    --yaml-key:#7dd3fc;
+    --yaml-str:#a7e08a;
+    --yaml-num:#f5b962;
+    --yaml-ref:#5eead4;
+    --yaml-comment:#5b6577;
+    --yaml-punct:#6b7280;
+
+    --radius: 10px;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Code", Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      color-scheme: light;
+      --bg-app:#eef0f4; --bg-panel:#ffffff; --bg-panel-2:#f5f6f9; --bg-canvas:#e7e9ef;
+      --dot: rgba(20,25,40,.10);
+      --border:#dbdfe8; --border-strong:#c2c8d6;
+      --fg:#161a22; --fg-dim:#454d5e; --muted:#6b7280;
+      --accent:#2f5ce0; --accent-soft:rgba(47,92,224,.12);
+      --c-all-bg:rgba(139,92,246,.12); --c-any-bg:rgba(245,158,11,.12);
+      --c-none-bg:rgba(244,63,94,.12); --c-leaf-bg:rgba(59,130,246,.10);
+      --c-ref-bg:rgba(45,212,191,.10); --c-action-bg:rgba(34,197,94,.10);
+      --yaml-comment:#8a93a6; --yaml-punct:#8a93a6;
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg-app); color:var(--fg);
+    font-family:var(--font-ui);
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  button{font-family:inherit;}
+  ::selection{background:var(--accent-soft);}
+
+  #app{ display:grid; grid-template-rows:auto 1fr auto; height:100vh; min-width:960px; }
+
+  /* ---------- topbar (verbatim from sibling demos) ---------- */
+  .topbar{
+    display:flex; align-items:center; gap:1rem;
+    padding:.6rem 1rem; border-bottom:1px solid var(--border);
+    background:var(--bg-panel);
+  }
+  .brand{ display:flex; align-items:baseline; gap:.5rem; white-space:nowrap; }
+  .brand b{ font-size:.95rem; letter-spacing:.02em; }
+  .brand span{ font-size:.72rem; color:var(--muted); font-family:var(--font-mono); }
+  .rule-tabs{ display:flex; gap:.4rem; flex:1; min-width:0; }
+  .rule-tab{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2);
+    color:var(--fg-dim); border-radius:999px; padding:.4rem .85rem; font-size:.78rem;
+    cursor:pointer; display:flex; align-items:center; gap:.45rem; max-width:340px;
+    text-decoration:none;
+  }
+  .rule-tab .ctx{ font-family:var(--font-mono); font-size:.68rem; color:var(--muted); }
+  .rule-tab:hover{ border-color:var(--border-strong); color:var(--fg); }
+  .rule-tab.active{ background:var(--accent-soft); border-color:var(--accent); color:var(--fg); }
+  .topbar-actions{ display:flex; gap:.4rem; align-items:center; }
+  .icon-btn{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2); color:var(--fg-dim);
+    border-radius:8px; padding:.4rem .6rem; font-size:.75rem; cursor:pointer; display:flex; gap:.35rem; align-items:center;
+  }
+  .icon-btn:hover{ color:var(--fg); border-color:var(--border-strong); }
+
+  /* ---------- workspace grid: rule list | tree | yaml panel ---------- */
+  .workspace{ display:grid; grid-template-columns:300px 1fr 400px; min-height:0; transition:grid-template-columns .18s ease; }
+  .workspace.no-yaml{ grid-template-columns:300px 1fr 0px; }
+
+  /* ---------- rule list (left) ---------- */
+  .rulelist{
+    background:var(--bg-panel); border-right:1px solid var(--border);
+    overflow-y:auto; padding:.7rem;
+  }
+  .rulelist h4{
+    margin:.1rem .3rem .6rem; font-size:.68rem; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--muted); font-weight:700;
+  }
+  .rule-card{
+    border:1px solid var(--border); border-radius:8px; background:var(--bg-panel-2);
+    padding:.55rem .65rem; margin-bottom:.45rem; cursor:pointer; display:flex; flex-direction:column; gap:.3rem;
+  }
+  .rule-card:hover{ border-color:var(--border-strong); }
+  .rule-card.active{ border-color:var(--accent); background:var(--accent-soft); }
+  .rule-card.disabled{ opacity:.5; }
+  .rc-top{ display:flex; align-items:baseline; gap:.4rem; }
+  .rc-idx{ font-family:var(--font-mono); font-size:.65rem; color:var(--muted); flex:none; }
+  .rc-name{ font-size:.76rem; font-weight:600; line-height:1.3; }
+  .rc-meta{ display:flex; gap:.35rem; flex-wrap:wrap; }
+  .rc-pill{
+    font-family:var(--font-mono); font-size:.6rem; padding:.1rem .4rem; border-radius:999px;
+    border:1px solid var(--border); color:var(--fg-dim); background:var(--bg-app);
+  }
+  .rc-pill.on{ color:var(--c-action); border-color:var(--c-action); background:var(--c-action-bg); }
+  .rc-pill.off{ color:var(--danger); border-color:var(--danger); background:rgba(244,63,94,.1); }
+  .rc-pill.stop{ color:var(--c-none); border-color:var(--c-none); background:var(--c-none-bg); }
+
+  /* ---------- tree (center) ---------- */
+  .treewrap{ overflow-y:auto; background:var(--bg-canvas); padding:1.1rem 1.4rem 2rem; }
+  .rule-hero{
+    background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius);
+    padding:.9rem 1.1rem; margin-bottom:1.1rem;
+  }
+  .rule-hero h2{ margin:0 0 .5rem; font-size:1.05rem; }
+  .rule-hero .rc-meta{ margin-top:.3rem; }
+
+  .tree-title{
+    font-size:.7rem; text-transform:uppercase; letter-spacing:.09em; color:var(--muted);
+    font-weight:700; margin:1.3rem 0 .6rem; display:flex; align-items:center; gap:.5rem;
+  }
+  .tree-title .hint{
+    font-family:var(--font-mono); font-size:.6rem; text-transform:none; letter-spacing:0;
+    color:var(--muted); background:var(--bg-panel-2); border:1px solid var(--border);
+    border-radius:5px; padding:.08rem .4rem; font-weight:500;
+  }
+
+  .tree{ display:flex; flex-direction:column; gap:.5rem; }
+  .tree-children{
+    margin-left:1.3rem; padding-left:.9rem; border-left:1.5px dashed var(--border-strong);
+    display:flex; flex-direction:column; gap:.5rem; margin-top:.5rem;
+  }
+  .tnode{ border-radius:9px; border:1px solid var(--border); padding:.5rem .7rem; background:var(--bg-panel); }
+  .tnode.gate{ border-left:3px solid var(--c-all); background:var(--c-all-bg); }
+  .tnode.gate.op-any{ border-left-color:var(--c-any); background:var(--c-any-bg); }
+  .tnode.gate.op-none{ border-left-color:var(--c-none); background:var(--c-none-bg); }
+  .gate-head{ display:flex; align-items:center; gap:.5rem; font-family:var(--font-mono); font-weight:800; font-size:.72rem; letter-spacing:.05em; }
+  .tnode.gate .gate-head{ color:var(--c-all); }
+  .tnode.gate.op-any .gate-head{ color:var(--c-any); }
+  .tnode.gate.op-none .gate-head{ color:var(--c-none); }
+  .gate-label{ font-family:var(--font-ui); font-weight:500; font-size:.68rem; color:var(--fg-dim); letter-spacing:0; }
+  .gicon{ width:13px; height:13px; flex:none; }
+
+  .tnode.leaf{ border-left:3px solid var(--c-leaf); background:var(--c-leaf-bg); display:flex; gap:.5rem; align-items:baseline; flex-wrap:wrap; font-family:var(--font-mono); font-size:.73rem; }
+  .leaf-field{ color:var(--c-leaf); }
+  .leaf-op{ color:var(--muted); }
+  .leaf-val{ color:var(--fg); }
+  .leaf-val.varlink{ color:var(--c-ref); }
+  .leaf-val .resolved{ color:var(--muted); font-size:.66rem; }
+
+  .tnode.ref{ border-left:3px dashed var(--c-ref); background:var(--c-ref-bg); }
+  .ref-top{ display:flex; align-items:center; gap:.45rem; }
+  .ref-toggle{
+    appearance:none; border:none; background:transparent; color:var(--c-ref); cursor:pointer;
+    font-size:.68rem; padding:0 2px; line-height:1; border-radius:4px; flex:none;
+  }
+  .ref-toggle:hover{ background:rgba(45,212,191,.18); }
+  .ref-path{ font-family:var(--font-mono); font-size:.73rem; color:var(--c-ref); font-weight:600; }
+  .ref-summary{ font-size:.63rem; color:var(--muted); margin-left:auto; }
+
+  .tnode.action{ border-left:3px solid var(--c-action); background:var(--c-action-bg); display:flex; gap:.55rem; align-items:center; }
+  .act-step{
+    flex:none; width:20px; height:20px; border-radius:50%; background:var(--c-action); color:#04140a;
+    font-size:.64rem; font-weight:800; display:flex; align-items:center; justify-content:center; font-family:var(--font-mono);
+  }
+  .act-type{ font-family:var(--font-mono); font-size:.74rem; font-weight:700; }
+  .act-params{ font-family:var(--font-mono); font-size:.65rem; color:var(--fg-dim); }
+
+  .synthetic-tag{ font-size:.6rem; color:var(--muted); font-style:italic; margin-left:.4rem; }
+  .empty-msg{ font-size:.78rem; color:var(--muted); padding:2rem; text-align:center; }
+
+  /* ---------- yaml panel (verbatim classes from sibling demos) ---------- */
+  .yaml-panel{ display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border); background:var(--bg-panel); overflow:hidden; }
+  .yaml-head{ display:flex; align-items:center; gap:.5rem; padding:.55rem .75rem; border-bottom:1px solid var(--border); }
+  .yaml-head .title{ font-size:.74rem; color:var(--fg-dim); font-family:var(--font-mono); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .yaml-body{ flex:1; overflow:auto; padding:.7rem .5rem; }
+  .yaml-body pre{ margin:0; font-family:var(--font-mono); font-size:.72rem; line-height:1.6; }
+  .yline{ padding:0 .5rem 0 .35rem; border-radius:4px; white-space:pre; cursor:default; }
+  .yk{ color:var(--yaml-key); }
+  .ys{ color:var(--yaml-str); }
+  .yn{ color:var(--yaml-num); }
+  .yr{ color:var(--yaml-ref); font-weight:600; }
+  .yc{ color:var(--yaml-comment); font-style:italic; }
+  .yp{ color:var(--yaml-punct); }
+  .yaml-note{
+    font-size:.63rem; color:var(--muted); padding:.5rem .75rem; border-top:1px solid var(--border);
+    background:var(--bg-panel-2); line-height:1.5;
+  }
+  .yaml-collapsed-tab{
+    position:absolute; right:0; top:64px; writing-mode:vertical-rl; background:var(--bg-panel);
+    border:1px solid var(--border); border-right:none; border-radius:8px 0 0 8px; padding:.5rem .3rem;
+    font-size:.68rem; color:var(--muted); cursor:pointer; display:none; z-index:5;
+  }
+  .workspace.no-yaml .yaml-collapsed-tab{ display:block; }
+  .workspace.no-yaml .yaml-panel{ display:none; }
+
+  /* ---------- statusbar (verbatim) ---------- */
+  .statusbar{
+    padding:.4rem 1rem; border-top:1px solid var(--border); background:var(--bg-panel);
+    font-size:.7rem; color:var(--muted); display:flex; justify-content:space-between; gap:1rem;
+  }
+  .statusbar b{ color:var(--fg-dim); }
+
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:6px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-and" viewBox="0 0 14 14"><path d="M2 2 H7 A5 5 0 0 1 7 12 H2 Z" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-any" viewBox="0 0 14 14"><path d="M2 2 Q6 2 11 7 Q6 12 2 12 Q4.5 7 2 2 Z" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-none" viewBox="0 0 14 14"><path d="M2 2 L2 12 L10 7 Z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="7" r="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+  </defs>
+</svg>
+
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand"><b>qbt-rules</b><span>rules dashboard concept</span></div>
+    <div class="rule-tabs" id="navTabs"></div>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="btnYamlToggle" title="Toggle YAML panel">YAML ▸</button>
+    </div>
+  </header>
+
+  <div class="workspace" id="workspace" style="position:relative;">
+
+    <aside class="rulelist" id="ruleList">
+      <h4>Rules (10) &middot; execute in file order</h4>
+      <div id="ruleCards"></div>
+    </aside>
+
+    <div class="treewrap" id="treeWrap"><!-- rendered by renderSelectedRule() --></div>
+
+    <button class="yaml-collapsed-tab" id="yamlTab">YAML ▸</button>
+    <aside class="yaml-panel" id="yamlPanel">
+      <div class="yaml-head">
+        <span class="title" id="yamlFileLabel">rules.yml — resolved</span>
+      </div>
+      <div class="yaml-body"><pre id="yamlOut"></pre></div>
+      <div class="yaml-note">Resolved YAML for the selected rule only — $ref/${vars.*} expanded in place. Not editable; see rules.yml/config.yml in demo-metrics-config-dashboard.html for the raw source files.</div>
+    </aside>
+
+  </div>
+
+  <footer class="statusbar">
+    <span id="statusLeft">Ready.</span>
+    <span id="statusRight"><b>advanced-rules-example.yml</b> — 10 real rules, read-only concept demo</span>
+  </footer>
+
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ======================================================================
+   REAL data, transcribed from advanced-rules-example.yml (not invented).
+   ====================================================================== */
+const REFS = {
+  vars: {
+    min_ratio_private: 2.0,
+    min_ratio_public: 1.0,
+    excellent_ratio: 5.0,
+    completion_age_short: '7 days',
+    completion_age_medium: '30 days',
+    completion_age_long: '90 days',
+    large_file_bytes: 53687091200,
+    huge_file_bytes: 107374182400,
+    protected_categories: ['keep','seedbox','long-term','permanent','archive'],
+    hd_content_pattern: '(?i).*(1080p|2160p|4k|uhd|bluray|remux).*',
+    tv_show_pattern: '(?i).*(s\\d{2}e\\d{2}|season[\\s._-]*\\d+).*',
+    movie_pattern: '(?i).*(20\\d{2}|19\\d{2}).*\\.(mkv|mp4|avi).*',
+    min_active_seeds: 5,
+    zero_activity_hours: 168,
+  },
+  conditions: {
+    'private-tracker': {any:[
+      {field:'trackers.url',operator:'contains',value:'privatehd.to'},
+      {field:'trackers.url',operator:'contains',value:'torrentleech.org'},
+      {field:'trackers.url',operator:'contains',value:'iptorrents.com'},
+      {field:'trackers.url',operator:'contains',value:'broadcasthe.net'},
+      {field:'trackers.url',operator:'contains',value:'passthepopcorn.me'},
+    ]},
+    'public-tracker': {none:[ {$ref:'conditions.private-tracker'} ]},
+    'well-seeded-private': {all:[
+      {field:'info.ratio',operator:'>=',value:'${vars.min_ratio_private}'},
+      {field:'info.completion_on',operator:'older_than',value:'${vars.completion_age_medium}'},
+    ]},
+    'well-seeded-public': {all:[
+      {field:'info.ratio',operator:'>=',value:'${vars.min_ratio_public}'},
+      {field:'info.completion_on',operator:'older_than',value:'${vars.completion_age_medium}'},
+    ]},
+    'excellently-seeded': {all:[
+      {field:'info.ratio',operator:'>=',value:'${vars.excellent_ratio}'},
+      {field:'info.seeding_time',operator:'>',value:2592000,comment:'30 days in seconds'},
+    ]},
+    'under-seeded-private': {all:[
+      {field:'info.ratio',operator:'<',value:'${vars.min_ratio_private}'},
+      {field:'info.state',operator:'in',value:['uploading','stalledUP','queuedUP']},
+    ]},
+    'hd-content': {all:[ {field:'info.name',operator:'matches',value:'${vars.hd_content_pattern}'} ]},
+    'tv-show': {all:[ {field:'info.name',operator:'matches',value:'${vars.tv_show_pattern}'} ]},
+    'movie': {all:[ {field:'info.name',operator:'matches',value:'${vars.movie_pattern}'} ]},
+    'large-file': {all:[ {field:'info.size',operator:'>',value:'${vars.large_file_bytes}'} ]},
+    'huge-file': {all:[ {field:'info.size',operator:'>',value:'${vars.huge_file_bytes}'} ]},
+    'no-activity': {all:[
+      {field:'info.num_leechs',operator:'==',value:0},
+      {field:'info.num_seeds',operator:'<=',value:'${vars.min_active_seeds}'},
+      {field:'info.last_activity',operator:'older_than',value:'${vars.zero_activity_hours} hours'},
+    ]},
+    'protected-content': {any:[
+      {field:'info.category',operator:'in',value:'${vars.protected_categories}'},
+      {field:'info.tags',operator:'contains',value:'keep'},
+      {field:'info.tags',operator:'contains',value:'!delete'},
+    ]},
+  },
+  actions: {
+    'safe-delete': [
+      {type:'add_tag',params:{tags:['pending-delete','auto-cleanup']}},
+      {type:'stop'},
+      {type:'set_category',params:{category:'cleanup-queue'}},
+    ],
+    'force-seed-private': [
+      {type:'force_start'},
+      {type:'set_upload_limit',params:{limit:-1},comment:'Unlimited'},
+      {type:'add_tag',params:{tags:['force-seeding','private-boost']}},
+    ],
+    'process-hd-content': [
+      {type:'add_tag',params:{tags:['hd','quality-content']}},
+      {type:'set_category',params:{category:'hd-content'}},
+      {type:'increase_priority'},
+    ],
+    'pause-inactive': [
+      {type:'stop'},
+      {type:'add_tag',params:{tags:['paused-inactive','low-priority']}},
+      {type:'set_upload_limit',params:{limit:0}},
+    ],
+    'reward-excellent-seeding': [
+      {type:'add_tag',params:{tags:['excellent-seeder','ratio-hero','⭐-star-content']}},
+    ],
+    'limit-large-upload': [
+      {type:'set_upload_limit',params:{limit:5242880},comment:'5 MB/s'},
+      {type:'add_tag',params:{tags:['bandwidth-limited','large-file']}},
+    ],
+  },
+};
+
+const RULES = [
+  { name:'Force seed private tracker torrents under ratio', enabled:true, context:'download-finished', stop_on_match:false,
+    conditions:[ {$ref:'conditions.private-tracker'}, {$ref:'conditions.under-seeded-private'}, {none:[{$ref:'conditions.protected-content'}]} ],
+    actions:[ {$ref:'actions.force-seed-private'} ] },
+
+  { name:'Cleanup well-seeded private tracker torrents', enabled:true, context:'weekly-cleanup',
+    conditions:[
+      {$ref:'conditions.private-tracker'}, {$ref:'conditions.well-seeded-private'},
+      {none:[{$ref:'conditions.protected-content'}]},
+      {any:[ {all:[{field:'info.completion_on',operator:'older_than',value:'${vars.completion_age_long}'}]}, {$ref:'conditions.no-activity'} ], comment:'Additional safety: must be old OR inactive'},
+    ],
+    actions:[ {$ref:'actions.safe-delete'} ] },
+
+  { name:'Cleanup public tracker torrents after medium term', enabled:true, context:'weekly-cleanup',
+    conditions:[ {$ref:'conditions.public-tracker'}, {$ref:'conditions.well-seeded-public'}, {none:[{$ref:'conditions.protected-content'},{$ref:'conditions.hd-content', comment:'Keep HD content longer'}]} ],
+    actions:[ {$ref:'actions.safe-delete'} ] },
+
+  { name:'Auto-categorize and prioritize HD content from private trackers', enabled:true, context:'torrent-imported', stop_on_match:false,
+    conditions:[ {$ref:'conditions.private-tracker'}, {$ref:'conditions.hd-content'}, {any:[{$ref:'conditions.tv-show'},{$ref:'conditions.movie'}]} ],
+    actions:[ {$ref:'actions.process-hd-content'} ] },
+
+  { name:'Tag and celebrate excellent seeding achievements', enabled:true, context:'weekly-cleanup', stop_on_match:false,
+    conditions:[ {$ref:'conditions.excellently-seeded'}, {any:[{$ref:'conditions.private-tracker'},{$ref:'conditions.hd-content'}]} ],
+    actions:[ {$ref:'actions.reward-excellent-seeding'} ] },
+
+  { name:'Pause large files with no activity to save resources', enabled:true, context:'weekly-cleanup',
+    conditions:[ {$ref:'conditions.large-file'}, {$ref:'conditions.no-activity'},
+      {none:[ {$ref:'conditions.protected-content'}, {field:'info.ratio',operator:'<',value:'${vars.min_ratio_public}', comment:"Don't pause if under-seeded"} ]} ],
+    actions:[ {$ref:'actions.pause-inactive'} ] },
+
+  { name:'Limit upload speed for huge files to prevent bandwidth hogging', enabled:true, context:'download-finished', stop_on_match:false,
+    conditions:[ {$ref:'conditions.huge-file'}, {all:[{field:'info.state',operator:'in',value:['uploading','forcedUP']}]},
+      {none:[ {$ref:'conditions.under-seeded-private', comment:"Don't limit private under-seeded"} ]} ],
+    actions:[ {$ref:'actions.limit-large-upload'} ] },
+
+  { name:'Aggressive cleanup of huge old public torrents', enabled:false, context:'manual',
+    conditions:[ {$ref:'conditions.public-tracker'}, {$ref:'conditions.huge-file'},
+      {all:[ {field:'info.completion_on',operator:'older_than',value:'${vars.completion_age_short}'}, {field:'info.ratio',operator:'>=',value:0.5, comment:'At least 50% uploaded'} ]},
+      {none:[{$ref:'conditions.protected-content'}]} ],
+    actions:[ {type:'add_tag',params:{tags:['emergency-cleanup','space-recovery']}}, {$ref:'actions.safe-delete'} ] },
+
+  { name:'Special handling for private tracker HD TV shows', enabled:true, context:'torrent-imported', stop_on_match:false,
+    conditions:[ {$ref:'conditions.private-tracker'}, {$ref:'conditions.hd-content'}, {$ref:'conditions.tv-show'},
+      {all:[{field:'info.size',operator:'>',value:2147483648,comment:'> 2 GB per episode'}], comment:'Inline condition mixed with refs'} ],
+    actions:[ {$ref:'actions.process-hd-content'}, {$ref:'actions.force-seed-private'},
+      {type:'add_tag',params:{tags:['premium-tv','auto-managed']},comment:'Inline action mixed with refs'},
+      {type:'set_category',params:{category:'tv-premium'}} ] },
+
+  { name:'Protect and maintain long-term archive content', enabled:true, context:'weekly-cleanup', stop_on_match:true,
+    conditions:[ {any:[
+      {$ref:'conditions.protected-content'},
+      {all:[ {$ref:'conditions.private-tracker'}, {$ref:'conditions.excellently-seeded'}, {field:'info.completion_on',operator:'older_than',value:'${vars.completion_age_long}'} ], comment:'Auto-protect excellent private seeds'},
+    ]} ],
+    actions:[ {type:'add_tag',params:{tags:['protected','long-term-seed','🔒-locked']}}, {type:'set_category',params:{category:'archive'}}, {type:'force_start',comment:'Ensure it keeps seeding'}, {$ref:'actions.reward-excellent-seeding'} ] },
+];
+
+/* ======================================================================
+   Ref resolution helpers
+   ====================================================================== */
+function resolveRef(path){
+  const [ns, key] = path.split('.');
+  return REFS[ns] ? REFS[ns][key] : undefined;
+}
+function isVarToken(v){ return typeof v === 'string' && /^\$\{vars\.[\w]+\}(?:\s.+)?$/.test(v); }
+function varTokenParts(v){
+  const m = v.match(/^\$\{vars\.([\w]+)\}(.*)$/);
+  if(!m) return null;
+  return {name:m[1], suffix:m[2]||'', resolved:REFS.vars[m[1]]};
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtValue(v){
+  if(Array.isArray(v)) return '[' + v.map(fmtValue).join(', ') + ']';
+  if(typeof v === 'string') return `"${v}"`;
+  return String(v);
+}
+
+/* ======================================================================
+   State
+   ====================================================================== */
+const state = { ruleIdx:0, collapsedRefs:new Set(), refCounter:0 };
+
+/* ======================================================================
+   Tree rendering — condition nodes: leaf / $ref / {all|any|none:[...]}
+   ====================================================================== */
+function renderLeaf(n){
+  let valHtml;
+  if(isVarToken(n.value)){
+    const vt = varTokenParts(n.value);
+    valHtml = `<span class="leaf-val varlink">\${vars.${escapeHtml(vt.name)}}${escapeHtml(vt.suffix)}</span> <span class="resolved">→ ${escapeHtml(fmtValue(vt.resolved))}${escapeHtml(vt.suffix)}</span>`;
+  } else {
+    valHtml = `<span class="leaf-val">${escapeHtml(fmtValue(n.value))}</span>`;
+  }
+  const comment = n.comment ? `<span class="synthetic-tag"># ${escapeHtml(n.comment)}</span>` : '';
+  return `<div class="tnode leaf">
+    <span class="leaf-field">${escapeHtml(n.field)}</span>
+    <span class="leaf-op">${escapeHtml(n.operator)}</span>
+    ${valHtml}${comment}
+  </div>`;
+}
+
+function renderRefChip(refNode){
+  const path = refNode['$ref'];
+  const resolved = resolveRef(path);
+  // Per-instance collapse state, keyed by traversal order -- stable across
+  // re-renders of the same rule since renderSelectedRule() resets the
+  // counter and re-walks the tree in the same deterministic order each time.
+  const key = 'ref-' + (state.refCounter++);
+  const isCollapsed = state.collapsedRefs.has(key);
+  const summary = Array.isArray(resolved) ? `${resolved.length} action step${resolved.length===1?'':'s'}`
+    : resolved ? (Object.keys(resolved)[0] + ' · ' + (resolved[Object.keys(resolved)[0]]||[]).length + ' condition' + ((resolved[Object.keys(resolved)[0]]||[]).length===1?'':'s'))
+    : 'unresolved';
+  const comment = refNode.comment ? `<span class="synthetic-tag"># ${escapeHtml(refNode.comment)}</span>` : '';
+  let inner = '';
+  if(!isCollapsed && resolved){
+    if(Array.isArray(resolved)){
+      inner = `<div class="tree-children">${resolved.map(renderActionNode).join('')}</div>`;
+    } else {
+      inner = `<div class="tree-children">${renderConditionGate(resolved)}</div>`;
+    }
+  }
+  return `<div class="tnode ref" data-refkey="${key}">
+    <div class="ref-top">
+      <button class="ref-toggle" data-toggle-ref="${key}">${isCollapsed ? '▸' : '▾'}</button>
+      <span class="ref-path">$ref: ${escapeHtml(path)}</span>
+      <span class="ref-summary">${escapeHtml(summary)}</span>
+      ${comment}
+    </div>
+    ${inner}
+  </div>`;
+}
+
+function gateIcon(op){ return op==='all' ? 'i-and' : op==='any' ? 'i-any' : 'i-none'; }
+function gateLabel(op){ return op==='all' ? 'ALL' : op==='any' ? 'ANY' : 'NONE'; }
+
+// Renders a single condition entry, which is either a leaf, a $ref, or a gate {all|any|none:[...]}
+function renderConditionEntry(n){
+  if(n['$ref']) return renderRefChip(n);
+  if(n.all || n.any || n.none) return renderConditionGate(n);
+  if(n.field) return renderLeaf(n);
+  return `<div class="tnode leaf">unrecognized node</div>`;
+}
+
+// n is {all:[...]} or {any:[...]} or {none:[...]}
+function renderConditionGate(n){
+  const op = n.all ? 'all' : n.any ? 'any' : 'none';
+  const children = n[op];
+  const comment = n.comment ? `<span class="synthetic-tag"># ${escapeHtml(n.comment)}</span>` : '';
+  return `<div class="tnode gate op-${op}">
+    <div class="gate-head"><svg class="gicon"><use href="#${gateIcon(op)}"/></svg>${gateLabel(op)} <span class="gate-label">(${children.length} ${children.length===1?'condition':'conditions'})</span>${comment}</div>
+    <div class="tree-children">${children.map(renderConditionEntry).join('')}</div>
+  </div>`;
+}
+
+function renderActionNode(a, i){
+  if(a['$ref']){
+    return renderRefChip(a).replace('<div class="tnode ref"', `<div class="tnode ref" style="margin-left:0"`);
+  }
+  const meta = a.params ? Object.entries(a.params).map(([k,v])=>`${k}: ${fmtValue(v)}`).join(', ') : '';
+  const comment = a.comment ? `<span class="synthetic-tag"># ${escapeHtml(a.comment)}</span>` : '';
+  return `<div class="tnode action">
+    <div class="act-step">${(i!=null? i+1 : '·')}</div>
+    <div>
+      <div class="act-type">${escapeHtml(a.type)}</div>
+      ${meta ? `<div class="act-params">${escapeHtml(meta)}</div>` : ''}
+    </div>
+    ${comment}
+  </div>`;
+}
+
+/* ======================================================================
+   Rule list + selected-rule render
+   ====================================================================== */
+function renderRuleList(){
+  const el = document.getElementById('ruleCards');
+  el.innerHTML = RULES.map((r,i) => `
+    <div class="rule-card ${i===state.ruleIdx?'active':''} ${!r.enabled?'disabled':''}" data-idx="${i}">
+      <div class="rc-top"><span class="rc-idx">#${i+1}</span><span class="rc-name">${escapeHtml(r.name)}</span></div>
+      <div class="rc-meta">
+        <span class="rc-pill ${r.enabled?'on':'off'}">${r.enabled?'enabled':'disabled'}</span>
+        <span class="rc-pill">${escapeHtml(r.context)}</span>
+        ${r.stop_on_match ? '<span class="rc-pill stop">stop_on_match</span>' : ''}
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('.rule-card').forEach(card => {
+    card.addEventListener('click', () => {
+      state.ruleIdx = Number(card.dataset.idx);
+      state.collapsedRefs.clear();
+      renderRuleList();
+      renderSelectedRule();
+    });
+  });
+}
+
+function renderSelectedRule(){
+  state.refCounter = 0;
+  const r = RULES[state.ruleIdx];
+  const conditionsHtml = r.conditions.map(renderConditionEntry).join('');
+  const actionsHtml = r.actions.map(renderActionNode).join('');
+  document.getElementById('treeWrap').innerHTML = `
+    <div class="rule-hero">
+      <h2>${escapeHtml(r.name)}</h2>
+      <div class="rc-meta">
+        <span class="rc-pill ${r.enabled?'on':'off'}">${r.enabled?'enabled':'disabled'}</span>
+        <span class="rc-pill">context: ${escapeHtml(r.context)}</span>
+        ${r.stop_on_match ? '<span class="rc-pill stop">stop_on_match</span>' : ''}
+      </div>
+    </div>
+    <div class="tree-title">Conditions <span class="hint">rule.conditions — bare top-level list</span></div>
+    <div class="tree">
+      <div class="tnode gate op-all">
+        <div class="gate-head"><svg class="gicon"><use href="#i-and"/></svg>ALL <span class="gate-label">(implicit — top-level lists resolve as ALL)</span></div>
+        <div class="tree-children">${conditionsHtml}</div>
+      </div>
+    </div>
+    <div class="tree-title">Actions <span class="hint">rule.actions — ordered pipeline</span></div>
+    <div class="tree">${actionsHtml}</div>
+  `;
+  document.getElementById('treeWrap').querySelectorAll('[data-toggle-ref]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const key = e.currentTarget.dataset.toggleRef;
+      if(state.collapsedRefs.has(key)) state.collapsedRefs.delete(key); else state.collapsedRefs.add(key);
+      renderSelectedRule();
+      renderYaml();
+    });
+  });
+  renderYaml();
+}
+
+/* ======================================================================
+   Resolved YAML side panel for the selected rule
+   ====================================================================== */
+function yamlValueLiteral(v){
+  if(Array.isArray(v)) return '[' + v.map(yamlValueLiteral).join(', ') + ']';
+  if(typeof v === 'string') return `"${v}"`;
+  return String(v);
+}
+function resolveVarInPlace(v){
+  if(isVarToken(v)){ const vt = varTokenParts(v); return yamlValueLiteral(vt.resolved) + vt.suffix; }
+  return yamlValueLiteral(v);
+}
+function conditionToYamlLines(n, indent){
+  const pad = '  '.repeat(indent);
+  if(n['$ref']){
+    const resolved = resolveRef(n['$ref']);
+    if(!resolved) return [`${pad}- $ref: ${n['$ref']}  # unresolved`];
+    return [`${pad}- ${Object.keys(resolved)[0]}:  # ${n['$ref']}`, ...resolved[Object.keys(resolved)[0]].flatMap(c => conditionToYamlLines(c, indent+2))];
+  }
+  if(n.field){
+    const c = n.comment ? `  # ${n.comment}` : '';
+    return [`${pad}- field: ${n.field}`, `${pad}  operator: ${n.operator}`, `${pad}  value: ${resolveVarInPlace(n.value)}${c}`];
+  }
+  const op = n.all ? 'all' : n.any ? 'any' : 'none';
+  const c = n.comment ? `  # ${n.comment}` : '';
+  return [`${pad}- ${op}:${c}`, ...n[op].flatMap(child => conditionToYamlLines(child, indent+2))];
+}
+function actionToYamlLines(a, indent){
+  const pad = '  '.repeat(indent);
+  if(a['$ref']){
+    const resolved = resolveRef(a['$ref']);
+    if(!resolved) return [`${pad}- $ref: ${a['$ref']}  # unresolved`];
+    return resolved.flatMap(step => actionToYamlLines(step, indent));
+  }
+  const c = a.comment ? `  # ${a.comment}` : '';
+  const lines = [`${pad}- type: ${a.type}${c}`];
+  if(a.params) lines.push(`${pad}  params: { ${Object.entries(a.params).map(([k,v])=>`${k}: ${yamlValueLiteral(v)}`).join(', ')} }`);
+  return lines;
+}
+function colorizeYamlLine(text){
+  const hashIdx = text.indexOf('#');
+  let code = text, comment = '';
+  if(hashIdx >= 0){ code = text.slice(0,hashIdx); comment = text.slice(hashIdx); }
+  const leadMatch = code.match(/^(\s*(?:-\s*)?)/);
+  const lead = leadMatch ? leadMatch[0] : '';
+  let rest = code.slice(lead.length);
+  let out = escapeHtml(lead);
+  const kvMatch = rest.match(/^([A-Za-z_][\w.]*)\s*:\s*(.*)$/);
+  if(kvMatch){
+    const key = kvMatch[1], val = kvMatch[2];
+    out += `<span class="yk">${escapeHtml(key)}</span><span class="yp">:</span>` + (val ? ' ' + colorizeValue(val) : '');
+  } else if(rest.trim().startsWith('$ref:')){
+    const afterColon = rest.trim().slice(5).trim();
+    out += `<span class="yr">$ref</span><span class="yp">:</span> <span class="yr">${escapeHtml(afterColon)}</span>`;
+  } else {
+    out += colorizeValue(rest);
+  }
+  if(comment) out += `<span class="yc">${escapeHtml(comment)}</span>`;
+  return out;
+}
+function colorizeValue(v){
+  const t = v.trim();
+  if(!t) return '';
+  if(t.startsWith('$ref:')) return `<span class="yr">${escapeHtml(t)}</span>`;
+  if(/^["'].*["']$/.test(t)) return `<span class="ys">${escapeHtml(t)}</span>`;
+  if(/^-?\d+(\.\d+)?$/.test(t)) return `<span class="yn">${escapeHtml(t)}</span>`;
+  if(/^(true|false)$/.test(t)) return `<span class="yn">${escapeHtml(t)}</span>`;
+  if(t.startsWith('[') || t.startsWith('{')) return `<span class="yp">${escapeHtml(t)}</span>`;
+  return escapeHtml(t);
+}
+function renderYaml(){
+  const r = RULES[state.ruleIdx];
+  const lines = [
+    `- name: ${JSON.stringify(r.name)}`,
+    `  enabled: ${r.enabled}`,
+    `  context: ${r.context}`,
+    ...(r.stop_on_match ? [`  stop_on_match: ${r.stop_on_match}`] : []),
+    `  conditions:  # implicit ALL`,
+    ...r.conditions.flatMap(c => conditionToYamlLines(c, 2)),
+    `  actions:`,
+    ...r.actions.flatMap(a => actionToYamlLines(a, 2)),
+  ];
+  document.getElementById('yamlOut').innerHTML = lines.map(l => `<div class="yline">${colorizeYamlLine(l)}</div>`).join('');
+  document.getElementById('yamlFileLabel').textContent = `rules.yml — resolved: #${state.ruleIdx+1}`;
+}
+
+/* ======================================================================
+   Top nav — real relative links to sibling demo files on this branch
+   ====================================================================== */
+const NAV = [
+  { key:'overview', label:'Overview', href:'./demo-dashboard-overview.html' },
+  { key:'jobs',      label:'Jobs',      href:'./demo-dashboard-jobs.html' },
+  { key:'rules',     label:'Rules',     href:null },
+  { key:'metrics',   label:'Metrics',   href:'./demo-metrics-config-dashboard.html' },
+];
+function renderNav(){
+  const el = document.getElementById('navTabs');
+  el.innerHTML = NAV.map(n => n.href
+    ? `<a class="rule-tab" href="${n.href}">${escapeHtml(n.label)}</a>`
+    : `<span class="rule-tab active">${escapeHtml(n.label)}</span>`
+  ).join('');
+}
+
+/* ======================================================================
+   Boot
+   ====================================================================== */
+document.getElementById('btnYamlToggle').addEventListener('click', () => {
+  document.getElementById('workspace').classList.toggle('no-yaml');
+});
+document.getElementById('yamlTab').addEventListener('click', () => {
+  document.getElementById('workspace').classList.remove('no-yaml');
+});
+
+renderNav();
+renderRuleList();
+renderSelectedRule();
+
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,420 @@
+<!--
+  qbt-rules :: Jobs dashboard — concept demo (vanilla HTML/CSS/JS, no frameworks, no
+  external requests). Visually forked from demo-metrics-config-dashboard.html /
+  demo-rule-builder-params.html: same dark-first :root color system, topbar/brand
+  treatment, .panel/.stat-card/.badge components.
+
+  WHAT THIS DEMO IS: a richer evolution of the real, currently-shipped, read-only
+  /dashboard/jobs + /dashboard/jobs/<id> routes (src/qbt_rules/templates/jobs.html +
+  job_detail.html + base.html; handlers in server.py's dashboard_jobs()/
+  dashboard_job_detail(), ~L473-509). Same underlying fields as the real templates —
+  job_id / status / context / hash / created_at / started_at / completed_at / result /
+  error — presented as a denser table with a working client-side status filter +
+  pager, and a detail view (click a row) matching job_detail.html's two-tier error
+  presentation: a short summary line plus an expandable full traceback.
+
+  This is a STATIC concept demo: all job data below is MOCK, but the shapes, field
+  names, status values (pending/processing/completed/failed/cancelled), and context
+  strings are the real ones (context strings like "added"/"hourly"/"weekly"/"none"
+  mirror actual qbt-rules usage). The status filter and pager operate for real against
+  this in-page mock array (no backend, nothing persists) — it's not a fake affordance,
+  just not wired to a live server.
+
+  JUDGMENT CALLS:
+  - List <-> detail is an in-page content swap (renderJobsList() / renderJobDetail()),
+    mirroring the real app's separate /dashboard/jobs vs /dashboard/jobs/<id> routes
+    without actually round-tripping pages, since this is a single static file.
+  - Top nav: "Jobs" is the current page (not a link). Overview/Rules/Metrics are real
+    <a href> links to the sibling concept demos in this same directory
+    (demo-dashboard-overview.html, demo-dashboard-rules.html,
+    demo-metrics-config-dashboard.html) — not inert stubs, per this round's brief.
+  - The failed-job example's traceback uses this project's own bulleted
+    ConnectionError format (see src/qbt_rules/errors.py) ending the traceback chain,
+    matching how _summarize_error() in server.py actually extracts a short summary
+    from a real traceback (last zero-indent exception line(s) to the end of the
+    string) — not a generic/invented error shape.
+  - No cancel/retry actions on pending/processing rows: those would imply a live
+    DELETE /api/jobs/<id> call, out of scope for a static read-only demo.
+
+  NOT part of this demo: no rule visuals, no metrics/YAML panel (those are
+  demo-dashboard-rules.html and demo-metrics-config-dashboard.html's concerns), no
+  live data fetching.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qbt-rules — Jobs dashboard (concept demo)</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --bg-app:#0a0c11;
+    --bg-panel:#12151c;
+    --bg-panel-2:#171b25;
+    --bg-canvas:#0d1017;
+    --border:#262b38;
+    --border-strong:#3a4152;
+    --fg:#e7e9f0;
+    --fg-dim:#aab0c0;
+    --muted:#747c90;
+    --accent:#5b8cff;
+    --accent-soft:rgba(91,140,255,.16);
+    --danger:#f43f5e;
+
+    --c-any:#f59e0b;   --c-any-bg:rgba(245,158,11,.14);
+    --c-action:#22c55e;--c-action-bg:rgba(34,197,94,.12);
+
+    --radius: 10px;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Code", Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      color-scheme: light;
+      --bg-app:#eef0f4; --bg-panel:#ffffff; --bg-panel-2:#f5f6f9; --bg-canvas:#e7e9ef;
+      --border:#dbdfe8; --border-strong:#c2c8d6;
+      --fg:#161a22; --fg-dim:#454d5e; --muted:#6b7280;
+      --accent:#2f5ce0; --accent-soft:rgba(47,92,224,.12);
+      --c-any-bg:rgba(245,158,11,.12); --c-action-bg:rgba(34,197,94,.10);
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg-app); color:var(--fg);
+    font-family:var(--font-ui);
+    -webkit-font-smoothing:antialiased;
+  }
+  button, select{font-family:inherit;}
+  ::selection{background:var(--accent-soft);}
+
+  #app{ display:grid; grid-template-rows:auto 1fr auto; min-height:100vh; min-width:760px; }
+
+  /* ---------- topbar (verbatim from demo-rule-builder-params.html) ---------- */
+  .topbar{
+    display:flex; align-items:center; gap:1rem;
+    padding:.6rem 1rem; border-bottom:1px solid var(--border);
+    background:var(--bg-panel);
+  }
+  .brand{ display:flex; align-items:baseline; gap:.5rem; white-space:nowrap; }
+  .brand b{ font-size:.95rem; letter-spacing:.02em; }
+  .brand span{ font-size:.72rem; color:var(--muted); font-family:var(--font-mono); }
+  .nav-tabs{ display:flex; gap:.4rem; flex:1; min-width:0; }
+  .nav-tab{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2);
+    color:var(--fg-dim); border-radius:999px; padding:.4rem .85rem; font-size:.78rem;
+    cursor:pointer; display:flex; align-items:center; gap:.45rem; text-decoration:none;
+  }
+  .nav-tab:hover{ border-color:var(--border-strong); color:var(--fg); }
+  .nav-tab.active{ background:var(--accent-soft); border-color:var(--accent); color:var(--fg); cursor:default; }
+
+  /* ---------- dashboard content ---------- */
+  .dash{ overflow-y:auto; padding:1.1rem 1.3rem 2rem; background:var(--bg-canvas); }
+  .dash-section{ margin-bottom:1.4rem; }
+  .dash-section h3{
+    margin:0 0 .7rem; font-size:.7rem; text-transform:uppercase; letter-spacing:.09em;
+    color:var(--muted); font-weight:700; display:flex; align-items:center; gap:.5rem;
+  }
+  .dash-section h3 .src{
+    font-family:var(--font-mono); font-size:.6rem; text-transform:none; letter-spacing:0;
+    color:var(--muted); background:var(--bg-panel-2); border:1px solid var(--border);
+    border-radius:5px; padding:.08rem .4rem; font-weight:500;
+  }
+  .panel{
+    background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius);
+    padding:.9rem 1rem;
+  }
+
+  /* ---------- toolbar (filter + pager) ---------- */
+  .jobs-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:.8rem; flex-wrap:wrap; }
+  .filter-row{ display:flex; align-items:center; gap:.5rem; font-size:.76rem; color:var(--fg-dim); }
+  .filter-row select{
+    background:var(--bg-panel-2); border:1px solid var(--border); color:var(--fg);
+    border-radius:7px; padding:.32rem .5rem; font-size:.76rem;
+  }
+  .pager{ display:flex; align-items:center; gap:.7rem; font-size:.75rem; color:var(--muted); }
+  .pager button{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2); color:var(--fg-dim);
+    border-radius:7px; padding:.3rem .65rem; font-size:.74rem; cursor:pointer;
+  }
+  .pager button:hover:not(:disabled){ color:var(--fg); border-color:var(--border-strong); }
+  .pager button:disabled{ opacity:.4; cursor:default; }
+
+  /* ---------- jobs table ---------- */
+  table.jtable{ width:100%; border-collapse:collapse; font-size:.78rem; }
+  table.jtable th, table.jtable td{ text-align:left; padding:.55rem .65rem; border-bottom:1px solid var(--border); }
+  table.jtable th{ color:var(--muted); font-weight:600; font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; }
+  table.jtable tbody tr:last-child td{ border-bottom:none; }
+  table.jtable tbody tr{ cursor:pointer; }
+  table.jtable tbody tr:hover td{ background:var(--accent-soft); }
+  td.mono{ font-family:var(--font-mono); }
+  td.jid{ color:var(--fg-dim); }
+  .empty{ color:var(--muted); text-align:center; padding:2rem 0; font-size:.85rem; }
+
+  .badge{ display:inline-block; padding:.15rem .55rem; border-radius:999px; font-size:.68rem; font-weight:600; font-family:var(--font-mono); }
+  .badge.completed{ background:var(--c-action-bg); color:var(--c-action); }
+  .badge.failed{ background:rgba(244,63,94,.14); color:var(--danger); }
+  .badge.pending, .badge.processing{ background:var(--c-any-bg); color:var(--c-any); }
+  .badge.cancelled{ background:var(--bg-panel-2); color:var(--muted); border:1px solid var(--border); }
+
+  /* ---------- job detail ---------- */
+  .back-link{
+    display:inline-flex; align-items:center; gap:.4rem; font-size:.78rem; color:var(--accent);
+    text-decoration:none; margin-bottom:.9rem; cursor:pointer; background:none; border:none; padding:0;
+    font-family:inherit;
+  }
+  .back-link:hover{ text-decoration:underline; }
+  .kv-table{ width:100%; border-collapse:collapse; font-size:.78rem; }
+  .kv-table th, .kv-table td{ text-align:left; padding:.5rem .65rem; border-bottom:1px solid var(--border); }
+  .kv-table tr:last-child th, .kv-table tr:last-child td{ border-bottom:none; }
+  .kv-table th{ color:var(--muted); font-weight:600; width:180px; white-space:nowrap; }
+  .kv-table td{ font-family:var(--font-mono); color:var(--fg); }
+
+  .err-summary{
+    font-family:var(--font-mono); font-size:.76rem; color:var(--danger); background:rgba(244,63,94,.08);
+    border:1px solid rgba(244,63,94,.3); border-radius:8px; padding:.7rem .8rem; white-space:pre-wrap;
+    line-height:1.5;
+  }
+  details.trace{ margin-top:.6rem; }
+  details.trace summary{ cursor:pointer; font-size:.74rem; color:var(--muted); }
+  details.trace summary:hover{ color:var(--fg-dim); }
+  details.trace pre{
+    margin:.5rem 0 0; font-family:var(--font-mono); font-size:.7rem; color:var(--fg-dim);
+    background:var(--bg-panel-2); border:1px solid var(--border); border-radius:8px;
+    padding:.7rem .8rem; white-space:pre-wrap; line-height:1.55; overflow-x:auto;
+  }
+
+  /* ---------- statusbar (verbatim) ---------- */
+  .statusbar{
+    padding:.4rem 1rem; border-top:1px solid var(--border); background:var(--bg-panel);
+    font-size:.7rem; color:var(--muted); display:flex; justify-content:space-between; gap:1rem;
+  }
+  .statusbar b{ color:var(--fg-dim); }
+
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:6px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand"><b>qbt-rules</b><span>jobs dashboard concept</span></div>
+    <div class="nav-tabs">
+      <a class="nav-tab" href="demo-dashboard-overview.html">Overview</a>
+      <span class="nav-tab active">Jobs</span>
+      <a class="nav-tab" href="demo-dashboard-rules.html">Rules</a>
+      <a class="nav-tab" href="demo-metrics-config-dashboard.html">Metrics</a>
+    </div>
+  </header>
+
+  <div class="dash" id="dash"><!-- rendered by renderJobsList() / renderJobDetail() --></div>
+
+  <footer class="statusbar">
+    <span id="statusLeft">Ready.</span>
+    <span id="statusRight">mock data — concept demo, not connected to a running server</span>
+  </footer>
+
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ======================================================================
+   Mock data — real field shapes from jobs.html / job_detail.html /
+   server.py's dashboard_jobs()/dashboard_job_detail() handlers
+   ====================================================================== */
+const REAL_ERROR_TRACE = `Traceback (most recent call last):
+  File "/opt/venv/lib/python3.11/site-packages/qbt_rules/worker.py", line 142, in _run_job
+    result = engine.execute(context=job['context'], torrent_hash=job['hash'])
+  File "/opt/venv/lib/python3.11/site-packages/qbt_rules/engine.py", line 214, in execute
+    torrents = self.api.get_torrents()
+  File "/opt/venv/lib/python3.11/site-packages/qbt_rules/api.py", line 88, in get_torrents
+    raise ConnectionError(host=self.host, original_error=str(e))
+qbt_rules.errors.ConnectionError: Cannot reach qBittorrent server
+  • Host: http://qbt:8080
+  • Error: HTTPConnectionPool(host='qbt', port=8080): Max retries exceeded (Connection refused)
+  • Fix: Check that qBittorrent is running and the host/port are correct`;
+
+const MOCK_JOBS = [
+  { job_id:'7dace104-4cf2-4190-9ee0-3c63dffd717a', status:'completed', context:'hourly',    hash:null, created_at:'Thu, 17 Sep 2026 14:00:06 GMT', started_at:'Thu, 17 Sep 2026 14:00:06 GMT', completed_at:'Thu, 17 Sep 2026 14:00:07 GMT', result:{ total_torrents:28, torrents_processed:3, rules_matched:3, actions_executed:3, errors:0, dry_run:false } },
+  { job_id:'ebf943b8-922e-4d30-9628-92157fcb1ee6', status:'completed', context:'added',     hash:'a1c9e0f4b7d2536891ffedc0123456789abcdef', created_at:'Thu, 17 Sep 2026 13:08:51 GMT', started_at:'Thu, 17 Sep 2026 13:08:51 GMT', completed_at:'Thu, 17 Sep 2026 13:08:52 GMT', result:{ total_torrents:1, torrents_processed:1, rules_matched:1, actions_executed:2, errors:0, dry_run:false } },
+  { job_id:'521c38c5-8626-4c88-be9f-a785705140da', status:'failed',    context:'hourly',    hash:null, created_at:'Thu, 17 Sep 2026 13:00:06 GMT', started_at:'Thu, 17 Sep 2026 13:00:06 GMT', completed_at:'Thu, 17 Sep 2026 13:00:09 GMT', error:REAL_ERROR_TRACE },
+  { job_id:'74af620a-6781-414e-b6dd-bffea294a44d', status:'completed', context:'added',     hash:'fb9f618f99f72c9f05809bf9a803681f28ef935f', created_at:'Thu, 17 Sep 2026 12:37:46 GMT', started_at:'Thu, 17 Sep 2026 12:37:47 GMT', completed_at:'Thu, 17 Sep 2026 12:37:47 GMT', result:{ total_torrents:1, torrents_processed:1, rules_matched:1, actions_executed:1, errors:0, dry_run:false } },
+  { job_id:'1ab44f15-974c-4ae2-a70e-18f983418322', status:'completed', context:'added',     hash:null, created_at:'Thu, 17 Sep 2026 12:22:17 GMT', started_at:'Thu, 17 Sep 2026 12:22:17 GMT', completed_at:'Thu, 17 Sep 2026 12:22:18 GMT', result:{ total_torrents:1, torrents_processed:0, rules_matched:0, actions_executed:0, errors:0, dry_run:false } },
+  { job_id:'4eb90267-65f3-4d94-9a11-eddae95054cf', status:'completed', context:'weekly',    hash:'0000000000000000000000000000000000000000', created_at:'Thu, 17 Sep 2026 11:43:36 GMT', started_at:'Thu, 17 Sep 2026 11:43:36 GMT', completed_at:'Thu, 17 Sep 2026 11:43:38 GMT', result:{ total_torrents:1, torrents_processed:0, rules_matched:0, actions_executed:0, errors:0, dry_run:true } },
+  { job_id:'b8d5d50f-59ea-4748-8cc3-39433b6dd1f0', status:'completed', context:'cli-test',  hash:null, created_at:'Thu, 17 Sep 2026 11:43:11 GMT', started_at:'Thu, 17 Sep 2026 11:43:11 GMT', completed_at:'Thu, 17 Sep 2026 11:43:14 GMT', result:{ total_torrents:14, torrents_processed:0, rules_matched:0, actions_executed:0, errors:0, dry_run:true } },
+  { job_id:'c4854016-7f42-428f-a445-ae8349cd7228', status:'completed', context:null,        hash:null, created_at:'Thu, 17 Sep 2026 11:22:03 GMT', started_at:'Thu, 17 Sep 2026 11:22:03 GMT', completed_at:'Thu, 17 Sep 2026 11:22:03 GMT', result:{ total_torrents:14, torrents_processed:0, rules_matched:0, actions_executed:0, errors:0, dry_run:false } },
+  { job_id:'7c7d4d21-8c54-45b9-bbea-8942b02c19c7', status:'completed', context:null,        hash:null, created_at:'Thu, 17 Sep 2026 11:21:48 GMT', started_at:'Thu, 17 Sep 2026 11:21:48 GMT', completed_at:'Thu, 17 Sep 2026 11:21:48 GMT', result:{ total_torrents:27, torrents_processed:13, rules_matched:13, actions_executed:13, errors:0, dry_run:false } },
+  { job_id:'e286f927-214f-4c3f-8f98-d36e67a495bd', status:'completed', context:'added',     hash:null, created_at:'Thu, 17 Sep 2026 11:20:40 GMT', started_at:'Thu, 17 Sep 2026 11:20:40 GMT', completed_at:'Thu, 17 Sep 2026 11:20:40 GMT', result:{ total_torrents:1, torrents_processed:1, rules_matched:1, actions_executed:1, errors:0, dry_run:false } },
+  { job_id:'a3f8b291-6d4c-4e2a-9b1f-0c8e7d5a4b2c', status:'processing', context:'added',    hash:'9988776655443322110099887766554433221100', created_at:'Thu, 17 Sep 2026 16:05:02 GMT', started_at:'Thu, 17 Sep 2026 16:05:02 GMT', completed_at:null },
+  { job_id:'c1d2e3f4-5a6b-4c7d-8e9f-0a1b2c3d4e5f', status:'pending',   context:'nightly',   hash:null, created_at:'Thu, 17 Sep 2026 16:05:10 GMT', started_at:null, completed_at:null },
+  { job_id:'620ba0cb-2d19-4d19-bb71-3568ed3b434e', status:'completed', context:'added',     hash:null, created_at:'Wed, 16 Sep 2026 14:24:47 GMT', started_at:'Wed, 16 Sep 2026 14:24:47 GMT', completed_at:'Wed, 16 Sep 2026 14:24:48 GMT', result:{ total_torrents:1, torrents_processed:1, rules_matched:1, actions_executed:1, errors:0, dry_run:false } },
+  { job_id:'c33c5dd9-6b67-433d-b7cc-e2382242c78a', status:'cancelled', context:'weekly',    hash:null, created_at:'Wed, 16 Sep 2026 14:24:45 GMT', started_at:null, completed_at:null },
+  { job_id:'98979776-4df3-4356-ac96-056749bbc65a', status:'completed', context:'finished',  hash:null, created_at:'Wed, 16 Sep 2026 13:22:34 GMT', started_at:'Wed, 16 Sep 2026 13:22:34 GMT', completed_at:'Wed, 16 Sep 2026 13:22:35 GMT', result:{ total_torrents:9, torrents_processed:2, rules_matched:2, actions_executed:2, errors:0, dry_run:false } },
+  { job_id:'14daa988-4cd4-453b-924b-d3af86339fcf', status:'completed', context:'added',     hash:null, created_at:'Wed, 16 Sep 2026 13:07:12 GMT', started_at:'Wed, 16 Sep 2026 13:07:12 GMT', completed_at:'Wed, 16 Sep 2026 13:07:12 GMT', result:{ total_torrents:1, torrents_processed:1, rules_matched:1, actions_executed:1, errors:0, dry_run:false } },
+];
+
+const PAGE_SIZE = 8;
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* Same summary extraction rule as server.py's _summarize_error(): the final
+   zero-indent "SomeError: message" line onward, falling back to the last
+   non-empty line if it doesn't look like a traceback. */
+function summarizeError(trace){
+  const lines = trace.split('\n');
+  let lastZeroIndent = -1;
+  lines.forEach((line, i) => { if(/^\S/.test(line) && line.trim()) lastZeroIndent = i; });
+  if(lastZeroIndent >= 0){
+    return lines.slice(lastZeroIndent).join('\n').trim();
+  }
+  const nonEmpty = lines.filter(l => l.trim());
+  return nonEmpty[nonEmpty.length - 1] || trace;
+}
+
+/* ======================================================================
+   State: current view ('list' | 'detail'), filter, page
+   ====================================================================== */
+let state = { view:'list', statusFilter:'', page:0, selectedId:null };
+
+function filteredJobs(){
+  return state.statusFilter ? MOCK_JOBS.filter(j => j.status === state.statusFilter) : MOCK_JOBS;
+}
+
+/* ======================================================================
+   List view
+   ====================================================================== */
+function renderJobsList(){
+  const all = filteredJobs();
+  const total = all.length;
+  const start = state.page * PAGE_SIZE;
+  const pageJobs = all.slice(start, start + PAGE_SIZE);
+
+  const rows = pageJobs.length ? pageJobs.map(j => `
+    <tr data-id="${escapeHtml(j.job_id)}">
+      <td class="mono jid">${escapeHtml(j.job_id.slice(0,8))}&hellip;</td>
+      <td><span class="badge ${j.status}">${j.status}</span></td>
+      <td>${escapeHtml(j.context || 'none')}</td>
+      <td class="mono">${escapeHtml(j.created_at)}</td>
+    </tr>`).join('') : '';
+
+  document.getElementById('dash').innerHTML = `
+    <div class="dash-section">
+      <h3>Jobs <span class="src">/dashboard/jobs</span></h3>
+      <div class="panel">
+        <div class="jobs-toolbar">
+          <div class="filter-row">
+            <label for="statusFilter">Status</label>
+            <select id="statusFilter">
+              <option value="">All</option>
+              <option value="pending">pending</option>
+              <option value="processing">processing</option>
+              <option value="completed">completed</option>
+              <option value="failed">failed</option>
+              <option value="cancelled">cancelled</option>
+            </select>
+          </div>
+          <div class="pager">
+            <span>Showing ${pageJobs.length ? start+1 : 0}&ndash;${start+pageJobs.length} of ${total}</span>
+            <button id="btnPrev" ${state.page===0?'disabled':''}>&larr; Previous</button>
+            <button id="btnNext" ${start+PAGE_SIZE>=total?'disabled':''}>Next &rarr;</button>
+          </div>
+        </div>
+        ${pageJobs.length ? `
+        <table class="jtable">
+          <thead><tr><th>Job ID</th><th>Status</th><th>Context</th><th>Created</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>` : `<div class="empty">No jobs found${state.statusFilter ? ` with status "${escapeHtml(state.statusFilter)}"` : ''}.</div>`}
+      </div>
+    </div>`;
+
+  document.getElementById('statusFilter').value = state.statusFilter;
+  document.getElementById('statusFilter').addEventListener('change', e => {
+    state.statusFilter = e.target.value; state.page = 0; renderJobsList();
+  });
+  const prevBtn = document.getElementById('btnPrev');
+  const nextBtn = document.getElementById('btnNext');
+  if(prevBtn) prevBtn.addEventListener('click', () => { state.page = Math.max(0, state.page-1); renderJobsList(); });
+  if(nextBtn) nextBtn.addEventListener('click', () => { state.page += 1; renderJobsList(); });
+  document.querySelectorAll('table.jtable tbody tr').forEach(tr => {
+    tr.addEventListener('click', () => { state.view='detail'; state.selectedId = tr.dataset.id; renderCurrentView(); });
+  });
+}
+
+/* ======================================================================
+   Detail view — mirrors job_detail.html's Status/Context/Hash/Created/
+   Started/Completed table + conditional Result / Error cards
+   ====================================================================== */
+function renderJobDetail(){
+  const job = MOCK_JOBS.find(j => j.job_id === state.selectedId);
+  if(!job){
+    document.getElementById('dash').innerHTML = `<div class="dash-section"><div class="empty">Job not found: ${escapeHtml(state.selectedId||'')}</div></div>`;
+    return;
+  }
+
+  const resultRows = job.result ? Object.entries(job.result).map(([k,v]) =>
+    `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(String(v))}</td></tr>`).join('') : '';
+
+  let errorBlock = '';
+  if(job.error){
+    const summary = summarizeError(job.error);
+    const hasMore = summary !== job.error.trim();
+    errorBlock = `
+      <div class="dash-section">
+        <h3>Error</h3>
+        <div class="panel">
+          <div class="err-summary">${escapeHtml(summary)}</div>
+          ${hasMore ? `<details class="trace"><summary>Show full traceback</summary><pre>${escapeHtml(job.error)}</pre></details>` : ''}
+        </div>
+      </div>`;
+  }
+
+  document.getElementById('dash').innerHTML = `
+    <button class="back-link" id="btnBack">&larr; Back to jobs</button>
+    <div class="dash-section">
+      <h3>Job <span class="src">${escapeHtml(job.job_id)}</span></h3>
+      <div class="panel">
+        <table class="kv-table">
+          <tr><th>Status</th><td><span class="badge ${job.status}">${job.status}</span></td></tr>
+          <tr><th>Context</th><td>${escapeHtml(job.context || 'none')}</td></tr>
+          <tr><th>Hash</th><td>${escapeHtml(job.hash || 'all torrents')}</td></tr>
+          <tr><th>Created</th><td>${escapeHtml(job.created_at)}</td></tr>
+          <tr><th>Started</th><td>${escapeHtml(job.started_at || 'not started')}</td></tr>
+          <tr><th>Completed</th><td>${escapeHtml(job.completed_at || 'not completed')}</td></tr>
+        </table>
+      </div>
+    </div>
+    ${job.result ? `
+    <div class="dash-section">
+      <h3>Result</h3>
+      <div class="panel"><table class="kv-table">${resultRows}</table></div>
+    </div>` : ''}
+    ${errorBlock}`;
+
+  document.getElementById('btnBack').addEventListener('click', () => { state.view='list'; renderCurrentView(); });
+}
+
+function renderCurrentView(){
+  if(state.view === 'detail') renderJobDetail();
+  else renderJobsList();
+}
+
+/* ======================================================================
+   Init
+   ====================================================================== */
+renderCurrentView();
+const completedCount = MOCK_JOBS.filter(j=>j.status==='completed').length;
+document.getElementById('statusLeft').textContent =
+  `${MOCK_JOBS.length} mock jobs · ${completedCount} completed · ${MOCK_JOBS.filter(j=>j.status==='failed').length} failed`;
+
+})();
+</script>
+</body>
+</html>

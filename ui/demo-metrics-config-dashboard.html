@@ -46,10 +46,12 @@
   - Built as ONE new page pairing "metrics dashboard" + "YAML panel for rules/config",
     per the literal ask, rather than rebuilding the shipped dashboard's Overview/Jobs/
     Rules pages wholesale. A top nav row (Overview / Jobs / Rules / Metrics) is shown
-    for context — only "Metrics" is live in this demo; the other three are inert stubs
-    that surface a one-line status message pointing at the real, already-shipped
-    /dashboard equivalents, so this reads as an addition to the existing dashboard
-    rather than a competing redesign of parts that already work.
+    for context, so this reads as an addition to the existing dashboard rather than a
+    competing redesign of parts that already work. Overview/Jobs/Rules originally
+    linked to the real, already-shipped /dashboard equivalents as inert in-page stubs
+    (this file predated its siblings); now that demo-dashboard-overview.html,
+    demo-dashboard-jobs.html, and demo-dashboard-rules.html exist as real concept
+    pages, the nav links to those instead.
   - "Actions executed" and "HTTP requests" are per-label Prometheus counters with many
     possible label combinations in production; shown here as a fixed, representative
     handful of rows (top action types / top endpoints) rather than an exhaustive or
@@ -148,7 +150,6 @@
   .rule-tab .ctx{ font-family:var(--font-mono); font-size:.68rem; color:var(--muted); }
   .rule-tab:hover{ border-color:var(--border-strong); color:var(--fg); }
   .rule-tab.active{ background:var(--accent-soft); border-color:var(--accent); color:var(--fg); }
-  .rule-tab.stub{ opacity:.55; }
   .topbar-actions{ display:flex; gap:.4rem; align-items:center; }
   .icon-btn{
     appearance:none; border:1px solid var(--border); background:var(--bg-panel-2); color:var(--fg-dim);
@@ -232,11 +233,6 @@
   .badge{ display:inline-block; padding:.15rem .55rem; border-radius:999px; font-size:.68rem; font-weight:600; font-family:var(--font-mono); }
   .badge.running{ background:var(--c-action-bg); color:var(--c-action); }
   .badge.stopped{ background:rgba(244,63,94,.14); color:var(--danger); }
-
-  .stub-msg{
-    font-size:.78rem; color:var(--muted); background:var(--bg-panel); border:1px dashed var(--border-strong);
-    border-radius:var(--radius); padding:1.2rem; text-align:center; margin-top:.4rem;
-  }
 
   /* ---------- yaml panel (verbatim classes from demo-rule-builder-params.html) ---------- */
   .yaml-panel{ display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border); background:var(--bg-panel); overflow:hidden; }
@@ -505,44 +501,28 @@ function renderDash(){
     renderMetricNamesSection();
 }
 
-function renderStub(label, real){
-  document.getElementById('dash').innerHTML = `
-    <div class="dash-section">
-      <div class="stub-msg">
-        "${label}" isn't part of this concept demo — it's the real, already-shipped
-        <span style="font-family:var(--font-mono)">${real}</span> page. This demo only
-        adds the new "Metrics" view + the docked rules.yml / config.yml panel.
-      </div>
-    </div>`;
-}
-
 /* ======================================================================
-   Top nav (Overview / Jobs / Rules are stubs pointing at the real shipped
-   dashboard; Metrics is the live section this demo actually builds)
+   Top nav — real cross-links to the sibling concept pages built alongside
+   this one (Overview/Jobs/Rules), same convention those pages use to link
+   back here as "Metrics". Metrics is this page itself (no navigation).
    ====================================================================== */
 const NAV = [
-  { key:'overview', label:'Overview', real:'/dashboard' },
-  { key:'jobs',      label:'Jobs',      real:'/dashboard/jobs' },
-  { key:'rules',     label:'Rules',     real:'/dashboard/rules' },
-  { key:'metrics',   label:'Metrics',   real:null },
+  { key:'overview', label:'Overview', href:'./demo-dashboard-overview.html', route:'/dashboard' },
+  { key:'jobs',      label:'Jobs',      href:'./demo-dashboard-jobs.html',     route:'/dashboard/jobs' },
+  { key:'rules',     label:'Rules',     href:'./demo-dashboard-rules.html',   route:'/dashboard/rules' },
+  { key:'metrics',   label:'Metrics',   href:null,                            route:'/metrics' },
 ];
-let activeNav = 'metrics';
+const activeNav = 'metrics';
 
 function renderNav(){
   const el = document.getElementById('navTabs');
-  el.innerHTML = '';
-  NAV.forEach(n => {
-    const b = document.createElement('button');
-    b.className = 'rule-tab' + (n.key===activeNav ? ' active':'') + (n.real ? ' stub':'');
-    b.innerHTML = `${escapeHtml(n.label)}` + (n.real ? ` <span class="ctx">${n.real}</span>` : '');
-    b.addEventListener('click', () => {
-      activeNav = n.key;
-      renderNav();
-      if(n.key === 'metrics') renderDash();
-      else renderStub(n.label, n.real);
-    });
-    el.appendChild(b);
-  });
+  el.innerHTML = NAV.map(n => {
+    const cls = 'rule-tab' + (n.key===activeNav ? ' active':'');
+    const inner = `${escapeHtml(n.label)} <span class="ctx">${n.route}</span>`;
+    return n.href
+      ? `<a class="${cls}" href="${n.href}">${inner}</a>`
+      : `<span class="${cls}">${inner}</span>`;
+  }).join('');
 }
 
 /* ======================================================================

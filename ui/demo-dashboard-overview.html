@@ -1,0 +1,392 @@
+<!--
+  qbt-rules :: Dashboard Overview — concept demo (vanilla HTML/CSS/JS, no frameworks,
+  no external requests). Visually forked from demo-rule-builder-params.html via
+  demo-metrics-config-dashboard.html: same dark-first color system, topbar/brand
+  treatment, .dash/.dash-section/.stat-card/.stack-bar component set copied verbatim
+  from that sibling file rather than reinvented.
+
+  WHAT THIS DEMO IS: a richer evolution of the real, currently-shipped top-level
+  /dashboard route (src/qbt_rules/templates/dashboard.html + base.html, served by
+  dashboard_overview() in server.py, ~L456-471). Real data shape, read from source:
+    queue_backend        -> queue.__class__.__name__
+    queue_stats           -> queue.get_stats(): total_jobs/pending/processing/
+                             completed/failed/cancelled/average_execution_time
+    worker_status          -> worker.get_status(): running/last_job_completed
+    version                -> qbt_rules.__version__
+
+  The shipped page is three plain stat-grid cards (Status / Jobs by status /
+  Performance) plus a single "View all jobs ->" link. This demo keeps every one of
+  those real fields but presents them as a landing page: a status hero row, the
+  jobs-by-status stacked bar already established in demo-metrics-config-dashboard.html,
+  a Performance card, AND two new preview sections a landing page would plausibly
+  want — "Recent activity" (a short preview of the same job list the real
+  /dashboard/jobs route paginates, Job ID/Status/Context/Created, matching
+  jobs.html's real columns) and "Rules summary" (count + first few rule names/enabled
+  state, matching rules.html's real columns) — each with a "View all ->" link into
+  its sibling concept page. Numbers are MOCK but plausible, formatted the way the
+  real API formats them (average_execution_time as "0.87s", timestamps ISO-8601).
+
+  NAVIGATION: the top nav (Overview/Jobs/Rules/Metrics) is real cross-linking between
+  sibling files in this same ui/ directory — demo-dashboard-jobs.html,
+  demo-dashboard-rules.html, demo-metrics-config-dashboard.html — not JS-driven
+  in-page stubs, since (per this branch's plan) all three now exist as real concept
+  pages. "Overview" (this page) is marked active.
+
+  JUDGMENT CALLS:
+  - demo-metrics-config-dashboard.html's own top nav still renders Overview/Jobs/Rules
+    as inert in-page stubs (it predates these sibling files) — left untouched here
+    since editing another agent's file is out of scope for this directive; worth the
+    parent reconciling those stub links to real hrefs in a follow-up pass now that all
+    four pages exist.
+  - "Recent activity" and "Rules summary" are additions beyond the shipped page's
+    literal fields, justified because a *landing* page pointing nowhere but a single
+    "view all jobs" text link undersells what a dashboard home should surface at a
+    glance; both reuse real column shapes from the real jobs.html/rules.html templates,
+    not invented fields.
+  - Read-only throughout, no live fetch, no edit affordances, matching every other
+    demo in this family.
+
+  NOT part of this demo: no node canvas, no rule editing, no metrics/YAML panel (that's
+  demo-metrics-config-dashboard.html's job) — this page is the landing/overview only.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qbt-rules — Dashboard Overview (concept demo)</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --bg-app:#0a0c11;
+    --bg-panel:#12151c;
+    --bg-panel-2:#171b25;
+    --bg-canvas:#0d1017;
+    --dot: rgba(255,255,255,.08);
+    --border:#262b38;
+    --border-strong:#3a4152;
+    --fg:#e7e9f0;
+    --fg-dim:#aab0c0;
+    --muted:#747c90;
+    --accent:#5b8cff;
+    --accent-soft:rgba(91,140,255,.16);
+    --danger:#f43f5e;
+
+    --c-all:#8b5cf6;   --c-all-bg:rgba(139,92,246,.14);
+    --c-any:#f59e0b;   --c-any-bg:rgba(245,158,11,.14);
+    --c-none:#f43f5e;  --c-none-bg:rgba(244,63,94,.14);
+    --c-leaf:#3b82f6;  --c-leaf-bg:rgba(59,130,246,.12);
+    --c-ref:#2dd4bf;   --c-ref-bg:rgba(45,212,191,.08);
+    --c-action:#22c55e;--c-action-bg:rgba(34,197,94,.12);
+
+    --radius: 10px;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Code", Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      color-scheme: light;
+      --bg-app:#eef0f4; --bg-panel:#ffffff; --bg-panel-2:#f5f6f9; --bg-canvas:#e7e9ef;
+      --dot: rgba(20,25,40,.10);
+      --border:#dbdfe8; --border-strong:#c2c8d6;
+      --fg:#161a22; --fg-dim:#454d5e; --muted:#6b7280;
+      --accent:#2f5ce0; --accent-soft:rgba(47,92,224,.12);
+      --c-all-bg:rgba(139,92,246,.12); --c-any-bg:rgba(245,158,11,.12);
+      --c-none-bg:rgba(244,63,94,.12); --c-leaf-bg:rgba(59,130,246,.10);
+      --c-ref-bg:rgba(45,212,191,.10); --c-action-bg:rgba(34,197,94,.10);
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg-app); color:var(--fg);
+    font-family:var(--font-ui);
+    -webkit-font-smoothing:antialiased;
+  }
+  a{ color:inherit; text-decoration:none; }
+  ::selection{background:var(--accent-soft);}
+
+  #app{ display:grid; grid-template-rows:auto 1fr auto; min-height:100vh; }
+
+  /* ---------- topbar (verbatim from demo-rule-builder-params.html) ---------- */
+  .topbar{
+    display:flex; align-items:center; gap:1rem;
+    padding:.6rem 1rem; border-bottom:1px solid var(--border);
+    background:var(--bg-panel);
+  }
+  .brand{ display:flex; align-items:baseline; gap:.5rem; white-space:nowrap; }
+  .brand b{ font-size:.95rem; letter-spacing:.02em; }
+  .brand span{ font-size:.72rem; color:var(--muted); font-family:var(--font-mono); }
+  .nav-tabs{ display:flex; gap:.4rem; flex:1; min-width:0; }
+  .rule-tab{
+    appearance:none; border:1px solid var(--border); background:var(--bg-panel-2);
+    color:var(--fg-dim); border-radius:999px; padding:.4rem .85rem; font-size:.78rem;
+    cursor:pointer; display:flex; align-items:center; gap:.45rem; max-width:340px;
+  }
+  .rule-tab .ctx{ font-family:var(--font-mono); font-size:.68rem; color:var(--muted); }
+  .rule-tab:hover{ border-color:var(--border-strong); color:var(--fg); }
+  .rule-tab.active{ background:var(--accent-soft); border-color:var(--accent); color:var(--fg); }
+  .topbar-actions{ display:flex; gap:.4rem; align-items:center; font-size:.72rem; color:var(--muted); font-family:var(--font-mono); }
+
+  /* ---------- dashboard content ---------- */
+  .dash{ overflow-y:auto; padding:1.3rem 1.5rem 2rem; background:var(--bg-canvas); max-width:1180px; margin:0 auto; width:100%; }
+  .dash-section{ margin-bottom:1.7rem; }
+  .dash-section h3{
+    margin:0 0 .7rem; font-size:.7rem; text-transform:uppercase; letter-spacing:.09em;
+    color:var(--muted); font-weight:700; display:flex; align-items:center; gap:.5rem;
+  }
+  .dash-section h3 .src{
+    font-family:var(--font-mono); font-size:.6rem; text-transform:none; letter-spacing:0;
+    color:var(--muted); background:var(--bg-panel-2); border:1px solid var(--border);
+    border-radius:5px; padding:.08rem .4rem; font-weight:500;
+  }
+  .dash-section .view-all{
+    margin-left:auto; font-family:var(--font-mono); font-size:.68rem; color:var(--accent);
+    text-transform:none; letter-spacing:0; font-weight:600;
+  }
+  .dash-section .view-all:hover{ text-decoration:underline; }
+
+  .panel{
+    background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius);
+    padding:.9rem 1rem;
+  }
+
+  .stat-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(140px,1fr)); gap:.7rem; }
+  .stat-card{
+    background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius);
+    padding:.8rem .9rem; display:flex; flex-direction:column; gap:.15rem;
+  }
+  .stat-card .val{ font-size:1.6rem; font-weight:700; font-family:var(--font-mono); line-height:1.15; }
+  .stat-card .lbl{ font-size:.7rem; color:var(--muted); }
+  .stat-card.ok .val{ color:var(--c-action); }
+  .stat-card.err .val{ color:var(--danger); }
+  .stat-card.accent .val{ color:var(--accent); }
+
+  .badge{ display:inline-block; padding:.15rem .55rem; border-radius:999px; font-size:.68rem; font-weight:600; font-family:var(--font-mono); }
+  .badge.running{ background:var(--c-action-bg); color:var(--c-action); }
+  .badge.stopped{ background:rgba(244,63,94,.14); color:var(--danger); }
+
+  /* jobs-by-status stacked bar (verbatim from demo-metrics-config-dashboard.html) */
+  .stack-bar{ display:flex; height:22px; border-radius:6px; overflow:hidden; border:1px solid var(--border); }
+  .stack-seg{ height:100%; }
+  .stack-legend{ display:flex; flex-wrap:wrap; gap:.6rem 1rem; margin-top:.6rem; }
+  .stack-legend-item{ display:flex; align-items:center; gap:.4rem; font-size:.7rem; color:var(--fg-dim); }
+  .stack-legend-dot{ width:8px; height:8px; border-radius:50%; flex:none; }
+  .stack-legend-item b{ color:var(--fg); font-family:var(--font-mono); }
+
+  /* recent jobs preview table */
+  table.mtable{ width:100%; border-collapse:collapse; font-size:.76rem; }
+  table.mtable th, table.mtable td{ text-align:left; padding:.45rem .6rem; border-bottom:1px solid var(--border); }
+  table.mtable th{ color:var(--muted); font-weight:600; font-size:.64rem; text-transform:uppercase; letter-spacing:.05em; }
+  table.mtable tbody tr:last-child td{ border-bottom:none; }
+  table.mtable tbody tr:hover td{ background:var(--bg-panel-2); }
+  table.mtable td.mono{ font-family:var(--font-mono); }
+  .job-badge{ display:inline-block; padding:.12rem .5rem; border-radius:999px; font-size:.65rem; font-weight:600; font-family:var(--font-mono); }
+  .job-badge.completed{ background:var(--c-action-bg); color:var(--c-action); }
+  .job-badge.pending, .job-badge.processing{ background:var(--c-any-bg); color:var(--c-any); }
+  .job-badge.failed{ background:rgba(244,63,94,.14); color:var(--danger); }
+  .job-badge.cancelled{ background:var(--bg-panel-2); color:var(--muted); border:1px solid var(--border); }
+
+  /* rules summary mini list */
+  .rule-row-list{ display:flex; flex-direction:column; }
+  .rule-row{
+    display:grid; grid-template-columns:28px 1fr auto auto; align-items:center; gap:.7rem;
+    padding:.5rem .2rem; border-bottom:1px solid var(--border); font-size:.78rem;
+  }
+  .rule-row:last-child{ border-bottom:none; }
+  .rule-row .idx{ font-family:var(--font-mono); color:var(--muted); font-size:.72rem; }
+  .rule-row .name{ color:var(--fg); }
+  .rule-row .ctx-tag{
+    font-family:var(--font-mono); font-size:.65rem; color:var(--muted); background:var(--bg-panel-2);
+    border:1px solid var(--border); border-radius:5px; padding:.08rem .4rem;
+  }
+  .rule-row .enabled-dot{ width:8px; height:8px; border-radius:50%; background:var(--c-action); }
+  .rule-row .enabled-dot.off{ background:var(--muted); }
+  .rules-total-note{ font-size:.7rem; color:var(--muted); margin-top:.6rem; }
+
+  /* ---------- statusbar (verbatim) ---------- */
+  .statusbar{
+    padding:.4rem 1rem; border-top:1px solid var(--border); background:var(--bg-panel);
+    font-size:.7rem; color:var(--muted); display:flex; justify-content:space-between; gap:1rem;
+  }
+  .statusbar b{ color:var(--fg-dim); }
+
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:6px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand"><b>qbt-rules</b><span>dashboard overview concept</span></div>
+    <div class="nav-tabs">
+      <a class="rule-tab active" href="demo-dashboard-overview.html">Overview <span class="ctx">/dashboard</span></a>
+      <a class="rule-tab" href="demo-dashboard-jobs.html">Jobs <span class="ctx">/dashboard/jobs</span></a>
+      <a class="rule-tab" href="demo-dashboard-rules.html">Rules <span class="ctx">/dashboard/rules</span></a>
+      <a class="rule-tab" href="demo-metrics-config-dashboard.html">Metrics <span class="ctx">/metrics</span></a>
+    </div>
+    <div class="topbar-actions" id="versionTag"></div>
+  </header>
+
+  <div class="dash" id="dash"><!-- rendered by renderDash() --></div>
+
+  <footer class="statusbar">
+    <span id="statusLeft">Ready.</span>
+    <span id="statusRight">mock data — concept demo, not connected to a running server</span>
+  </footer>
+
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ======================================================================
+   Mock data — shapes match the REAL dashboard_overview()/queue.get_stats()/
+   worker.get_status() output (server.py ~L456-471)
+   ====================================================================== */
+const QUEUE_BACKEND = 'SQLiteQueue';
+const VERSION = '0.6.1';
+const QUEUE_STATS = {
+  total_jobs: 1842, pending: 2, processing: 1, completed: 1791, failed: 39, cancelled: 9,
+  average_execution_time: '0.87s',
+};
+const WORKER_STATUS = { running: true, last_job_completed: '2026-09-17T15:42:11+00:00' };
+
+// Preview of /dashboard/jobs' real columns (Job ID/Status/Context/Created) --
+// matches jobs.html exactly, job_id truncated to 8 chars the same way that
+// template does (job.job_id[:8])
+const RECENT_JOBS = [
+  { job_id: '74af620a-6781-414e-b6dd-bffea294a44d', status: 'completed', context: 'added',   created_at: '2026-09-17T15:42:11+00:00' },
+  { job_id: '1ab44f15-974c-4ae2-a70e-18f983418322', status: 'completed', context: 'added',   created_at: '2026-09-17T15:22:17+00:00' },
+  { job_id: '4eb90267-65f3-4d94-9a11-eddae95054cf', status: 'completed', context: 'weekly',  created_at: '2026-09-17T14:43:36+00:00' },
+  { job_id: 'e3a1c0d2-14aa-4b1e-9c3f-2b6a8d4f7e91', status: 'failed',    context: 'added',   created_at: '2026-09-17T14:18:02+00:00' },
+  { job_id: '9c7d2f10-5b3e-4a8c-8e11-6f0a3d2b9c44', status: 'pending',   context: 'weekly',  created_at: '2026-09-17T14:00:06+00:00' },
+];
+
+// Preview of /dashboard/rules' real columns (#/Name/Enabled/Context/stop_on_match),
+// sourced from the same advanced-rules-example.yml every other ui/demo-*.html uses
+const RULES_PREVIEW = [
+  { name: 'Force seed private tracker torrents under ratio', enabled: true,  context: 'download-finished' },
+  { name: 'Cleanup well-seeded private tracker torrents',     enabled: true,  context: 'weekly-cleanup' },
+  { name: 'Cleanup public tracker torrents after medium term',enabled: true,  context: 'weekly-cleanup' },
+  { name: 'Auto-categorize and prioritize HD content',        enabled: false, context: 'torrent-imported' },
+];
+const RULES_TOTAL = 10; // advanced-rules-example.yml has 10 rules total
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtNum(n){ return n.toLocaleString('en-US'); }
+function fmtDate(iso){ return new Date(iso).toLocaleString(); }
+
+const STATUS_COLOR = {
+  completed: 'var(--c-action)', pending: 'var(--c-any)', processing: 'var(--accent)',
+  failed: 'var(--danger)', cancelled: 'var(--muted)',
+};
+
+/* ======================================================================
+   Section renderers
+   ====================================================================== */
+function renderStatusSection(){
+  return `
+    <div class="dash-section">
+      <h3>Status <span class="src">/api/stats · dashboard_overview()</span></h3>
+      <div class="stat-grid">
+        <div class="stat-card ${WORKER_STATUS.running?'ok':'err'}">
+          <div class="val"><span class="badge ${WORKER_STATUS.running?'running':'stopped'}">${WORKER_STATUS.running?'running':'stopped'}</span></div>
+          <div class="lbl">Worker</div>
+        </div>
+        <div class="stat-card accent"><div class="val">${QUEUE_BACKEND}</div><div class="lbl">Queue backend</div></div>
+        <div class="stat-card"><div class="val">${fmtNum(QUEUE_STATS.total_jobs)}</div><div class="lbl">Total jobs</div></div>
+        <div class="stat-card"><div class="val">v${VERSION}</div><div class="lbl">Version</div></div>
+      </div>
+    </div>`;
+}
+
+function renderJobsByStatusSection(){
+  const order = ['completed','pending','processing','failed','cancelled'];
+  const total = QUEUE_STATS.total_jobs || 1;
+  const segs = order.map(k => `<div class="stack-seg" style="width:${(QUEUE_STATS[k]/total*100).toFixed(2)}%; background:${STATUS_COLOR[k]}" title="${k}: ${QUEUE_STATS[k]}"></div>`).join('');
+  const legend = order.map(k => `<div class="stack-legend-item"><span class="stack-legend-dot" style="background:${STATUS_COLOR[k]}"></span>${k} <b>${fmtNum(QUEUE_STATS[k])}</b></div>`).join('');
+  return `
+    <div class="dash-section">
+      <h3>Jobs by status <span class="src">queue.get_stats()</span></h3>
+      <div class="panel">
+        <div class="stack-bar">${segs}</div>
+        <div class="stack-legend">${legend}</div>
+      </div>
+    </div>`;
+}
+
+function renderPerformanceSection(){
+  return `
+    <div class="dash-section">
+      <h3>Performance <span class="src">queue.get_stats() · worker.get_status()</span></h3>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="val">${QUEUE_STATS.average_execution_time}</div><div class="lbl">Average execution time</div></div>
+        <div class="stat-card"><div class="val" style="font-size:1.05rem">${fmtDate(WORKER_STATUS.last_job_completed)}</div><div class="lbl">Last job completed</div></div>
+      </div>
+    </div>`;
+}
+
+function renderRecentActivitySection(){
+  const rows = RECENT_JOBS.map(j => `<tr>
+      <td class="mono">${j.job_id.slice(0,8)}&hellip;</td>
+      <td><span class="job-badge ${j.status}">${j.status}</span></td>
+      <td>${escapeHtml(j.context)}</td>
+      <td class="mono">${fmtDate(j.created_at)}</td>
+    </tr>`).join('');
+  return `
+    <div class="dash-section">
+      <h3>Recent activity <span class="src">/dashboard/jobs</span><a class="view-all" href="demo-dashboard-jobs.html">View all jobs &rarr;</a></h3>
+      <div class="panel">
+        <table class="mtable">
+          <thead><tr><th>Job ID</th><th>Status</th><th>Context</th><th>Created</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderRulesSummarySection(){
+  const rows = RULES_PREVIEW.map((r,i) => `<div class="rule-row">
+      <span class="idx">${i+1}</span>
+      <span class="name">${escapeHtml(r.name)}</span>
+      <span class="ctx-tag">${escapeHtml(r.context)}</span>
+      <span class="enabled-dot ${r.enabled?'':'off'}" title="${r.enabled?'enabled':'disabled'}"></span>
+    </div>`).join('');
+  return `
+    <div class="dash-section">
+      <h3>Rules summary <span class="src">/dashboard/rules</span><a class="view-all" href="demo-dashboard-rules.html">View all rules &rarr;</a></h3>
+      <div class="panel">
+        <div class="rule-row-list">${rows}</div>
+        <div class="rules-total-note">Showing ${RULES_PREVIEW.length} of ${RULES_TOTAL} rules, executed top to bottom in file order.</div>
+      </div>
+    </div>`;
+}
+
+function renderDash(){
+  document.getElementById('dash').innerHTML =
+    renderStatusSection() +
+    renderJobsByStatusSection() +
+    renderPerformanceSection() +
+    renderRecentActivitySection() +
+    renderRulesSummarySection();
+}
+
+/* ======================================================================
+   Init
+   ====================================================================== */
+renderDash();
+document.getElementById('versionTag').textContent = `v${VERSION}`;
+document.getElementById('statusLeft').textContent =
+  `Worker ${WORKER_STATUS.running?'running':'stopped'} · ${fmtNum(QUEUE_STATS.total_jobs)} total jobs · queue backend ${QUEUE_BACKEND}`;
+
+})();
+</script>
+</body>
+</html>
