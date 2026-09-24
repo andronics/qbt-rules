@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > before inserting its own, so a manual entry for a version gets duplicated when that
 > version is tagged.**
 
+## [0.6.2] - 2026-09-24
+
+### ✨ New Features
+- feat(notify): reference rule/torrent fields via ${namespace.field} templating
+- feat(dashboard): session-based auth, stop putting the API key in every URL
+- feat(dashboard): link Rules summary names to their card, auto-expand on arrival
+- feat(dashboard): show Created as relative time ("2 hours ago")
+- feat(dashboard): move routes to site root, add login form for missing/invalid key
+- feat(dashboard): rewrite templates with the new dark UI design
+- feat(ui): YAML preview panel in all four dashboard demos, hidden by default
+- feat(ui): add dashboard-overview, dashboard-jobs, dashboard-rules concept demos
+- feat(ui): add metrics + config/rules YAML dashboard concept demo
+- feat: dedicated CLI UI layer for data-display commands
+
+### 🐛 Bug Fixes
+- fix(engine): don't treat unloaded torrent metadata as zero files
+- fix(dashboard): remove Status card, show version in topbar instead
+- fix(dashboard): remove Performance card, show all rules in Rules summary
+- fix(dashboard): render every all/any/none gate present, not just one
+- fix(ui): default $ref nodes to collapsed in dashboard-rules tree
+- fix: keep diagnostic detail in the log file, keep console bare in client mode
+
+### 🔧 Maintenance
+- chore: Bump version to 0.6.2
+- chore: add web UI concept demos as baseline for the webui rebuild
+
+
 ## [0.6.1] - 2026-09-17
 
 ### Fixed
