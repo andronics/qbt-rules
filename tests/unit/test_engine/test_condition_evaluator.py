@@ -4,7 +4,7 @@ import pytest
 import re
 from unittest.mock import Mock, MagicMock, patch
 from qbt_rules.engine import ConditionEvaluator
-from qbt_rules.errors import FieldError, OperatorError
+from qbt_rules.errors import DataNotReadyError, FieldError, OperatorError
 
 
 # ============================================================================
@@ -532,13 +532,24 @@ class TestFieldAccessCollections:
         mock_api.get_properties.assert_called_once()
 
     def test_collection_empty_list(self, mock_api, sample_torrent):
-        """Empty collection returns empty list."""
+        """Empty collection returns empty list (endpoints where empty is a legitimate state)."""
+        mock_api.get_trackers = Mock(return_value=[])
+        evaluator = ConditionEvaluator(mock_api)
+
+        value = evaluator._get_field_value(sample_torrent, 'trackers.url')
+
+        assert value == []
+
+    def test_files_empty_list_raises_data_not_ready(self, mock_api, sample_torrent):
+        """Empty files list means metadata isn't loaded yet, not zero files -- raises
+        DataNotReadyError instead of silently returning [] (see engine.py's 'files'
+        branch: a real torrent always has >=1 file once metadata is loaded, so an
+        empty response is never a legitimate 'no files' state)."""
         mock_api.get_files = Mock(return_value=[])
         evaluator = ConditionEvaluator(mock_api)
 
-        value = evaluator._get_field_value(sample_torrent, 'files.name')
-
-        assert value == []
+        with pytest.raises(DataNotReadyError):
+            evaluator._get_field_value(sample_torrent, 'files.name')
 
 
 # ============================================================================
@@ -706,27 +717,30 @@ class TestOperators:
         assert evaluator._apply_operator('apple', 'not_in', 'apple', 'field') is False
 
     def test_empty_collection_with_inequality_operators(self, mock_api, sample_torrent):
-        """Empty collection [] with !=, not_in, not_contains returns True (covers line 281)."""
-        mock_api.get_files = Mock(return_value=[])
+        """Empty collection [] with !=, not_in, not_contains returns True (covers line 281).
+
+        Uses trackers, not files -- an empty trackers list is a legitimate state
+        (e.g. DHT-only torrent), unlike an empty files list which always means
+        metadata isn't loaded yet (see test_files_empty_list_raises_data_not_ready)."""
+        mock_api.get_trackers = Mock(return_value=[])
         evaluator = ConditionEvaluator(mock_api)
 
-        # Test with empty collection from files field
         condition_ne = {
-            'field': 'files.name',
+            'field': 'trackers.url',
             'operator': '!=',
-            'value': 'test.txt'
+            'value': 'http://test.example.com'
         }
         assert evaluator._evaluate_condition(sample_torrent, condition_ne) is True
 
         condition_not_in = {
-            'field': 'files.name',
+            'field': 'trackers.url',
             'operator': 'not_in',
-            'value': ['test.txt', 'other.txt']
+            'value': ['http://test.example.com', 'http://other.example.com']
         }
         assert evaluator._evaluate_condition(sample_torrent, condition_not_in) is True
 
         condition_not_contains = {
-            'field': 'files.name',
+            'field': 'trackers.url',
             'operator': 'not_contains',
             'value': 'test'
         }

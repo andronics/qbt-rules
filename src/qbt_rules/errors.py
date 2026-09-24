@@ -168,6 +168,25 @@ class OperatorError(QBittorrentError):
         )
 
 
+class DataNotReadyError(QBittorrentError):
+    """Torrent metadata for a collection field isn't loaded yet"""
+
+    def __init__(self, field: str, torrent_hash: str):
+        super().__init__(
+            code="DATA-001",
+            message="Torrent metadata not yet available",
+            details={
+                "Field": field,
+                "Hash": torrent_hash,
+                "Problem": "qBittorrent returned no files for this torrent, which normally "
+                           "means metadata hasn't loaded yet, not that the torrent has zero files"
+            },
+            fix="This rule will be skipped for this torrent on this run; it will be "
+                "re-evaluated on the next trigger (e.g. context: finished, or the hourly "
+                "schedule) once metadata is available"
+        )
+
+
 class ResolverError(QBittorrentError):
     """Base class for resolver errors"""
     pass

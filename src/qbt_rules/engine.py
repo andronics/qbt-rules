@@ -11,7 +11,7 @@ import requests
 
 from qbt_rules.api import QBittorrentAPI
 from qbt_rules.utils import parse_tags, is_older_than, is_newer_than, is_larger_than, is_smaller_than
-from qbt_rules.errors import FieldError, OperatorError
+from qbt_rules.errors import DataNotReadyError, FieldError, OperatorError
 from qbt_rules.logging import get_logger
 from qbt_rules import metrics
 
@@ -109,6 +109,13 @@ class ConditionEvaluator:
                     return False
 
             return True
+
+        except DataNotReadyError as e:
+            # Expected/benign -- e.g. the files list right after an OnTorrentAdded
+            # webhook, before qBittorrent has indexed the torrent. Not a real error,
+            # so keep it out of the ERROR-level log noise every other rule failure uses.
+            logger.debug(f"Skipping rule for {torrent.get('name', 'unknown')}: {e.message} ({e.details.get('Field')})")
+            return False
 
         except Exception as e:
             logger.error(f"Error evaluating conditions for {torrent.get('name', 'unknown')}: {e}")
@@ -230,6 +237,15 @@ class ConditionEvaluator:
             if torrent_hash not in self.files_cache:
                 self.files_cache[torrent_hash] = self.api.get_files(torrent_hash)
             items = self.files_cache[torrent_hash]
+            if not items:
+                # A torrent always has >=1 file once qBittorrent has loaded its
+                # metadata -- an empty response here means metadata isn't loaded
+                # yet (e.g. right after an OnTorrentAdded webhook, before qBittorrent
+                # has indexed the torrent's files), not that the torrent genuinely
+                # has zero files. Returning [] here would let `none: [...]` conditions
+                # (e.g. "has no video file") vacuously match on missing data instead
+                # of on a confirmed absence, misidentifying real content as fake.
+                raise DataNotReadyError(field, torrent_hash)
             return [item.get(property_name) for item in items if property_name in item]
 
         elif endpoint == 'peers':
