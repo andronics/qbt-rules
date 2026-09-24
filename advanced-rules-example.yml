@@ -440,6 +440,16 @@ rules:
           category: archive
       - type: force_start  # Ensure it keeps seeding
       - $ref: actions.reward-excellent-seeding
+      - type: notify
+        params:
+          service: generic
+          url: https://example.com/webhook
+          # ${rule.name}/${rule.context} are resolved once, at config-load
+          # time, against this rule's own fields (not a per-torrent value).
+          # ${info.name}/${info.ratio} are runtime, per-torrent fields --
+          # the same info./trackers./files./peers. dot-notation conditions
+          # already use -- resolved fresh for whichever torrent matched.
+          message: "[${rule.name}] ${info.name} protected (ratio ${info.ratio})"
 
 # ============================================================================
 # SUMMARY
@@ -467,6 +477,9 @@ rules:
 # - Mixed refs + inline conditions
 # - Context-aware execution
 # - Protection mechanisms
+# - notify message templating: ${rule.*} (load-time, this rule's own
+#   fields) and ${info.*}/${trackers.*}/${files.*}/${peers.*} (runtime,
+#   per-torrent -- same dot-notation conditions already use)
 # - Resource management
 #
 # This would resolve to ~500 lines of fully expanded rules without

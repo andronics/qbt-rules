@@ -103,7 +103,7 @@ class TestCleanupRules:
                 {'type': 'notify', 'params': {
                     'service': 'generic',
                     'url': 'https://example.com/webhook',
-                    'message': 'Deleted {name}',
+                    'message': 'Deleted ${info.name}',
                 }},
             ]
         }

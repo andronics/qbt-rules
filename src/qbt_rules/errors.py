@@ -247,6 +247,34 @@ class UnknownVariableError(ResolverError):
         )
 
 
+class InvalidRuleFieldError(ResolverError):
+    """Invalid ${rule.*} path or format"""
+
+    def __init__(self, field_path: str, reason: str):
+        super().__init__(
+            code="RULEFIELD-001",
+            message=f"Invalid rule field path: {field_path}",
+            details={"Problem": reason},
+            fix="Use format 'rule.name' (e.g., '${rule.name}', '${rule.context}')"
+        )
+
+
+class UnknownRuleFieldError(ResolverError):
+    """${rule.*} references a field this rule doesn't have"""
+
+    def __init__(self, field_name: str, rule_name: str, available_fields: list):
+        super().__init__(
+            code="RULEFIELD-002",
+            message=f"Unknown rule field: {field_name}",
+            details={
+                "Field": field_name,
+                "Rule": rule_name,
+                "Available fields on this rule": ', '.join(available_fields) if available_fields else "(none)"
+            },
+            fix=f"'{field_name}' isn't a key on this rule -- check spelling, or add it to the rule"
+        )
+
+
 class CircularRefError(ResolverError):
     """Circular reference detected"""
 
