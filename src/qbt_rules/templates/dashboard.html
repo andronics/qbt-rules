@@ -44,12 +44,12 @@
   {% if rules_summary.rules %}
   <table>
     <thead>
-      <tr><th>Name</th><th>Enabled</th><th>Context</th></tr>
+      <tr><th>Rule</th><th>Enabled</th><th>Context</th></tr>
     </thead>
     <tbody>
       {% for rule in rules_summary.rules %}
       <tr>
-        <td><a href="{{ url_for('dashboard_rules') }}#rule-{{ loop.index }}">{{ rule.name }}</a></td>
+        <td><a href="{{ url_for('dashboard_rules') }}#rule-{{ loop.index }}">{{ rule.get('meta', {}).get('description') or rule.id }}</a></td>
         <td>{{ 'Yes' if rule.get('enabled', True) else 'No' }}</td>
         <td>{{ rule.context or '(any)' }}</td>
       </tr>

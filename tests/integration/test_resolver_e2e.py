@@ -97,7 +97,7 @@ class TestResolverRealWorldScenarios:
             },
             'rules': [
                 {
-                    'name': 'Cleanup well-seeded private tracker torrents',
+                    'id': 'Cleanup well-seeded private tracker torrents',
                     'enabled': True,
                     'priority': 50,
                     'context': 'weekly-cleanup',
@@ -111,7 +111,7 @@ class TestResolverRealWorldScenarios:
                     ]
                 },
                 {
-                    'name': 'Force seed private tracker under ratio',
+                    'id': 'Force seed private tracker under ratio',
                     'enabled': True,
                     'priority': 100,
                     'context': 'download-finished',
@@ -126,7 +126,7 @@ class TestResolverRealWorldScenarios:
                     ]
                 },
                 {
-                    'name': 'Tag HD content from private trackers',
+                    'id': 'Tag HD content from private trackers',
                     'enabled': True,
                     'priority': 75,
                     'context': 'torrent-imported',
@@ -139,7 +139,7 @@ class TestResolverRealWorldScenarios:
                     ]
                 },
                 {
-                    'name': 'Pause highly seeded torrents with no activity',
+                    'id': 'Pause highly seeded torrents with no activity',
                     'enabled': True,
                     'priority': 25,
                     'conditions': [
@@ -152,7 +152,7 @@ class TestResolverRealWorldScenarios:
                     ]
                 },
                 {
-                    'name': 'Mixed rule with refs and inline conditions',
+                    'id': 'Mixed rule with refs and inline conditions',
                     'enabled': True,
                     'priority': 60,
                     'conditions': [
@@ -184,7 +184,7 @@ class TestResolverRealWorldScenarios:
 
         # Verify Rule 1: Cleanup well-seeded
         rule1 = resolved_rules[0]
-        assert rule1['name'] == 'Cleanup well-seeded private tracker torrents'
+        assert rule1['id'] == 'Cleanup well-seeded private tracker torrents'
         assert rule1['priority'] == 50
         # Verify ref expansion
         assert 'any' in rule1['conditions'][0]  # private-tracker expanded
@@ -203,13 +203,13 @@ class TestResolverRealWorldScenarios:
 
         # Verify Rule 2: Force seed under ratio
         rule2 = resolved_rules[1]
-        assert rule2['name'] == 'Force seed private tracker under ratio'
+        assert rule2['id'] == 'Force seed private tracker under ratio'
         assert rule2['conditions'][1]['all'][0]['value'] == 1.5  # Variable substituted
         assert rule2['actions'][0]['type'] == 'force_start'
 
         # Verify Rule 3: Tag HD content
         rule3 = resolved_rules[2]
-        assert rule3['name'] == 'Tag HD content from private trackers'
+        assert rule3['id'] == 'Tag HD content from private trackers'
         # Verify pattern substitution
         assert '1080p' in rule3['conditions'][1]['all'][0]['value']
         assert rule3['actions'][1]['params']['category'] == 'hd-content'
@@ -220,7 +220,7 @@ class TestResolverRealWorldScenarios:
 
         # Verify Rule 5: Mixed rule
         rule5 = resolved_rules[4]
-        assert rule5['name'] == 'Mixed rule with refs and inline conditions'
+        assert rule5['id'] == 'Mixed rule with refs and inline conditions'
         # Has both expanded refs and inline conditions
         assert 'any' in rule5['conditions'][0]  # Expanded ref
         assert 'all' in rule5['conditions'][1]  # Inline condition
@@ -271,7 +271,7 @@ class TestResolverRealWorldScenarios:
             },
             'rules': [
                 {
-                    'name': 'Test all types',
+                    'id': 'Test all types',
                     'enabled': True,
                     'conditions': [
                         {'field': 'info.ratio', 'operator': '>=', 'value': '${vars.ratio_float}'},
@@ -331,7 +331,7 @@ class TestResolverRealWorldScenarios:
             },
             'rules': [
                 {
-                    'name': 'Test',
+                    'id': 'Test',
                     'enabled': True,
                     'conditions': [
                         {'field': 'info.ratio', 'operator': '>=', 'value': '${vars.ratio}'}
@@ -388,7 +388,7 @@ class TestResolverRealWorldScenarios:
             },
             'rules': [
                 {
-                    'name': 'Test',
+                    'id': 'Test',
                     'enabled': True,
                     'conditions': [
                         {'field': 'info.ratio', 'operator': '>=', 'value': '${vars.missing_var}'}
@@ -416,7 +416,7 @@ class TestResolverRealWorldScenarios:
             },
             'rules': [
                 {
-                    'name': 'Test',
+                    'id': 'Test',
                     'enabled': True,
                     'conditions': [
                         {'$ref': 'conditions.nonexistent'}
@@ -442,7 +442,7 @@ class TestResolverRealWorldScenarios:
             },
             'rules': [
                 {
-                    'name': 'Test',
+                    'id': 'Test',
                     'enabled': True,
                     'conditions': [
                         {'$ref': 'test'}  # Missing group prefix

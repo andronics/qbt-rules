@@ -84,7 +84,8 @@
   <details class="card rule-card" id="rule-{{ loop.index }}">
     <summary>
       <span class="rc-idx">#{{ loop.index }}</span>
-      <span class="rc-name">{{ rule.name }}</span>
+      <span class="rc-name">{{ rule.get('meta', {}).get('description') or rule.id }}</span>
+      {% if rule.get('meta', {}).get('description') %}<span class="muted rc-id">{{ rule.id }}</span>{% endif %}
       <span class="badge {{ 'badge-completed' if rule.get('enabled', True) else 'badge-cancelled' }}">{{ 'enabled' if rule.get('enabled', True) else 'disabled' }}</span>
       <span class="muted">{{ rule.context or 'any' }}</span>
       {% if rule.get('stop_on_match') %}<span class="badge badge-pending">stop_on_match</span>{% endif %}

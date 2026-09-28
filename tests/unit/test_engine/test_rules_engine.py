@@ -36,6 +36,7 @@ class TestRulesEngineInit:
         assert engine.stats.total_torrents == 0
         assert engine.stats.processed == 0
         assert engine.stats.rules_matched == 0
+        assert engine.stats.by_rule == {}
 
 
 # ============================================================================
@@ -374,6 +375,107 @@ class TestSingleTorrentMode:
 
         assert engine.stats.rules_matched == 1
 
+    def test_single_torrent_mode_stats_reflects_all_torrents(self, mock_api, mock_config, sample_torrent, downloading_torrent, simple_rule):
+        """stats.* aggregates over ALL torrents, not just the one being evaluated in webhook mode."""
+        mock_config.get_rules = Mock(return_value=[simple_rule])
+        mock_api.torrents_data = {
+            sample_torrent['hash']: sample_torrent,       # state: uploading
+            downloading_torrent['hash']: downloading_torrent,  # state: downloading
+        }
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='torrent-imported', torrent_hash=sample_torrent['hash'])
+
+        assert engine.stats.total_torrents == 1  # only the targeted torrent
+        assert engine.evaluator.stats['total'] == 2  # but stats.* sees the whole fleet
+        assert engine.evaluator.stats['state']['uploading'] == 1
+        assert engine.evaluator.stats['state']['downloading'] == 1
+
+
+# ============================================================================
+# stats.* Aggregate Namespace
+# ============================================================================
+
+class TestStatsNamespace:
+    """Test the stats.* aggregate-count snapshot computed once per run."""
+
+    def test_stats_snapshot_counts_by_state_and_category(self, mock_api, mock_config, sample_torrent, downloading_torrent):
+        """Counter over torrent state/category is built from the full torrent list."""
+        mock_config.get_rules = Mock(return_value=[])
+        mock_api.torrents_data = {
+            sample_torrent['hash']: sample_torrent,             # state=uploading, category=''
+            downloading_torrent['hash']: downloading_torrent,   # state=downloading, category=movies
+        }
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        assert engine.evaluator.stats['total'] == 2
+        assert engine.evaluator.stats['state'] == {'uploading': 1, 'downloading': 1}
+        # Torrents with an empty/falsy category are excluded from stats.category
+        assert engine.evaluator.stats['category'] == {'movies': 1}
+
+    def test_stats_snapshot_counts_tags(self, mock_api, mock_config, sample_torrent, downloading_torrent):
+        """A torrent's tags are flattened (comma-separated, possibly multiple) into a single Counter."""
+        mock_config.get_rules = Mock(return_value=[])
+        mock_api.torrents_data = {
+            sample_torrent['hash']: sample_torrent,             # tags=''
+            downloading_torrent['hash']: downloading_torrent,   # tags='hd,new'
+        }
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        assert engine.evaluator.stats['tag'] == {'hd': 1, 'new': 1}
+
+    def test_stats_snapshot_sums_speeds_and_seeds_peers(self, mock_api, mock_config, sample_torrent, downloading_torrent):
+        """dlspeed/upspeed/seeds/leechs are fleet-wide sums of the matching per-torrent info.* fields."""
+        mock_config.get_rules = Mock(return_value=[])
+        mock_api.torrents_data = {
+            # dlspeed=0, upspeed=524288, num_seeds=5, num_leechs=2
+            sample_torrent['hash']: sample_torrent,
+            # dlspeed=2097152, upspeed=0, num_seeds=10, num_leechs=3
+            downloading_torrent['hash']: downloading_torrent,
+        }
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        assert engine.evaluator.stats['dlspeed'] == 2097152
+        assert engine.evaluator.stats['upspeed'] == 524288
+        assert engine.evaluator.stats['seeds'] == 15
+        assert engine.evaluator.stats['leechs'] == 5
+
+    def test_stats_field_usable_in_condition(self, mock_api, mock_config, sample_torrent, downloading_torrent):
+        """A rule condition can reference stats.state.<state> against the numeric operators."""
+        rule = {
+            'name': 'Cap check',
+            'enabled': True,
+            'conditions': {'all': [{'field': 'stats.state.downloading', 'operator': '<', 'value': 5}]},
+            'actions': [{'type': 'add_tag', 'params': {'tags': ['under-cap']}}]
+        }
+        mock_config.get_rules = Mock(return_value=[rule])
+        mock_api.torrents_data = {
+            sample_torrent['hash']: sample_torrent,
+            downloading_torrent['hash']: downloading_torrent,
+        }
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        assert engine.stats.rules_matched == 2  # both torrents see the same run-wide snapshot
+
+    def test_stats_no_additional_api_calls(self, mock_api, mock_config, sample_torrent):
+        """Computing stats.* must not introduce extra qBittorrent API calls."""
+        mock_config.get_rules = Mock(return_value=[])
+        mock_api.torrents_data = {sample_torrent['hash']: sample_torrent}
+        mock_api.get_torrents = Mock(wraps=mock_api.get_torrents)
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        mock_api.get_torrents.assert_called_once()
+
 
 # ============================================================================
 # Statistics Tracking
@@ -454,6 +556,114 @@ class TestStatisticsTracking:
         engine.run(context='adhoc-run')
 
         assert engine.stats.processed == 2
+
+
+# ============================================================================
+# Per-Rule Breakdown (stats.by_rule)
+# ============================================================================
+
+class TestByRuleStats:
+    """Test the per-rule breakdown recorded in RuleStats.by_rule."""
+
+    def test_by_rule_keyed_by_id(self, mock_api, mock_config, sample_torrent):
+        """A rule is tracked under its required 'id'."""
+        rule = {
+            'id': 'test-rule',
+            'meta': {'description': 'Test rule'},
+            'enabled': True,
+            'conditions': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]},
+            'actions': [{'type': 'add_tag', 'params': {'tags': ['tag1']}}]
+        }
+        mock_config.get_rules = Mock(return_value=[rule])
+        mock_api.torrents_data = {sample_torrent['hash']: sample_torrent}
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        assert engine.stats.by_rule == {
+            'test-rule': {'matched': 1, 'actions_executed': 1, 'actions_skipped': 0, 'errors': 0}
+        }
+
+    def test_by_rule_survives_meta_description_change(self, mock_api, mock_config, sample_torrent):
+        """The by_rule key is the id, not meta.description -- so a future
+        rename of the human-readable text doesn't orphan the rule's history."""
+        rule = {
+            'id': 'rule-abc123',
+            'meta': {'description': 'Renamed human-readable text'},
+            'enabled': True,
+            'conditions': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]},
+            'actions': [{'type': 'add_tag', 'params': {'tags': ['tag1']}}]
+        }
+        mock_config.get_rules = Mock(return_value=[rule])
+        mock_api.torrents_data = {sample_torrent['hash']: sample_torrent}
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        assert 'rule-abc123' in engine.stats.by_rule
+        assert 'Renamed human-readable text' not in engine.stats.by_rule
+        assert engine.stats.by_rule['rule-abc123']['matched'] == 1
+
+    def test_by_rule_tracks_skipped_and_errors_separately(self, mock_api, mock_config):
+        """actions_skipped/errors are attributed to the rule that caused them."""
+        skipped_rule = {
+            'id': 'idempotent-rule',
+            'enabled': True,
+            'conditions': {'all': [{'field': 'info.state', 'operator': '==', 'value': 'pausedDL'}]},
+            'actions': [{'type': 'stop'}]  # Already paused -> skipped
+        }
+        error_rule = {
+            'id': 'failing-rule',
+            'enabled': True,
+            'conditions': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 0}]},
+            'actions': [{'type': 'unknown_action'}]  # Will error
+        }
+        torrent = {'hash': 'test', 'name': 'Test', 'state': 'pausedDL', 'ratio': 1.0}
+        mock_config.get_rules = Mock(return_value=[skipped_rule, error_rule])
+        mock_api.torrents_data = {torrent['hash']: torrent}
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        assert engine.stats.by_rule['idempotent-rule']['actions_skipped'] == 1
+        assert engine.stats.by_rule['idempotent-rule']['errors'] == 0
+        assert engine.stats.by_rule['failing-rule']['errors'] == 1
+        assert engine.stats.by_rule['failing-rule']['actions_skipped'] == 0
+
+    def test_by_rule_only_includes_enabled_rules_that_ran(self, mock_api, mock_config, sample_torrent):
+        """A disabled rule never appears in by_rule, same as it never affects the aggregate counters."""
+        disabled_rule = {
+            'id': 'disabled-rule',
+            'enabled': False,
+            'conditions': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 0}]},
+            'actions': [{'type': 'stop'}]
+        }
+        mock_config.get_rules = Mock(return_value=[disabled_rule])
+        mock_api.torrents_data = {sample_torrent['hash']: sample_torrent}
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        assert engine.stats.by_rule == {}
+
+    def test_by_rule_present_even_without_a_match(self, mock_api, mock_config, sample_torrent):
+        """An enabled rule that ran but never matched still gets a zeroed entry --
+        distinguishing 'ran, matched nothing' from 'didn't run at all'."""
+        rule = {
+            'id': 'never-matches',
+            'enabled': True,
+            'conditions': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 999}]},
+            'actions': [{'type': 'add_tag', 'params': {'tags': ['test']}}]
+        }
+        mock_config.get_rules = Mock(return_value=[rule])
+        mock_api.torrents_data = {sample_torrent['hash']: sample_torrent}
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        assert engine.stats.by_rule == {
+            'never-matches': {'matched': 0, 'actions_executed': 0, 'actions_skipped': 0, 'errors': 0}
+        }
 
 
 # ============================================================================

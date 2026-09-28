@@ -404,13 +404,13 @@ def handle_utility_args(args: argparse.Namespace, config) -> bool:
 
                 # Validate each rule
                 for i, rule in enumerate(rules, 1):
-                    name = rule.get('name', f'Rule {i}')
+                    rule_id = rule.get('id', f'rule-{i}')
                     if not rule.get('conditions'):
-                        logger.warning(f"  ⚠ '{name}': No conditions defined")
+                        logger.warning(f"  ⚠ '{rule_id}': No conditions defined")
                     if not rule.get('actions'):
-                        logger.warning(f"  ⚠ '{name}': No actions defined")
+                        logger.warning(f"  ⚠ '{rule_id}': No actions defined")
                     else:
-                        logger.info(f"  ✓ '{name}'")
+                        logger.info(f"  ✓ '{rule_id}'")
 
             logger.info("\nValidation complete! Configuration is valid.")
 
@@ -446,12 +446,13 @@ def handle_utility_args(args: argparse.Namespace, config) -> bool:
             if isinstance(context_filter, list):
                 context_filter = ','.join(context_filter)
 
-            name = rule.get('name', 'Unnamed')
+            rule_id = rule.get('id', 'unnamed')
+            description = rule.get('meta', {}).get('description', '')
 
-            rows.append([index, enabled, stop, context_filter, name])
+            rows.append([index, enabled, stop, context_filter, rule_id, description])
 
         cli_ui.print_table(
-            headers=['#', 'Enabled', 'Stop', 'Context', 'Name'],
+            headers=['#', 'Enabled', 'Stop', 'Context', 'ID', 'Description'],
             rows=rows,
             title=f"Rules ({len(rules)} total, execute in file order):"
         )

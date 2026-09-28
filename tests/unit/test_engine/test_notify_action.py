@@ -257,6 +257,36 @@ class TestNotifyTemplating:
         assert "unknown field" in caplog.text
 
     @patch('qbt_rules.engine.requests.post')
+    def test_multi_segment_stats_token_resolves(self, mock_post, mock_api, sample_torrent):
+        """${stats.state.queuedUP} has two dots -- ACTION_TEMPLATE_PATTERN
+        must match multi-segment paths, not just single-dot ${namespace.field}."""
+        mock_post.return_value = _mock_response()
+        executor = ActionExecutor(mock_api, dry_run=False)
+        executor.field_resolver.stats = {
+            'state': {'queuedUP': 3},
+            'category': {},
+            'tag': {},
+            'total': 3,
+        }
+
+        action = {
+            'type': 'notify',
+            'params': {
+                'service': 'generic',
+                'url': 'https://example.com/webhook',
+                'message': 'Queued: ${stats.state.queuedUP} / ${stats.total}',
+            },
+        }
+        success, skipped = executor.execute(sample_torrent, action)
+
+        assert success is True
+        mock_post.assert_called_once_with(
+            'https://example.com/webhook',
+            timeout=10,
+            json={'message': 'Queued: 3 / 3'},
+        )
+
+    @patch('qbt_rules.engine.requests.post')
     def test_no_message_and_not_generic_body_fails(self, mock_post, mock_api, sample_torrent):
         executor = ActionExecutor(mock_api, dry_run=False)
 

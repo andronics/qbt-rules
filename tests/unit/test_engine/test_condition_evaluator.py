@@ -336,6 +336,86 @@ class TestLogicalGroups:
 
 
 # ============================================================================
+# Opt-in condition evaluation trace
+# ============================================================================
+
+class TestConditionTrace:
+    """Test the optional `trace` param on evaluate()/_evaluate_*() -- a
+    foundation for a future "preview this rule against the live fleet"
+    feature. Every existing call site omits it, so these tests exist to
+    pin down the opt-in behavior without affecting anything else."""
+
+    def test_no_trace_param_leaves_behavior_unchanged(self, mock_api, sample_torrent):
+        """Omitting trace (as every current caller does) behaves exactly as before."""
+        evaluator = ConditionEvaluator(mock_api)
+        conditions = {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]}
+        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        assert result is True
+
+    def test_trace_records_passing_leaf_condition(self, mock_api, sample_torrent):
+        """A single passing condition appends one record with the actual value."""
+        evaluator = ConditionEvaluator(mock_api)
+        conditions = {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]}
+        trace = []
+
+        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run', trace=trace)
+
+        assert result is True
+        assert trace == [{
+            'field': 'info.ratio', 'operator': '>=', 'value': 1.0,
+            'actual': 2.0, 'passed': True,
+        }]
+
+    def test_trace_records_failing_leaf_condition(self, mock_api, sample_torrent):
+        """A failing condition is recorded with passed: False and its real actual value."""
+        evaluator = ConditionEvaluator(mock_api)
+        conditions = {'all': [{'field': 'info.state', 'operator': '==', 'value': 'downloading'}]}
+        trace = []
+
+        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run', trace=trace)
+
+        assert result is False
+        assert trace == [{
+            'field': 'info.state', 'operator': '==', 'value': 'downloading',
+            'actual': 'uploading', 'passed': False,
+        }]
+
+    def test_trace_short_circuits_same_as_without_trace(self, mock_api, sample_torrent):
+        """`all` still stops at the first failing condition when tracing --
+        tracing doesn't change evaluation order/short-circuiting, and
+        therefore doesn't add extra field lookups (API calls) either."""
+        evaluator = ConditionEvaluator(mock_api)
+        conditions = {'all': [
+            {'field': 'info.state', 'operator': '==', 'value': 'downloading'},  # fails first
+            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},  # never reached
+        ]}
+        trace = []
+
+        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run', trace=trace)
+
+        assert result is False
+        assert len(trace) == 1
+        assert trace[0]['field'] == 'info.state'
+
+    def test_trace_covers_nested_groups(self, mock_api, sample_torrent):
+        """Leaf conditions inside a nested any/none are still recorded."""
+        evaluator = ConditionEvaluator(mock_api)
+        conditions = {'all': [
+            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},
+            {'any': [
+                {'field': 'info.state', 'operator': '==', 'value': 'uploading'},
+            ]},
+        ]}
+        trace = []
+
+        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run', trace=trace)
+
+        assert result is True
+        fields_seen = [t['field'] for t in trace]
+        assert fields_seen == ['info.ratio', 'info.state']
+
+
+# ============================================================================
 # Field Access - info.*
 # ============================================================================
 
@@ -596,6 +676,85 @@ class TestFieldAccessGlobal:
         evaluator._get_field_value(sample_torrent, 'app.locale')
 
         mock_api.get_app_preferences.assert_called_once()
+
+    def test_stats_total(self, mock_api, sample_torrent):
+        """Access stats.total."""
+        evaluator = ConditionEvaluator(mock_api)
+        evaluator.stats = {'state': {}, 'category': {}, 'tag': {}, 'total': 42}
+
+        assert evaluator._get_field_value(sample_torrent, 'stats.total') == 42
+
+    def test_stats_state(self, mock_api, sample_torrent):
+        """Access stats.state.<state>."""
+        evaluator = ConditionEvaluator(mock_api)
+        evaluator.stats = {
+            'state': {'queuedUP': 3, 'uploading': 5},
+            'category': {},
+            'tag': {},
+            'total': 8,
+        }
+
+        assert evaluator._get_field_value(sample_torrent, 'stats.state.queuedUP') == 3
+        assert evaluator._get_field_value(sample_torrent, 'stats.state.uploading') == 5
+
+    def test_stats_category(self, mock_api, sample_torrent):
+        """Access stats.category.<category>."""
+        evaluator = ConditionEvaluator(mock_api)
+        evaluator.stats = {
+            'state': {},
+            'category': {'movies': 2},
+            'tag': {},
+            'total': 2,
+        }
+
+        assert evaluator._get_field_value(sample_torrent, 'stats.category.movies') == 2
+
+    def test_stats_tag(self, mock_api, sample_torrent):
+        """Access stats.tag.<tag>."""
+        evaluator = ConditionEvaluator(mock_api)
+        evaluator.stats = {
+            'state': {},
+            'category': {},
+            'tag': {'hd': 3, 'private': 1},
+            'total': 3,
+        }
+
+        assert evaluator._get_field_value(sample_torrent, 'stats.tag.hd') == 3
+        assert evaluator._get_field_value(sample_torrent, 'stats.tag.private') == 1
+
+    def test_stats_missing_key_defaults_to_zero(self, mock_api, sample_torrent):
+        """A state/category/tag with no matching torrents resolves to 0, not None/KeyError."""
+        evaluator = ConditionEvaluator(mock_api)
+        evaluator.stats = {'state': {'uploading': 5}, 'category': {}, 'tag': {}, 'total': 5}
+
+        assert evaluator._get_field_value(sample_torrent, 'stats.state.queuedUP') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.category.movies') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.tag.hd') == 0
+
+    def test_stats_defaults_before_run(self, mock_api, sample_torrent):
+        """Before RulesEngine.run() populates it, stats.* resolves to 0 rather than erroring."""
+        evaluator = ConditionEvaluator(mock_api)
+
+        assert evaluator._get_field_value(sample_torrent, 'stats.total') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.state.queuedUP') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.tag.hd') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.dlspeed') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.upspeed') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.seeds') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.leechs') == 0
+
+    def test_stats_scalar_sums(self, mock_api, sample_torrent):
+        """stats.dlspeed/upspeed/seeds/leechs are plain scalars, not nested under a Counter key."""
+        evaluator = ConditionEvaluator(mock_api)
+        evaluator.stats = {
+            'state': {}, 'category': {}, 'tag': {}, 'total': 3,
+            'dlspeed': 2097152, 'upspeed': 524288, 'seeds': 15, 'leechs': 5,
+        }
+
+        assert evaluator._get_field_value(sample_torrent, 'stats.dlspeed') == 2097152
+        assert evaluator._get_field_value(sample_torrent, 'stats.upspeed') == 524288
+        assert evaluator._get_field_value(sample_torrent, 'stats.seeds') == 15
+        assert evaluator._get_field_value(sample_torrent, 'stats.leechs') == 5
 
 
 # ============================================================================
