@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 # handles the load-time-only ${vars.*}/${rule.*} tokens and deliberately
 # leaves these untouched for ActionExecutor to resolve here instead.
 # One-or-more `.segment` repeats (not just one) so multi-level paths like
-# ${stats.count_by_state.queuedUP} match too, not just single-dot fields.
+# ${stats.state.queuedUP} match too, not just single-dot fields.
 ACTION_TEMPLATE_PATTERN = re.compile(r'\$\{(\w+(?:\.\w+)+)\}')
 
 
@@ -67,8 +67,9 @@ class ConditionEvaluator:
         # stats.* still resolves to 0 rather than erroring if the evaluator
         # is ever used standalone, outside of RulesEngine.run().
         self.stats: Dict[str, Any] = {
-            'count_by_state': {},
-            'count_by_category': {},
+            'state': {},
+            'category': {},
+            'tag': {},
             'total': 0,
         }
 
@@ -324,7 +325,7 @@ class ConditionEvaluator:
             # this state" and "this state doesn't exist" are the same thing
             # to a numeric condition operator.
             parts = property_name.split('.', 1)
-            if len(parts) == 2 and parts[0] in ('count_by_state', 'count_by_category'):
+            if len(parts) == 2 and parts[0] in ('state', 'category', 'tag'):
                 return self.stats.get(parts[0], {}).get(parts[1], 0)
             return self.stats.get(property_name, 0)
 
@@ -977,13 +978,17 @@ class RulesEngine:
             # stats.* namespace: a once-per-run snapshot of aggregate counts
             # across ALL torrents (not just `torrents` above, which may be
             # filtered to one torrent in webhook mode). Computed from data
-            # already in memory -- no additional qBittorrent API calls.
+            # already in memory -- no additional qBittorrent API calls, since
+            # state/category/tags are all already present on each torrent
+            # dict from the initial /torrents/info fetch (tags via the same
+            # parse_tags() helper info.tags uses).
             # Snapshot semantics: this is NOT recomputed as rules run, so an
             # earlier rule's action (e.g. force_start) won't be reflected in
             # stats.* for a later rule's check within the same run.
             self.evaluator.stats = {
-                'count_by_state': Counter(t.get('state') for t in all_torrents),
-                'count_by_category': Counter(t.get('category') for t in all_torrents if t.get('category')),
+                'state': Counter(t.get('state') for t in all_torrents),
+                'category': Counter(t.get('category') for t in all_torrents if t.get('category')),
+                'tag': Counter(tag for t in all_torrents for tag in parse_tags(t)),
                 'total': len(all_torrents),
             }
 

@@ -348,7 +348,7 @@ class TestRuleFieldSubstitution:
     def test_stats_namespace_token_passes_through_untouched(self):
         """${stats.*} (aggregate torrent counts) is resolved at runtime by
         engine.py, same as ${info.*}/${trackers.*} -- resolve_rule() must
-        leave a whole-string ${stats.count_by_state.queuedUP} value alone
+        leave a whole-string ${stats.state.queuedUP} value alone
         rather than treating it as a malformed vars/rule token."""
         resolver = RuleResolver(refs={})
         rule = {
@@ -356,15 +356,15 @@ class TestRuleFieldSubstitution:
             'conditions': [],
             'actions': [
                 {'type': 'notify', 'params': {
-                    'message': 'Queued: ${stats.count_by_state.queuedUP} of ${stats.total}',
-                    'whole_value': '${stats.count_by_state.queuedUP}',
+                    'message': 'Queued: ${stats.state.queuedUP} of ${stats.total}',
+                    'whole_value': '${stats.state.queuedUP}',
                 }}
             ]
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['actions'][0]['params']['message'] == 'Queued: ${stats.count_by_state.queuedUP} of ${stats.total}'
-        assert resolved['actions'][0]['params']['whole_value'] == '${stats.count_by_state.queuedUP}'
+        assert resolved['actions'][0]['params']['message'] == 'Queued: ${stats.state.queuedUP} of ${stats.total}'
+        assert resolved['actions'][0]['params']['whole_value'] == '${stats.state.queuedUP}'
 
     def test_mistyped_vars_prefix_still_raises_error(self):
         """A near-miss like ${var.x} (singular) isn't a recognized runtime

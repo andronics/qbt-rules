@@ -387,8 +387,8 @@ class TestSingleTorrentMode:
 
         assert engine.stats.total_torrents == 1  # only the targeted torrent
         assert engine.evaluator.stats['total'] == 2  # but stats.* sees the whole fleet
-        assert engine.evaluator.stats['count_by_state']['uploading'] == 1
-        assert engine.evaluator.stats['count_by_state']['downloading'] == 1
+        assert engine.evaluator.stats['state']['uploading'] == 1
+        assert engine.evaluator.stats['state']['downloading'] == 1
 
 
 # ============================================================================
@@ -410,16 +410,29 @@ class TestStatsNamespace:
         engine.run(context='adhoc-run')
 
         assert engine.evaluator.stats['total'] == 2
-        assert engine.evaluator.stats['count_by_state'] == {'uploading': 1, 'downloading': 1}
-        # Torrents with an empty/falsy category are excluded from count_by_category
-        assert engine.evaluator.stats['count_by_category'] == {'movies': 1}
+        assert engine.evaluator.stats['state'] == {'uploading': 1, 'downloading': 1}
+        # Torrents with an empty/falsy category are excluded from stats.category
+        assert engine.evaluator.stats['category'] == {'movies': 1}
+
+    def test_stats_snapshot_counts_tags(self, mock_api, mock_config, sample_torrent, downloading_torrent):
+        """A torrent's tags are flattened (comma-separated, possibly multiple) into a single Counter."""
+        mock_config.get_rules = Mock(return_value=[])
+        mock_api.torrents_data = {
+            sample_torrent['hash']: sample_torrent,             # tags=''
+            downloading_torrent['hash']: downloading_torrent,   # tags='hd,new'
+        }
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        assert engine.evaluator.stats['tag'] == {'hd': 1, 'new': 1}
 
     def test_stats_field_usable_in_condition(self, mock_api, mock_config, sample_torrent, downloading_torrent):
-        """A rule condition can reference stats.count_by_state.<state> against the numeric operators."""
+        """A rule condition can reference stats.state.<state> against the numeric operators."""
         rule = {
             'name': 'Cap check',
             'enabled': True,
-            'conditions': {'all': [{'field': 'stats.count_by_state.downloading', 'operator': '<', 'value': 5}]},
+            'conditions': {'all': [{'field': 'stats.state.downloading', 'operator': '<', 'value': 5}]},
             'actions': [{'type': 'add_tag', 'params': {'tags': ['under-cap']}}]
         }
         mock_config.get_rules = Mock(return_value=[rule])

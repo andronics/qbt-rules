@@ -600,47 +600,64 @@ class TestFieldAccessGlobal:
     def test_stats_total(self, mock_api, sample_torrent):
         """Access stats.total."""
         evaluator = ConditionEvaluator(mock_api)
-        evaluator.stats = {'count_by_state': {}, 'count_by_category': {}, 'total': 42}
+        evaluator.stats = {'state': {}, 'category': {}, 'tag': {}, 'total': 42}
 
         assert evaluator._get_field_value(sample_torrent, 'stats.total') == 42
 
-    def test_stats_count_by_state(self, mock_api, sample_torrent):
-        """Access stats.count_by_state.<state>."""
+    def test_stats_state(self, mock_api, sample_torrent):
+        """Access stats.state.<state>."""
         evaluator = ConditionEvaluator(mock_api)
         evaluator.stats = {
-            'count_by_state': {'queuedUP': 3, 'uploading': 5},
-            'count_by_category': {},
+            'state': {'queuedUP': 3, 'uploading': 5},
+            'category': {},
+            'tag': {},
             'total': 8,
         }
 
-        assert evaluator._get_field_value(sample_torrent, 'stats.count_by_state.queuedUP') == 3
-        assert evaluator._get_field_value(sample_torrent, 'stats.count_by_state.uploading') == 5
+        assert evaluator._get_field_value(sample_torrent, 'stats.state.queuedUP') == 3
+        assert evaluator._get_field_value(sample_torrent, 'stats.state.uploading') == 5
 
-    def test_stats_count_by_category(self, mock_api, sample_torrent):
-        """Access stats.count_by_category.<category>."""
+    def test_stats_category(self, mock_api, sample_torrent):
+        """Access stats.category.<category>."""
         evaluator = ConditionEvaluator(mock_api)
         evaluator.stats = {
-            'count_by_state': {},
-            'count_by_category': {'movies': 2},
+            'state': {},
+            'category': {'movies': 2},
+            'tag': {},
             'total': 2,
         }
 
-        assert evaluator._get_field_value(sample_torrent, 'stats.count_by_category.movies') == 2
+        assert evaluator._get_field_value(sample_torrent, 'stats.category.movies') == 2
 
-    def test_stats_missing_state_defaults_to_zero(self, mock_api, sample_torrent):
-        """A state/category with no matching torrents resolves to 0, not None/KeyError."""
+    def test_stats_tag(self, mock_api, sample_torrent):
+        """Access stats.tag.<tag>."""
         evaluator = ConditionEvaluator(mock_api)
-        evaluator.stats = {'count_by_state': {'uploading': 5}, 'count_by_category': {}, 'total': 5}
+        evaluator.stats = {
+            'state': {},
+            'category': {},
+            'tag': {'hd': 3, 'private': 1},
+            'total': 3,
+        }
 
-        assert evaluator._get_field_value(sample_torrent, 'stats.count_by_state.queuedUP') == 0
-        assert evaluator._get_field_value(sample_torrent, 'stats.count_by_category.movies') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.tag.hd') == 3
+        assert evaluator._get_field_value(sample_torrent, 'stats.tag.private') == 1
+
+    def test_stats_missing_key_defaults_to_zero(self, mock_api, sample_torrent):
+        """A state/category/tag with no matching torrents resolves to 0, not None/KeyError."""
+        evaluator = ConditionEvaluator(mock_api)
+        evaluator.stats = {'state': {'uploading': 5}, 'category': {}, 'tag': {}, 'total': 5}
+
+        assert evaluator._get_field_value(sample_torrent, 'stats.state.queuedUP') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.category.movies') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.tag.hd') == 0
 
     def test_stats_defaults_before_run(self, mock_api, sample_torrent):
         """Before RulesEngine.run() populates it, stats.* resolves to 0 rather than erroring."""
         evaluator = ConditionEvaluator(mock_api)
 
         assert evaluator._get_field_value(sample_torrent, 'stats.total') == 0
-        assert evaluator._get_field_value(sample_torrent, 'stats.count_by_state.queuedUP') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.state.queuedUP') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.tag.hd') == 0
 
 
 # ============================================================================

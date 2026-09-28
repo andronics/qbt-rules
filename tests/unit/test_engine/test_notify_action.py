@@ -258,13 +258,14 @@ class TestNotifyTemplating:
 
     @patch('qbt_rules.engine.requests.post')
     def test_multi_segment_stats_token_resolves(self, mock_post, mock_api, sample_torrent):
-        """${stats.count_by_state.queuedUP} has two dots -- ACTION_TEMPLATE_PATTERN
+        """${stats.state.queuedUP} has two dots -- ACTION_TEMPLATE_PATTERN
         must match multi-segment paths, not just single-dot ${namespace.field}."""
         mock_post.return_value = _mock_response()
         executor = ActionExecutor(mock_api, dry_run=False)
         executor.field_resolver.stats = {
-            'count_by_state': {'queuedUP': 3},
-            'count_by_category': {},
+            'state': {'queuedUP': 3},
+            'category': {},
+            'tag': {},
             'total': 3,
         }
 
@@ -273,7 +274,7 @@ class TestNotifyTemplating:
             'params': {
                 'service': 'generic',
                 'url': 'https://example.com/webhook',
-                'message': 'Queued: ${stats.count_by_state.queuedUP} / ${stats.total}',
+                'message': 'Queued: ${stats.state.queuedUP} / ${stats.total}',
             },
         }
         success, skipped = executor.execute(sample_torrent, action)
