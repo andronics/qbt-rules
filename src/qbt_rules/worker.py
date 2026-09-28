@@ -239,7 +239,12 @@ class Worker:
             'actions_executed': stats.actions_executed,
             'actions_skipped': stats.actions_skipped,
             'errors': stats.errors,
-            'dry_run': dry_run
+            'dry_run': dry_run,
+            # Per-rule breakdown of the counters above, keyed by rule id (or
+            # name when no id is set) -- see RuleStats.by_rule. New key,
+            # additive: any existing consumer reading only the aggregate
+            # fields above is unaffected by its presence.
+            'by_rule': stats.by_rule,
         }
 
         return result

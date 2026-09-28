@@ -5,6 +5,14 @@
 #
 # For settings, see config.yml
 
+# Schema marker for this file, read via Config.rules_version (defaults to 1
+# when absent, so files written before this existed are unaffected). Not
+# consulted by qbt-rules today -- a forward-compat hook for tooling that
+# needs to tell "this file predates schema versioning" from "this file
+# already declared one." Safe to leave as-is; only bump if you're following
+# a future migration guide that tells you to.
+version: 1
+
 # Optional: Reusable references (v0.5.0+)
 # Define reusable variables, conditions, and actions to reduce repetition.
 # Use ${vars.name} for variable substitution and $ref: path for structure expansion.

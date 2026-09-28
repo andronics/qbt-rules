@@ -443,6 +443,16 @@ class Config:
         logging.debug(f"Loading rules from {self.rules_file}")
 
         raw_rules = load_yaml_file(self.rules_file)
+
+        # Schema marker for rules.yml, defaulting to 1 for files written
+        # before this existed. Not consulted by anything today -- purely a
+        # forward-compat hook so a future migration can tell "this file
+        # predates schema versioning" from "this file already declared one"
+        # without sniffing structure. Refreshed on every hot-reload since
+        # this is set inside _load_rules(), which get_rules() re-invokes
+        # when rules.yml changes on disk.
+        self.rules_version = raw_rules.get('version', 1)
+
         self.rules = raw_rules.get('rules', [])
 
         if not isinstance(self.rules, list):

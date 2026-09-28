@@ -676,6 +676,26 @@ class TestConfig:
         assert isinstance(config.rules, list)
         assert len(config.rules) > 0
 
+    def test_rules_version_defaults_to_1_when_absent(self, tmp_config_dir):
+        """rules.yml with no top-level 'version' key defaults to 1, not None/error."""
+        config = Config(tmp_config_dir)
+        assert config.rules_version == 1
+
+    def test_rules_version_reads_explicit_value(self, tmp_path):
+        """An explicit top-level 'version' key in rules.yml is read through."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "config.yml").write_text("qbittorrent:\n  host: http://localhost:8080\n")
+        (config_dir / "rules.yml").write_text("version: 2\nrules: []\n")
+
+        config = Config(config_dir)
+        assert config.rules_version == 2
+
+    def test_config_version_defaults_to_1_when_absent(self, tmp_config_dir):
+        """config.yml with no top-level 'version' key defaults to 1 via config.get()."""
+        config = Config(tmp_config_dir)
+        assert config.get('version', 1) == 1
+
     def test_missing_config_file(self, tmp_path):
         """Raise error when config.yml missing."""
         empty_dir = tmp_path / "empty"

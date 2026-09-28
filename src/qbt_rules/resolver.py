@@ -86,6 +86,15 @@ class RuleResolver:
         self.conditions = refs.get('conditions', {})
         self.actions = refs.get('actions', {})
 
+        # Optional descriptive metadata for reusable blocks (description,
+        # tags, etc), e.g. refs.meta.conditions.<name>/refs.meta.actions.<name>.
+        # Deliberately never read by _expand_refs/_lookup_ref -- a $ref still
+        # resolves to self.conditions[name]/self.actions[name] directly, so
+        # this is pure storage for future tooling (e.g. a block-library UI)
+        # to read/write, with zero effect on rule evaluation. Absent from a
+        # refs block with no 'meta' key, same as today.
+        self.meta = refs.get('meta', {})
+
         # Apply instance-scoped variable overrides
         # Fully implemented - awaiting Config class integration to pass instance_id
         # Currently Config always passes instance_id=None (see config.py:496)
@@ -95,6 +104,22 @@ class RuleResolver:
             instance_vars = instance_refs.get('vars', {})
             self.vars.update(instance_vars)
             logger.debug(f"Applied instance '{instance_id}' variable overrides: {list(instance_vars.keys())}")
+
+    def get_block_meta(self, kind: str, name: str) -> Dict[str, Any]:
+        """
+        Look up optional metadata for a reusable $ref block.
+
+        Args:
+            kind: 'conditions' or 'actions'
+            name: Block name (the part after 'conditions.'/'actions.' in a $ref path)
+
+        Returns:
+            The block's refs.meta.<kind>.<name> dict, or {} if none was defined.
+            Never raises -- unlike _lookup_ref, a missing metadata entry isn't
+            an error, since metadata is optional descriptive information, not
+            something rule evaluation depends on.
+        """
+        return self.meta.get(kind, {}).get(name, {})
 
     def resolve_rule(self, rule: Dict[str, Any]) -> Dict[str, Any]:
         """

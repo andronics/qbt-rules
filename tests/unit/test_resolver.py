@@ -21,6 +21,7 @@ class TestRuleResolverInit:
         assert resolver.vars == {}
         assert resolver.conditions == {}
         assert resolver.actions == {}
+        assert resolver.meta == {}
 
     def test_init_with_vars(self):
         """Should extract vars from refs"""
@@ -79,6 +80,57 @@ class TestRuleResolverInit:
         resolver = RuleResolver(refs=refs, instance_id='seedbox', instances=instances)
         assert resolver.vars['min_ratio'] == 2.0
         assert resolver.vars['cleanup_age'] == '30 days'
+
+
+class TestBlockMeta:
+    """Test the optional refs.meta.* namespace -- descriptive metadata for
+    reusable $ref blocks (description, etc), never consulted during $ref
+    expansion/rule evaluation. A foundation for a future block-library UI."""
+
+    def test_meta_absent_by_default(self):
+        """A refs block with no 'meta' key yields an empty dict, same as vars/conditions/actions."""
+        resolver = RuleResolver(refs={'conditions': {'foo': {}}})
+        assert resolver.meta == {}
+        assert resolver.get_block_meta('conditions', 'foo') == {}
+
+    def test_get_block_meta_returns_stored_metadata(self):
+        """A defined refs.meta.<kind>.<name> entry is readable by name."""
+        refs = {
+            'conditions': {'public-tracker': {'field': 'trackers.url', 'operator': 'not_contains', 'value': '.private'}},
+            'meta': {
+                'conditions': {
+                    'public-tracker': {'description': 'Matches non-private trackers', 'tags': ['tracker']}
+                }
+            }
+        }
+        resolver = RuleResolver(refs=refs)
+        assert resolver.get_block_meta('conditions', 'public-tracker') == {
+            'description': 'Matches non-private trackers', 'tags': ['tracker']
+        }
+
+    def test_get_block_meta_missing_entry_returns_empty_dict(self):
+        """A block with no matching metadata entry returns {}, not an error --
+        metadata is optional descriptive info, unlike an unknown $ref which raises."""
+        refs = {
+            'conditions': {'a': {}, 'b': {}},
+            'meta': {'conditions': {'a': {'description': 'has metadata'}}}
+        }
+        resolver = RuleResolver(refs=refs)
+        assert resolver.get_block_meta('conditions', 'b') == {}
+
+    def test_meta_does_not_affect_ref_expansion(self):
+        """$ref: conditions.<name> still resolves to the raw condition body,
+        completely unaffected by a parallel refs.meta.conditions.<name> entry."""
+        refs = {
+            'conditions': {'well-seeded': {'field': 'info.ratio', 'operator': '>=', 'value': 2.0}},
+            'meta': {'conditions': {'well-seeded': {'description': 'Ratio >= 2.0'}}}
+        }
+        resolver = RuleResolver(refs=refs)
+        rule = {'name': 'r', 'conditions': [{'$ref': 'conditions.well-seeded'}], 'actions': []}
+
+        resolved = resolver.resolve_rule(rule)
+
+        assert resolved['conditions'] == [{'field': 'info.ratio', 'operator': '>=', 'value': 2.0}]
 
 
 class TestVariableSubstitution:

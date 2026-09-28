@@ -13,6 +13,14 @@
 # ALL environment variables support _FILE variants for secret management.
 # See PLAN.md for complete environment variable reference.
 
+# Schema marker for this file, read via config.get('version', 1) (defaults
+# to 1 when absent, so files written before this existed are unaffected).
+# Not consulted by qbt-rules today -- a forward-compat hook for tooling that
+# needs to tell "this file predates schema versioning" from "this file
+# already declared one." Safe to leave as-is; only bump if you're following
+# a future migration guide that tells you to.
+version: 1
+
 # ============================================================================
 # SERVER CONFIGURATION
 # ============================================================================
