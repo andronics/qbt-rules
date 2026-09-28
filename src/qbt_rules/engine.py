@@ -74,7 +74,7 @@ class ConditionEvaluator:
             'dlspeed': 0,
             'upspeed': 0,
             'seeds': 0,
-            'peers': 0,
+            'leechs': 0,
         }
 
     def clear_caches(self):
@@ -328,7 +328,7 @@ class ConditionEvaluator:
             # default to 0 rather than raising/None, since "0 torrents in
             # this state" and "this state doesn't exist" are the same thing
             # to a numeric condition operator. stats.dlspeed/upspeed/seeds/
-            # peers are plain scalars (fleet-wide sums), not nested like
+            # leechs are plain scalars (fleet-wide sums), not nested like
             # state/category/tag, so they fall through to the final
             # self.stats.get(property_name, 0) below.
             parts = property_name.split('.', 1)
@@ -986,14 +986,19 @@ class RulesEngine:
             # and sums across ALL torrents (not just `torrents` above, which
             # may be filtered to one torrent in webhook mode). Computed from
             # data already in memory -- no additional qBittorrent API calls,
-            # since state/category/tags/speeds/seeds/peers are all already
+            # since state/category/tags/speeds/seeds/leechs are all already
             # present on each torrent dict from the initial /torrents/info
             # fetch (tags via the same parse_tags() helper info.tags uses).
-            # dlspeed/upspeed/seeds/peers are fleet-wide sums of the same
-            # per-torrent info.dlspeed/upspeed/num_seeds/num_leechs values,
-            # not qBittorrent's own transfer.dl_info_speed/etc -- they total
-            # only the torrents this run actually fetched, and won't include
-            # protocol overhead/DHT traffic the global transfer figures do.
+            # dlspeed/upspeed/seeds/leechs are fleet-wide sums of the same
+            # per-torrent info.dlspeed/upspeed/num_seeds/num_leechs values --
+            # named after the underlying qBittorrent API fields they sum
+            # (num_seeds/num_leechs), not the Web UI's "Seeds"/"Peers" column
+            # labels, to avoid reading as an alias for the different
+            # properties.peers concept (total connected peers, not just
+            # leechers). Also not the same figures as qBittorrent's own
+            # transfer.dl_info_speed/etc -- they total only the torrents this
+            # run actually fetched, and won't include protocol overhead/
+            # DHT traffic the global transfer figures do.
             # Snapshot semantics: this is NOT recomputed as rules run, so an
             # earlier rule's action (e.g. force_start) won't be reflected in
             # stats.* for a later rule's check within the same run.
@@ -1005,7 +1010,7 @@ class RulesEngine:
                 'dlspeed': sum(t.get('dlspeed', 0) for t in all_torrents),
                 'upspeed': sum(t.get('upspeed', 0) for t in all_torrents),
                 'seeds': sum(t.get('num_seeds', 0) for t in all_torrents),
-                'peers': sum(t.get('num_leechs', 0) for t in all_torrents),
+                'leechs': sum(t.get('num_leechs', 0) for t in all_torrents),
             }
 
             # Get rules (execute in YAML file order)

@@ -661,20 +661,20 @@ class TestFieldAccessGlobal:
         assert evaluator._get_field_value(sample_torrent, 'stats.dlspeed') == 0
         assert evaluator._get_field_value(sample_torrent, 'stats.upspeed') == 0
         assert evaluator._get_field_value(sample_torrent, 'stats.seeds') == 0
-        assert evaluator._get_field_value(sample_torrent, 'stats.peers') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.leechs') == 0
 
     def test_stats_scalar_sums(self, mock_api, sample_torrent):
-        """stats.dlspeed/upspeed/seeds/peers are plain scalars, not nested under a Counter key."""
+        """stats.dlspeed/upspeed/seeds/leechs are plain scalars, not nested under a Counter key."""
         evaluator = ConditionEvaluator(mock_api)
         evaluator.stats = {
             'state': {}, 'category': {}, 'tag': {}, 'total': 3,
-            'dlspeed': 2097152, 'upspeed': 524288, 'seeds': 15, 'peers': 5,
+            'dlspeed': 2097152, 'upspeed': 524288, 'seeds': 15, 'leechs': 5,
         }
 
         assert evaluator._get_field_value(sample_torrent, 'stats.dlspeed') == 2097152
         assert evaluator._get_field_value(sample_torrent, 'stats.upspeed') == 524288
         assert evaluator._get_field_value(sample_torrent, 'stats.seeds') == 15
-        assert evaluator._get_field_value(sample_torrent, 'stats.peers') == 5
+        assert evaluator._get_field_value(sample_torrent, 'stats.leechs') == 5
 
 
 # ============================================================================

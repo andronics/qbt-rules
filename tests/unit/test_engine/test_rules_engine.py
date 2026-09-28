@@ -428,7 +428,7 @@ class TestStatsNamespace:
         assert engine.evaluator.stats['tag'] == {'hd': 1, 'new': 1}
 
     def test_stats_snapshot_sums_speeds_and_seeds_peers(self, mock_api, mock_config, sample_torrent, downloading_torrent):
-        """dlspeed/upspeed/seeds/peers are fleet-wide sums of the matching per-torrent info.* fields."""
+        """dlspeed/upspeed/seeds/leechs are fleet-wide sums of the matching per-torrent info.* fields."""
         mock_config.get_rules = Mock(return_value=[])
         mock_api.torrents_data = {
             # dlspeed=0, upspeed=524288, num_seeds=5, num_leechs=2
@@ -443,7 +443,7 @@ class TestStatsNamespace:
         assert engine.evaluator.stats['dlspeed'] == 2097152
         assert engine.evaluator.stats['upspeed'] == 524288
         assert engine.evaluator.stats['seeds'] == 15
-        assert engine.evaluator.stats['peers'] == 5
+        assert engine.evaluator.stats['leechs'] == 5
 
     def test_stats_field_usable_in_condition(self, mock_api, mock_config, sample_torrent, downloading_torrent):
         """A rule condition can reference stats.state.<state> against the numeric operators."""
