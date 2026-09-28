@@ -5,7 +5,24 @@ Currently-open items only. Resolved bugs and their postmortems live in
 
 ## Open
 
-Nothing currently open.
+- **Kubernetes-style `kind:`/`metadata:`/`spec:` envelope for rules.yml
+  resources** — deferred, not decided against. Rationale for waiting: k8s's
+  `kind` earns its keep by routing polymorphic resources through one
+  API/validation pipeline, and its `spec`/`status` split exists to protect
+  user-declared state from system-written state. Neither applies yet --
+  `rules.yml` has one resource shape (`rules:`) and no `status` subresource
+  (job results live in the separate `jobs` table's `by_rule`, not written
+  back onto the rule). Revisit when qbt-ui's CRUD API becomes real: at that
+  point `refs.conditions.<name>`/`refs.actions.<name>` (dict-keyed reusable
+  blocks) and `rules:` (list of rule objects) are two structurally
+  different resource shapes that a real API needs to route/validate
+  differently anyway -- that's when `kind: Rule`/`kind: ConditionBlock`/
+  `kind: ActionBlock` stops being cosmetic. Doing it now, with only one
+  kind in existence, would just add an indentation level with no new
+  capability. Also worth revisiting then: further collapsing config.yml/
+  rules.yml toward reusable, addressable elements generally (not just this
+  one schema shape) once there's a concrete CRUD surface driving the
+  requirements, rather than guessing at the shape in advance.
 
 ## Decided against (don't re-propose without reading this first)
 

@@ -244,7 +244,9 @@ rules:
   # --------------------------------------------------------------------------
   # Rule 1: Private Tracker Under-Seeding Emergency
   # --------------------------------------------------------------------------
-  - name: "Force seed private tracker torrents under ratio"
+  - id: force-seed-under-ratio-private
+    meta:
+      description: "Force seed private tracker torrents under ratio"
     enabled: true
     context: download-finished
     stop_on_match: false
@@ -259,7 +261,9 @@ rules:
   # --------------------------------------------------------------------------
   # Rule 2: Private Tracker Cleanup - Well Seeded
   # --------------------------------------------------------------------------
-  - name: "Cleanup well-seeded private tracker torrents"
+  - id: cleanup-well-seeded-private
+    meta:
+      description: "Cleanup well-seeded private tracker torrents"
     enabled: true
     context: weekly-cleanup
     conditions:
@@ -279,7 +283,9 @@ rules:
   # --------------------------------------------------------------------------
   # Rule 3: Public Tracker Quick Cleanup
   # --------------------------------------------------------------------------
-  - name: "Cleanup public tracker torrents after medium term"
+  - id: cleanup-public-medium-term
+    meta:
+      description: "Cleanup public tracker torrents after medium term"
     enabled: true
     context: weekly-cleanup
     conditions:
@@ -294,7 +300,9 @@ rules:
   # --------------------------------------------------------------------------
   # Rule 4: HD Content Auto-Organization
   # --------------------------------------------------------------------------
-  - name: "Auto-categorize and prioritize HD content from private trackers"
+  - id: auto-organize-hd-private
+    meta:
+      description: "Auto-categorize and prioritize HD content from private trackers"
     enabled: true
     context: torrent-imported
     stop_on_match: false
@@ -310,7 +318,9 @@ rules:
   # --------------------------------------------------------------------------
   # Rule 5: Reward Excellent Seeders
   # --------------------------------------------------------------------------
-  - name: "Tag and celebrate excellent seeding achievements"
+  - id: reward-excellent-seeding
+    meta:
+      description: "Tag and celebrate excellent seeding achievements"
     enabled: true
     context: weekly-cleanup
     stop_on_match: false
@@ -325,7 +335,9 @@ rules:
   # --------------------------------------------------------------------------
   # Rule 6: Pause Inactive Large Files
   # --------------------------------------------------------------------------
-  - name: "Pause large files with no activity to save resources"
+  - id: pause-inactive-large-files
+    meta:
+      description: "Pause large files with no activity to save resources"
     enabled: true
     context: weekly-cleanup
     conditions:
@@ -342,7 +354,9 @@ rules:
   # --------------------------------------------------------------------------
   # Rule 7: Bandwidth Management for Huge Files
   # --------------------------------------------------------------------------
-  - name: "Limit upload speed for huge files to prevent bandwidth hogging"
+  - id: limit-upload-huge-files
+    meta:
+      description: "Limit upload speed for huge files to prevent bandwidth hogging"
     enabled: true
     context: download-finished
     stop_on_match: false
@@ -362,7 +376,9 @@ rules:
   # --------------------------------------------------------------------------
   # Rule 8: Emergency Cleanup - Huge Old Public Torrents
   # --------------------------------------------------------------------------
-  - name: "Aggressive cleanup of huge old public torrents"
+  - id: emergency-cleanup-huge-public
+    meta:
+      description: "Aggressive cleanup of huge old public torrents"
     enabled: false  # Disabled by default - enable when space needed
     context: manual
     conditions:
@@ -388,7 +404,9 @@ rules:
   # --------------------------------------------------------------------------
   # Rule 9: Mixed Rule - Private HD TV Shows Special Treatment
   # --------------------------------------------------------------------------
-  - name: "Special handling for private tracker HD TV shows"
+  - id: special-handling-private-hd-tv
+    meta:
+      description: "Special handling for private tracker HD TV shows"
     enabled: true
     context: torrent-imported
     stop_on_match: false
@@ -415,7 +433,9 @@ rules:
   # --------------------------------------------------------------------------
   # Rule 10: Long-Term Archive Protection
   # --------------------------------------------------------------------------
-  - name: "Protect and maintain long-term archive content"
+  - id: protect-long-term-archive
+    meta:
+      description: "Protect and maintain long-term archive content"
     enabled: true
     context: weekly-cleanup
     stop_on_match: true  # Stop processing if matched
@@ -444,12 +464,14 @@ rules:
         params:
           service: generic
           url: https://example.com/webhook
-          # ${rule.name}/${rule.context} are resolved once, at config-load
-          # time, against this rule's own fields (not a per-torrent value).
+          # ${rule.meta.description}/${rule.context} are resolved once, at
+          # config-load time, against this rule's own fields (not a
+          # per-torrent value) -- ${rule.meta.description} is a nested path,
+          # supported the same way ${rule.id}/${rule.context} are.
           # ${info.name}/${info.ratio} are runtime, per-torrent fields --
           # the same info./trackers./files./peers. dot-notation conditions
           # already use -- resolved fresh for whichever torrent matched.
-          message: "[${rule.name}] ${info.name} protected (ratio ${info.ratio})"
+          message: "[${rule.meta.description}] ${info.name} protected (ratio ${info.ratio})"
 
 # ============================================================================
 # SUMMARY
@@ -478,8 +500,9 @@ rules:
 # - Context-aware execution
 # - Protection mechanisms
 # - notify message templating: ${rule.*} (load-time, this rule's own
-#   fields) and ${info.*}/${trackers.*}/${files.*}/${peers.*} (runtime,
-#   per-torrent -- same dot-notation conditions already use)
+#   fields, including nested paths like ${rule.meta.description}) and
+#   ${info.*}/${trackers.*}/${files.*}/${peers.*} (runtime, per-torrent --
+#   same dot-notation conditions already use)
 # - Resource management
 #
 # This would resolve to ~500 lines of fully expanded rules without

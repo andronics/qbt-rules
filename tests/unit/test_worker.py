@@ -59,6 +59,7 @@ def mock_engine(mocker):
     stats.actions_executed = 3
     stats.actions_skipped = 2
     stats.errors = 0
+    stats.by_rule = {}
 
     engine.stats = stats
     engine.run.return_value = None

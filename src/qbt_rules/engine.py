@@ -5,7 +5,7 @@ Core logic for evaluating conditions and executing actions
 
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Tuple
 
 import requests
@@ -36,6 +36,11 @@ class RuleStats:
     actions_executed: int = 0
     actions_skipped: int = 0
     errors: int = 0
+    # Per-rule breakdown of the same counters above, keyed by rule['id']
+    # (required on every rule -- see Config._load_rules). Additive: existing
+    # consumers reading only the aggregate fields above are unaffected by
+    # this key's presence.
+    by_rule: Dict[str, Dict[str, int]] = field(default_factory=dict)
 
 
 class ConditionEvaluator:
@@ -87,7 +92,14 @@ class ConditionEvaluator:
         self.transfer_info = None
         self.app_preferences = None
 
-    def evaluate(self, torrent: Dict, conditions: Any, current_context: Optional[str] = None, required_context: Optional[Any] = None) -> bool:
+    def evaluate(
+        self,
+        torrent: Dict,
+        conditions: Any,
+        current_context: Optional[str] = None,
+        required_context: Optional[Any] = None,
+        trace: Optional[List[Dict]] = None,
+    ) -> bool:
         """
         Evaluate all conditions for a torrent
 
@@ -98,6 +110,14 @@ class ConditionEvaluator:
             current_context: Current runtime context (torrent-imported, download-finished, weekly-cleanup, adhoc-run, custom, or None)
             required_context: Context requirement from rule level (string or list of strings)
                             When None, rule has no context requirement and executes regardless of runtime context
+            trace: Optional list to append per-leaf-condition evaluation records to
+                   ({'field', 'operator', 'value', 'actual', 'passed'}), for a future
+                   "preview this rule against the live fleet" feature. Every existing
+                   caller passes nothing, leaving this None, so behavior/perf is
+                   unchanged unless a caller opts in. Short-circuiting in all/any/none
+                   is unaffected -- conditions skipped by short-circuit (e.g. after
+                   the first failing entry in an `all` block) don't appear in the
+                   trace, same as they never ran without tracing either.
 
         Returns:
             True if all conditions match
@@ -118,19 +138,19 @@ class ConditionEvaluator:
 
             # A bare list of conditions is shorthand for {'all': conditions}
             if isinstance(conditions, list):
-                return self._evaluate_all(torrent, conditions)
+                return self._evaluate_all(torrent, conditions, trace)
 
             # Evaluate logical groups
             if 'all' in conditions:
-                if not self._evaluate_all(torrent, conditions['all']):
+                if not self._evaluate_all(torrent, conditions['all'], trace):
                     return False
 
             if 'any' in conditions:
-                if not self._evaluate_any(torrent, conditions['any']):
+                if not self._evaluate_any(torrent, conditions['any'], trace):
                     return False
 
             if 'none' in conditions:
-                if not self._evaluate_none(torrent, conditions['none']):
+                if not self._evaluate_none(torrent, conditions['none'], trace):
                     return False
 
             return True
@@ -174,36 +194,37 @@ class ConditionEvaluator:
         else:
             return current_context == required_context
 
-    def _evaluate_all(self, torrent: Dict, conditions: List[Dict]) -> bool:
+    def _evaluate_all(self, torrent: Dict, conditions: List[Dict], trace: Optional[List[Dict]] = None) -> bool:
         """All conditions must match (AND)"""
-        return all(self._evaluate_condition(torrent, cond) for cond in conditions)
+        return all(self._evaluate_condition(torrent, cond, trace) for cond in conditions)
 
-    def _evaluate_any(self, torrent: Dict, conditions: List[Dict]) -> bool:
+    def _evaluate_any(self, torrent: Dict, conditions: List[Dict], trace: Optional[List[Dict]] = None) -> bool:
         """Any condition must match (OR)"""
-        return any(self._evaluate_condition(torrent, cond) for cond in conditions)
+        return any(self._evaluate_condition(torrent, cond, trace) for cond in conditions)
 
-    def _evaluate_none(self, torrent: Dict, conditions: List[Dict]) -> bool:
+    def _evaluate_none(self, torrent: Dict, conditions: List[Dict], trace: Optional[List[Dict]] = None) -> bool:
         """No conditions must match (NOT)"""
-        return not any(self._evaluate_condition(torrent, cond) for cond in conditions)
+        return not any(self._evaluate_condition(torrent, cond, trace) for cond in conditions)
 
-    def _evaluate_condition(self, torrent: Dict, condition: Dict) -> bool:
+    def _evaluate_condition(self, torrent: Dict, condition: Dict, trace: Optional[List[Dict]] = None) -> bool:
         """
         Evaluate a single condition
 
         Args:
             torrent: Torrent dictionary
             condition: Condition dictionary with field, operator, value OR nested logical operator
+            trace: Optional list to append a leaf-condition evaluation record to -- see evaluate()
 
         Returns:
             True if condition matches
         """
         # Handle nested logical operators
         if 'all' in condition:
-            return self._evaluate_all(torrent, condition['all'])
+            return self._evaluate_all(torrent, condition['all'], trace)
         if 'any' in condition:
-            return self._evaluate_any(torrent, condition['any'])
+            return self._evaluate_any(torrent, condition['any'], trace)
         if 'none' in condition:
-            return self._evaluate_none(torrent, condition['none'])
+            return self._evaluate_none(torrent, condition['none'], trace)
 
         # Handle regular field conditions
         field = condition['field']
@@ -214,7 +235,18 @@ class ConditionEvaluator:
         actual = self._get_field_value(torrent, field)
 
         # Evaluate based on operator
-        return self._apply_operator(actual, operator, value, field)
+        passed = self._apply_operator(actual, operator, value, field)
+
+        if trace is not None:
+            trace.append({
+                'field': field,
+                'operator': operator,
+                'value': value,
+                'actual': actual,
+                'passed': passed,
+            })
+
+        return passed
 
     def get_field_value(self, torrent: Dict, field: str) -> Any:
         """
@@ -708,7 +740,7 @@ class ActionExecutor:
         Args:
             torrent: Torrent dictionary
             message: Message template, e.g.
-                "[${rule.name}] ${info.name} matched" -- ${rule.name} is
+                "[${rule.id}] ${info.name} matched" -- ${rule.id} is
                 already substituted away by the time this runs; only
                 ${info.name} is resolved here, per-torrent
 
@@ -1021,11 +1053,24 @@ class RulesEngine:
             processed_torrents = set()
 
             for rule in rules:
+                # 'id' is this rule's stable identity (required + unique --
+                # see Config._load_rules). 'meta.description', if set, is
+                # the human-readable text for logs; falls back to the id
+                # itself when absent, since id is required and description
+                # isn't.
+                rule_id = rule.get('id', 'unnamed')
+                rule_label = rule.get('meta', {}).get('description') or rule_id
+
                 if not rule.get('enabled', True):
-                    logger.debug(f"Skipping disabled rule: {rule.get('name', 'unnamed')}")
+                    logger.debug(f"Skipping disabled rule: {rule_label}")
                     continue
 
-                logger.info(f"Processing rule: {rule.get('name', 'unnamed')}")
+                rule_totals = self.stats.by_rule.setdefault(
+                    rule_id,
+                    {'matched': 0, 'actions_executed': 0, 'actions_skipped': 0, 'errors': 0}
+                )
+
+                logger.info(f"Processing rule: {rule_label}")
 
                 matched_count = 0
                 for torrent in torrents:
@@ -1042,8 +1087,9 @@ class RulesEngine:
                     if self.evaluator.evaluate(torrent, rule.get('conditions', {}), context, rule.get('context')):
                         matched_count += 1
                         self.stats.rules_matched += 1
+                        rule_totals['matched'] += 1
 
-                        logger.debug(f"Rule '{rule.get('name', 'unnamed')}' matched: {torrent.get('name', 'unknown')}")
+                        logger.debug(f"Rule '{rule_label}' matched: {torrent.get('name', 'unknown')}")
 
                         # Execute actions
                         for action in rule.get('actions', []):
@@ -1051,8 +1097,10 @@ class RulesEngine:
                             if success:
                                 if skipped:
                                     self.stats.actions_skipped += 1
+                                    rule_totals['actions_skipped'] += 1
                                 else:
                                     self.stats.actions_executed += 1
+                                    rule_totals['actions_executed'] += 1
 
                                     # Re-fetch torrent to update cache for subsequent rules
                                     # This allows later rules to see changes (tags, category, etc.)
@@ -1070,13 +1118,14 @@ class RulesEngine:
                                         # Continue execution - don't fail the rule
                             else:
                                 self.stats.errors += 1
+                                rule_totals['errors'] += 1
 
                         # Mark as processed if stop_on_match
                         if rule.get('stop_on_match', False):
                             processed_torrents.add(torrent['hash'])
 
                 if matched_count > 0:
-                    logger.info(f"  Rule '{rule.get('name', 'unnamed')}' matched {matched_count} torrent(s)")
+                    logger.info(f"  Rule '{rule_label}' matched {matched_count} torrent(s)")
 
             self.stats.processed = len(processed_torrents)
 

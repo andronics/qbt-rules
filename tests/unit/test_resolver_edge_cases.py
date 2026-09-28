@@ -22,7 +22,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.category', 'operator': '==', 'value': '${vars.null_value}'}
             ],
@@ -38,7 +38,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.category', 'operator': '==', 'value': '${vars.empty}'}
             ],
@@ -54,7 +54,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.ratio', 'operator': '==', 'value': '${vars.zero}'}
             ],
@@ -71,7 +71,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.ratio', 'operator': '>', 'value': '${vars.negative}'}
             ],
@@ -87,7 +87,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.enabled', 'operator': '==', 'value': '${vars.enabled}'}
             ],
@@ -104,7 +104,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.disabled', 'operator': '==', 'value': '${vars.disabled}'}
             ],
@@ -120,7 +120,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.tags', 'operator': 'in', 'value': '${vars.empty_list}'}
             ],
@@ -136,7 +136,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.data', 'operator': '==', 'value': '${vars.nested}'}
             ],
@@ -152,7 +152,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.metadata', 'operator': '==', 'value': '${vars.config}'}
             ],
@@ -168,7 +168,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.name', 'operator': '==', 'value': '${vars.special}'}
             ],
@@ -184,7 +184,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.name', 'operator': '==', 'value': '${vars.unicode}'}
             ],
@@ -200,7 +200,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.description', 'operator': '==', 'value': '${vars.multiline}'}
             ],
@@ -216,7 +216,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'all': [
                     {'any': [
@@ -238,7 +238,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'all': [
                     {'field': 'info.ratio', 'operator': '>=', 'value': '${vars.min}'},
@@ -258,7 +258,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [],
             'actions': [
                 {'type': 'add_tag', 'params': {'tags': ['${vars.tag_name}']}},
@@ -276,7 +276,7 @@ class TestVariableEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [],
             'actions': [
                 {'type': 'add_tag', 'params': {'tags': ['prefix-${vars.missing}-suffix']}}
@@ -301,7 +301,7 @@ class TestReferenceEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'conditions.empty'}],
             'actions': []
         }
@@ -321,7 +321,7 @@ class TestReferenceEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [],
             'actions': [{'$ref': 'actions.empty'}]
         }
@@ -341,7 +341,7 @@ class TestReferenceEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'conditions.private-tracker-hd'}],
             'actions': []
         }
@@ -361,7 +361,7 @@ class TestReferenceEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'conditions.private_tracker'}],
             'actions': []
         }
@@ -381,7 +381,7 @@ class TestReferenceEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'$ref': 'conditions.cond1'},
                 {'$ref': 'conditions.cond2'},
@@ -404,7 +404,7 @@ class TestReferenceEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'$ref': 'conditions.private'},
                 {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]},
@@ -427,7 +427,7 @@ class TestReferenceEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'any': [
                     {'all': [
@@ -460,7 +460,7 @@ class TestReferenceEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'conditions.well-seeded'}],
             'actions': []
         }
@@ -475,7 +475,7 @@ class TestReferenceEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'test'}],  # Missing 'conditions.'
             'actions': []
         }
@@ -494,7 +494,7 @@ class TestReferenceEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'conditions.test.extra'}],
             'actions': []
         }
@@ -506,7 +506,7 @@ class TestReferenceEdgeCases:
         # But if the name doesn't exist, should raise UnknownRefError
         with pytest.raises(UnknownRefError):
             rule2 = {
-                'name': 'test2',
+                'id': 'test2',
                 'conditions': [{'$ref': 'conditions.nonexistent.name'}],
                 'actions': []
             }
@@ -518,7 +518,7 @@ class TestReferenceEdgeCases:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 123}],  # Number instead of string
             'actions': []
         }
@@ -549,7 +549,7 @@ class TestCircularReferenceDetection:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'conditions.loop1'}],
             'actions': []
         }
@@ -570,7 +570,7 @@ class TestCircularReferenceDetection:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'conditions.a'}],
             'actions': []
         }
@@ -595,7 +595,7 @@ class TestRefTypeValidation:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test-rule',
+            'id': 'test-rule',
             'conditions': [{'$ref': 'actions.my-action'}],  # WRONG: action ref in conditions
             'actions': []
         }
@@ -622,7 +622,7 @@ class TestRefTypeValidation:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test-rule',
+            'id': 'test-rule',
             'conditions': [],
             'actions': [{'$ref': 'conditions.my-condition'}]  # WRONG: condition ref in actions
         }
@@ -645,7 +645,7 @@ class TestRefTypeValidation:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test-rule',
+            'id': 'test-rule',
             'conditions': [{'$ref': 'conditions.my-condition'}],
             'actions': []
         }
@@ -665,7 +665,7 @@ class TestRefTypeValidation:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test-rule',
+            'id': 'test-rule',
             'conditions': [],
             'actions': [{'$ref': 'actions.my-action'}]
         }
@@ -686,7 +686,7 @@ class TestRefTypeValidation:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test-rule',
+            'id': 'test-rule',
             'conditions': [
                 {'all': [
                     {'any': [
@@ -713,7 +713,7 @@ class TestRefTypeValidation:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test-rule',
+            'id': 'test-rule',
             'conditions': [],
             'actions': [
                 {'type': 'add_tag', 'params': {'tags': ['test']}},
@@ -747,7 +747,7 @@ class TestRefTypeValidation:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test-rule',
+            'id': 'test-rule',
             'conditions': [{'$ref': 'actions.wrong-action'}],
             'actions': []
         }
@@ -771,7 +771,7 @@ class TestRefTypeValidation:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'my-test-rule',
+            'id': 'my-test-rule',
             'conditions': [{'$ref': 'actions.my-action'}],
             'actions': []
         }
@@ -793,7 +793,7 @@ class TestRefTypeValidation:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test-rule',
+            'id': 'test-rule',
             'conditions': [],
             'actions': [{'$ref': 'conditions.my-condition'}]
         }
@@ -817,7 +817,7 @@ class TestRefTypeValidation:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test-rule',
+            'id': 'test-rule',
             'conditions': [
                 {'$ref': 'actions.action1'},  # First wrong ref
                 {'$ref': 'actions.action2'}   # Second wrong ref
@@ -846,7 +846,7 @@ class TestRefTypeValidation:
 
         # First verify correct usage works
         good_rule = {
-            'name': 'good-rule',
+            'id': 'good-rule',
             'conditions': [{'$ref': 'conditions.good-condition'}],
             'actions': [{'$ref': 'actions.good-action'}]
         }
@@ -856,7 +856,7 @@ class TestRefTypeValidation:
 
         # Now verify wrong ref is caught
         bad_rule = {
-            'name': 'bad-rule',
+            'id': 'bad-rule',
             'conditions': [
                 {'$ref': 'conditions.good-condition'},  # OK
                 {'$ref': 'actions.wrong-in-conditions'}  # ERROR
@@ -881,7 +881,7 @@ class TestRefTypeValidation:
 
         # Custom field with any ref type should work
         rule = {
-            'name': 'test-rule',
+            'id': 'test-rule',
             'conditions': [],
             'actions': [],
             'custom_metadata': {
@@ -912,7 +912,7 @@ class TestRefTypeValidation:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test-rule',
+            'id': 'test-rule',
             'conditions': [{'$ref': 'conditions.has-wrong-ref'}],
             'actions': []
         }
@@ -934,7 +934,7 @@ class TestRefTypeValidation:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test-rule',
+            'id': 'test-rule',
             'conditions': [{'$ref': 'actions.my-action'}],
             'actions': []
         }
@@ -956,7 +956,7 @@ class TestRefTypeValidation:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'complex-rule',
+            'id': 'complex-rule',
             'conditions': [
                 {'all': [
                     {'any': [
@@ -989,7 +989,7 @@ class TestRefTypeValidation:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test-rule',
+            'id': 'test-rule',
             'conditions': [],
             'actions': [
                 {'type': 'add_tag', 'params': {'tags': ['test']}},
@@ -1046,7 +1046,7 @@ class TestComplexScenarios:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'complex',
+            'id': 'complex',
             'enabled': True,
             'conditions': [
                 {'$ref': 'conditions.ratio-range'},
@@ -1079,7 +1079,7 @@ class TestComplexScenarios:
         resolver = RuleResolver(refs={})
 
         rule = {
-            'name': 'plain',
+            'id': 'plain',
             'enabled': True,
             'priority': 50,
             'context': 'manual',
@@ -1109,7 +1109,7 @@ class TestComplexScenarios:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'complete',
+            'id': 'complete',
             'enabled': True,
             'priority': '${vars.priority}',
             'context': 'weekly-cleanup',
@@ -1135,7 +1135,7 @@ class TestComplexScenarios:
         resolver = RuleResolver(refs={})
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}],
             'actions': [{'type': 'stop'}]
         }
@@ -1157,7 +1157,7 @@ class TestComplexScenarios:
         rules = []
         for i in range(100):
             rule = {
-                'name': f'rule-{i}',
+                'id': f'rule-{i}',
                 'conditions': [{'$ref': 'conditions.test'}],
                 'actions': [{'type': 'add_tag', 'params': {'tags': [f'tag-{i}']}}]
             }

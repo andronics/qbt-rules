@@ -38,7 +38,7 @@ class TestAdvancedExampleRule9(object):
         refs = advanced_example_doc["refs"]
         rule9 = next(
             r for r in advanced_example_doc["rules"]
-            if r["name"] == "Special handling for private tracker HD TV shows"
+            if r["id"] == "special-handling-private-hd-tv"
         )
         resolved = RuleResolver(refs=refs).resolve_rule(rule9)
 
@@ -91,7 +91,7 @@ class TestAdvancedExampleRule9(object):
         refs = advanced_example_doc["refs"]
         rule9 = next(
             r for r in advanced_example_doc["rules"]
-            if r["name"] == "Special handling for private tracker HD TV shows"
+            if r["id"] == "special-handling-private-hd-tv"
         )
         resolved = RuleResolver(refs=refs).resolve_rule(rule9)
 

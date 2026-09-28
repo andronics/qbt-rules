@@ -3,7 +3,7 @@ Reference and variable resolution for qBittorrent automation rules
 
 Implements the resolver layer that provides:
 - Variable substitution: ${vars.name} → value
-- Rule field substitution: ${rule.name} → this rule's own name/context/etc
+- Rule field substitution: ${rule.id} → this rule's own id/context/etc
 - Reference expansion: $ref: conditions.name → condition structure
 - Instance-scoped variable overrides
 - Type-aware value substitution
@@ -36,10 +36,13 @@ from qbt_rules.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Pattern for load-time token substitution: ${vars.name} / ${rule.field}.
-# Deliberately scoped to just these two prefixes -- ${info.*}/${trackers.*}/
-# etc must NOT match here, since those are runtime-only (see module docstring).
-TOKEN_PATTERN = re.compile(r'\$\{((?:vars|rule)\.\w+)\}')
+# Pattern for load-time token substitution: ${vars.name} / ${rule.field} /
+# ${rule.meta.description} (nested rule fields). One-or-more `.segment`
+# repeats so a multi-level path like rule.meta.description matches too, not
+# just single-dot fields. Deliberately scoped to just the vars/rule prefixes
+# -- ${info.*}/${trackers.*}/etc must NOT match here, since those are
+# runtime-only (see module docstring).
+TOKEN_PATTERN = re.compile(r'\$\{((?:vars|rule)(?:\.\w+)+)\}')
 
 
 class RuleResolver:
@@ -86,6 +89,15 @@ class RuleResolver:
         self.conditions = refs.get('conditions', {})
         self.actions = refs.get('actions', {})
 
+        # Optional descriptive metadata for reusable blocks (description,
+        # tags, etc), e.g. refs.meta.conditions.<name>/refs.meta.actions.<name>.
+        # Deliberately never read by _expand_refs/_lookup_ref -- a $ref still
+        # resolves to self.conditions[name]/self.actions[name] directly, so
+        # this is pure storage for future tooling (e.g. a block-library UI)
+        # to read/write, with zero effect on rule evaluation. Absent from a
+        # refs block with no 'meta' key, same as today.
+        self.meta = refs.get('meta', {})
+
         # Apply instance-scoped variable overrides
         # Fully implemented - awaiting Config class integration to pass instance_id
         # Currently Config always passes instance_id=None (see config.py:496)
@@ -95,6 +107,22 @@ class RuleResolver:
             instance_vars = instance_refs.get('vars', {})
             self.vars.update(instance_vars)
             logger.debug(f"Applied instance '{instance_id}' variable overrides: {list(instance_vars.keys())}")
+
+    def get_block_meta(self, kind: str, name: str) -> Dict[str, Any]:
+        """
+        Look up optional metadata for a reusable $ref block.
+
+        Args:
+            kind: 'conditions' or 'actions'
+            name: Block name (the part after 'conditions.'/'actions.' in a $ref path)
+
+        Returns:
+            The block's refs.meta.<kind>.<name> dict, or {} if none was defined.
+            Never raises -- unlike _lookup_ref, a missing metadata entry isn't
+            an error, since metadata is optional descriptive information, not
+            something rule evaluation depends on.
+        """
+        return self.meta.get(kind, {}).get(name, {})
 
     def resolve_rule(self, rule: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -117,8 +145,8 @@ class RuleResolver:
         # Phase 1: Deep copy to avoid mutating original
         resolved = copy.deepcopy(rule)
 
-        # Get rule name for error messages
-        rule_name = rule.get('name', 'unknown')
+        # Get rule id for error messages
+        rule_id = rule.get('id', 'unknown')
 
         # Phase 2: Expand $ref references with context validation
         # Process conditions separately (only allow conditions.* refs)
@@ -127,7 +155,7 @@ class RuleResolver:
                 resolved['conditions'],
                 ref_stack=set(),
                 allowed_groups=['conditions'],
-                path=f"rules['{rule_name}'].conditions"
+                path=f"rules['{rule_id}'].conditions"
             )
 
         # Process actions separately (only allow actions.* refs)
@@ -136,25 +164,25 @@ class RuleResolver:
                 resolved['actions'],
                 ref_stack=set(),
                 allowed_groups=['actions'],
-                path=f"rules['{rule_name}'].actions"
+                path=f"rules['{rule_id}'].actions"
             )
 
         # Process other fields without ref type restrictions
         for key in resolved:
-            if key not in ('conditions', 'actions', 'name'):
+            if key not in ('conditions', 'actions', 'id'):
                 resolved[key] = self._expand_refs(
                     resolved[key],
                     ref_stack=set(),
                     allowed_groups=None,  # No restrictions for other fields
-                    path=f"rules['{rule_name}'].{key}"
+                    path=f"rules['{rule_id}'].{key}"
                 )
 
         # Phase 3: Substitute all ${vars.*} and ${rule.*} tokens (type-aware).
         # ${rule.*} resolves against `rule` (the original, pre-substitution
-        # dict) rather than `resolved` -- rule.name/rule.context are always
+        # dict) rather than `resolved` -- rule.id/rule.context are always
         # plain scalars in practice, so this is equivalent either way, but
         # using the original avoids a self-referential edge case if a
-        # rule's own name field somehow itself contained a ${vars.*} token.
+        # rule's own id field somehow itself contained a ${vars.*} token.
         resolved = self._substitute_tokens(resolved, rule)
 
         return resolved
@@ -414,14 +442,15 @@ class RuleResolver:
 
     def _resolve_rule_field(self, field_path: str, rule: Dict[str, Any]) -> Any:
         """
-        Resolve a rule's own field by dot-notation path
+        Resolve a rule's own field by dot-notation path -- one or more
+        segments deep, e.g. 'rule.id' or the nested 'rule.meta.description'.
 
         Unlike ${vars.*} (a global lookup into refs.vars), ${rule.*} is
         self-referential -- it resolves against the specific rule currently
         being processed, not a shared cross-rule table.
 
         Args:
-            field_path: Field path like 'rule.name'
+            field_path: Field path like 'rule.id' or 'rule.meta.description'
             rule: The current rule dict
 
         Returns:
@@ -429,21 +458,23 @@ class RuleResolver:
 
         Raises:
             InvalidRuleFieldError: Invalid path format
-            UnknownRuleFieldError: Field not present on this rule
+            UnknownRuleFieldError: A segment isn't present on this rule
         """
-        parts = field_path.split('.', 1)
-        if len(parts) != 2 or parts[0] != 'rule':
+        parts = field_path.split('.')
+        if len(parts) < 2 or parts[0] != 'rule':
             raise InvalidRuleFieldError(
                 field_path=field_path,
-                reason="Expected format 'rule.name' (e.g., 'rule.name', 'rule.context')"
+                reason="Expected format 'rule.id' (e.g., 'rule.id', 'rule.context', 'rule.meta.description')"
             )
 
-        field_name = parts[1]
-        if field_name not in rule:
-            raise UnknownRuleFieldError(
-                field_name=field_name,
-                rule_name=rule.get('name', 'unknown'),
-                available_fields=list(rule.keys()),
-            )
+        value: Any = rule
+        for depth, segment in enumerate(parts[1:], start=1):
+            if not isinstance(value, dict) or segment not in value:
+                raise UnknownRuleFieldError(
+                    field_name='.'.join(parts[1:depth + 1]),
+                    rule_id=rule.get('id', 'unknown'),
+                    available_fields=list(value.keys()) if isinstance(value, dict) else [],
+                )
+            value = value[segment]
 
-        return rule[field_name]
+        return value

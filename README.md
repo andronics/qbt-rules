@@ -70,7 +70,9 @@ Edit `config/rules.yml`:
 
 ```yaml
 rules:
-  - name: "Auto-categorize HD movies"
+  - id: auto-categorize-hd-movies
+    meta:
+      description: "Auto-categorize HD movies"
     enabled: true
     stop_on_match: true
     context: torrent-imported

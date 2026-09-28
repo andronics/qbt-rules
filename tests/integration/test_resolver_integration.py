@@ -51,7 +51,7 @@ class TestResolverConfigIntegration:
             },
             'rules': [
                 {
-                    'name': 'Cleanup well-seeded torrents',
+                    'id': 'Cleanup well-seeded torrents',
                     'enabled': True,
                     'conditions': [
                         {'$ref': 'conditions.well-seeded'}
@@ -109,7 +109,7 @@ class TestResolverConfigIntegration:
         rules_content = {
             'rules': [
                 {
-                    'name': 'Simple rule',
+                    'id': 'Simple rule',
                     'enabled': True,
                     'conditions': [
                         {'field': 'info.ratio', 'operator': '>=', 'value': 1.0}
@@ -159,7 +159,7 @@ class TestResolverConfigIntegration:
             },
             'rules': [
                 {
-                    'name': 'Test rule',
+                    'id': 'Test rule',
                     'enabled': True,
                     'conditions': [{'$ref': 'conditions.test'}],
                     'actions': []
@@ -201,7 +201,7 @@ class TestResolverConfigIntegration:
             'refs': {'vars': {'min_ratio': 1.0}},
             'rules': [
                 {
-                    'name': 'Test',
+                    'id': 'Test',
                     'enabled': True,
                     'conditions': [{'field': 'info.ratio', 'operator': '>=', 'value': '${vars.min_ratio}'}],
                     'actions': []
@@ -258,7 +258,7 @@ class TestResolverConfigIntegration:
             },
             'rules': [
                 {
-                    'name': 'Test rule',
+                    'id': 'Test rule',
                     'enabled': True,
                     'conditions': [{'$ref': 'conditions.test'}],
                     'actions': []
@@ -337,7 +337,7 @@ class TestResolverConfigIntegration:
             },
             'rules': [
                 {
-                    'name': 'Cleanup well-seeded private torrents',
+                    'id': 'Cleanup well-seeded private torrents',
                     'enabled': True,
                     'conditions': [
                         {'$ref': 'conditions.private-tracker'},
@@ -349,7 +349,7 @@ class TestResolverConfigIntegration:
                     ]
                 },
                 {
-                    'name': 'Force seed private under ratio',
+                    'id': 'Force seed private under ratio',
                     'enabled': True,
                     'conditions': [
                         {'$ref': 'conditions.private-tracker'},
@@ -377,7 +377,7 @@ class TestResolverConfigIntegration:
 
         # Rule 1: Cleanup
         rule1 = rules[0]
-        assert rule1['name'] == 'Cleanup well-seeded private torrents'
+        assert rule1['id'] == 'Cleanup well-seeded private torrents'
         assert 'any' in rule1['conditions'][0]  # private-tracker expanded
         assert 'all' in rule1['conditions'][1]  # well-seeded expanded
         assert rule1['conditions'][1]['all'][0]['value'] == 1.0  # Variable substituted
@@ -392,7 +392,7 @@ class TestResolverConfigIntegration:
 
         # Rule 2: Force seed
         rule2 = rules[1]
-        assert rule2['name'] == 'Force seed private under ratio'
+        assert rule2['id'] == 'Force seed private under ratio'
         assert 'any' in rule2['conditions'][0]
         assert rule2['conditions'][1]['all'][0]['value'] == 1.0  # Variable substituted
         # actions.force-seed (2 items) is spliced into the parent list

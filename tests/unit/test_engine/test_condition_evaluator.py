@@ -336,6 +336,86 @@ class TestLogicalGroups:
 
 
 # ============================================================================
+# Opt-in condition evaluation trace
+# ============================================================================
+
+class TestConditionTrace:
+    """Test the optional `trace` param on evaluate()/_evaluate_*() -- a
+    foundation for a future "preview this rule against the live fleet"
+    feature. Every existing call site omits it, so these tests exist to
+    pin down the opt-in behavior without affecting anything else."""
+
+    def test_no_trace_param_leaves_behavior_unchanged(self, mock_api, sample_torrent):
+        """Omitting trace (as every current caller does) behaves exactly as before."""
+        evaluator = ConditionEvaluator(mock_api)
+        conditions = {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]}
+        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        assert result is True
+
+    def test_trace_records_passing_leaf_condition(self, mock_api, sample_torrent):
+        """A single passing condition appends one record with the actual value."""
+        evaluator = ConditionEvaluator(mock_api)
+        conditions = {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]}
+        trace = []
+
+        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run', trace=trace)
+
+        assert result is True
+        assert trace == [{
+            'field': 'info.ratio', 'operator': '>=', 'value': 1.0,
+            'actual': 2.0, 'passed': True,
+        }]
+
+    def test_trace_records_failing_leaf_condition(self, mock_api, sample_torrent):
+        """A failing condition is recorded with passed: False and its real actual value."""
+        evaluator = ConditionEvaluator(mock_api)
+        conditions = {'all': [{'field': 'info.state', 'operator': '==', 'value': 'downloading'}]}
+        trace = []
+
+        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run', trace=trace)
+
+        assert result is False
+        assert trace == [{
+            'field': 'info.state', 'operator': '==', 'value': 'downloading',
+            'actual': 'uploading', 'passed': False,
+        }]
+
+    def test_trace_short_circuits_same_as_without_trace(self, mock_api, sample_torrent):
+        """`all` still stops at the first failing condition when tracing --
+        tracing doesn't change evaluation order/short-circuiting, and
+        therefore doesn't add extra field lookups (API calls) either."""
+        evaluator = ConditionEvaluator(mock_api)
+        conditions = {'all': [
+            {'field': 'info.state', 'operator': '==', 'value': 'downloading'},  # fails first
+            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},  # never reached
+        ]}
+        trace = []
+
+        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run', trace=trace)
+
+        assert result is False
+        assert len(trace) == 1
+        assert trace[0]['field'] == 'info.state'
+
+    def test_trace_covers_nested_groups(self, mock_api, sample_torrent):
+        """Leaf conditions inside a nested any/none are still recorded."""
+        evaluator = ConditionEvaluator(mock_api)
+        conditions = {'all': [
+            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},
+            {'any': [
+                {'field': 'info.state', 'operator': '==', 'value': 'uploading'},
+            ]},
+        ]}
+        trace = []
+
+        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run', trace=trace)
+
+        assert result is True
+        fields_seen = [t['field'] for t in trace]
+        assert fields_seen == ['info.ratio', 'info.state']
+
+
+# ============================================================================
 # Field Access - info.*
 # ============================================================================
 
