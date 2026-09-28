@@ -462,6 +462,7 @@ class Config:
             )
 
         # Validate required fields for each rule
+        seen_ids = set()
         for i, rule in enumerate(self.rules):
             if not isinstance(rule, dict):
                 raise ConfigurationError(
@@ -469,22 +470,40 @@ class Config:
                     f"Rule #{i+1} must be a dictionary"
                 )
 
-            if 'name' not in rule:
+            if 'id' not in rule:
                 raise ConfigurationError(
                     str(self.rules_file),
-                    f"Rule #{i+1} missing required field: 'name'"
+                    f"Rule #{i+1} missing required field: 'id'"
                 )
+
+            if not isinstance(rule['id'], str) or not rule['id']:
+                raise ConfigurationError(
+                    str(self.rules_file),
+                    f"Rule #{i+1} has an invalid 'id': must be a non-empty string"
+                )
+
+            # id is this rule's stable identity everywhere (by_rule stats,
+            # ${rule.id} templating, a future rule-editor UI) -- a silent
+            # collision would mean two different rules' history/state get
+            # merged under one key, so this is enforced at load time rather
+            # than left as an easy-to-miss footgun.
+            if rule['id'] in seen_ids:
+                raise ConfigurationError(
+                    str(self.rules_file),
+                    f"Duplicate rule id: '{rule['id']}' -- rule ids must be unique"
+                )
+            seen_ids.add(rule['id'])
 
             if 'conditions' not in rule:
                 raise ConfigurationError(
                     str(self.rules_file),
-                    f"Rule '{rule['name']}' missing required field: 'conditions'"
+                    f"Rule '{rule['id']}' missing required field: 'conditions'"
                 )
 
             if 'actions' not in rule:
                 raise ConfigurationError(
                     str(self.rules_file),
-                    f"Rule '{rule['name']}' missing required field: 'actions'"
+                    f"Rule '{rule['id']}' missing required field: 'actions'"
                 )
 
         logging.debug(f"Loaded {len(self.rules)} rules")
@@ -622,10 +641,10 @@ class Config:
 
         Examples:
             >>> config.get_rules()  # Resolved rules (default)
-            [{'name': 'cleanup', 'conditions': [...], 'actions': [...]}]
+            [{'id': 'cleanup', 'conditions': [...], 'actions': [...]}]
 
             >>> config.get_rules(resolved=False)  # Raw rules
-            [{'name': 'cleanup', 'conditions': [{'$ref': 'conditions.well-seeded'}], ...}]
+            [{'id': 'cleanup', 'conditions': [{'$ref': 'conditions.well-seeded'}], ...}]
         """
         try:
             # Check if rules file has been modified
@@ -660,9 +679,9 @@ class Config:
                     resolved_rule = self._resolver.resolve_rule(rule)
                     resolved_rules.append(resolved_rule)
                 except Exception as e:
-                    # Log error with rule name for debugging
-                    rule_name = rule.get('name', 'unknown')
-                    logging.error(f"Failed to resolve rule '{rule_name}': {e}")
+                    # Log error with rule id for debugging
+                    rule_id = rule.get('id', 'unknown')
+                    logging.error(f"Failed to resolve rule '{rule_id}': {e}")
                     raise  # Re-raise to surface the error
 
             self._resolved_rules_cache = resolved_rules

@@ -716,6 +716,83 @@ class TestConfig:
             Config(config_dir)
         assert "must be a list" in str(exc_info.value)
 
+    def test_rule_missing_id_raises_error(self, tmp_path):
+        """A rule with no 'id' fails to load -- 'id' is required (v0.7+), 'name' is not read at all."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        (config_dir / "config.yml").write_text("qbittorrent:\n  host: localhost")
+        (config_dir / "rules.yml").write_text("""
+rules:
+  - name: "Has a name but no id"
+    conditions:
+      all: []
+    actions: []
+""")
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            Config(config_dir)
+        assert "missing required field: 'id'" in str(exc_info.value)
+
+    def test_rule_empty_id_raises_error(self, tmp_path):
+        """An empty-string id is rejected, same as a missing one."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        (config_dir / "config.yml").write_text("qbittorrent:\n  host: localhost")
+        (config_dir / "rules.yml").write_text("""
+rules:
+  - id: ""
+    conditions:
+      all: []
+    actions: []
+""")
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            Config(config_dir)
+        assert "invalid 'id'" in str(exc_info.value)
+
+    def test_rule_non_string_id_raises_error(self, tmp_path):
+        """A non-string id (e.g. a bare number) is rejected."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        (config_dir / "config.yml").write_text("qbittorrent:\n  host: localhost")
+        (config_dir / "rules.yml").write_text("""
+rules:
+  - id: 42
+    conditions:
+      all: []
+    actions: []
+""")
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            Config(config_dir)
+        assert "invalid 'id'" in str(exc_info.value)
+
+    def test_duplicate_rule_id_raises_error(self, tmp_path):
+        """Two rules sharing an id fail to load -- silently merging their
+        by_rule stats/history under one key would be worse than an error."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        (config_dir / "config.yml").write_text("qbittorrent:\n  host: localhost")
+        (config_dir / "rules.yml").write_text("""
+rules:
+  - id: dupe
+    conditions:
+      all: []
+    actions: []
+  - id: dupe
+    conditions:
+      all: []
+    actions: []
+""")
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            Config(config_dir)
+        assert "Duplicate rule id: 'dupe'" in str(exc_info.value)
+
     def test_schedule_defaults_to_empty_list(self, tmp_config_dir):
         """schedule defaults to an empty list when config.yml has no schedule: section."""
         config = Config(tmp_config_dir)
@@ -977,7 +1054,7 @@ engine:
 
         assert isinstance(rules, list)
         assert len(rules) > 0
-        assert 'name' in rules[0]
+        assert 'id' in rules[0]
 
     def test_get_rules_hot_reload_when_file_modified(self, tmp_path):
         """Should reload rules when file is modified."""
@@ -990,7 +1067,7 @@ engine:
         rules_file = config_dir / "rules.yml"
         rules_file.write_text("""
 rules:
-  - name: "Initial Rule"
+  - id: initial-rule
     conditions:
       all: []
     actions:
@@ -1002,18 +1079,18 @@ rules:
         config = Config(config_dir)
         initial_rules = config.get_rules()
         assert len(initial_rules) == 1
-        assert initial_rules[0]['name'] == "Initial Rule"
+        assert initial_rules[0]['id'] == "initial-rule"
 
         # Modify rules file (need to ensure mtime changes)
         time.sleep(0.01)  # Ensure mtime difference
         rules_file.write_text("""
 rules:
-  - name: "Updated Rule"
+  - id: updated-rule
     conditions:
       all: []
     actions:
       - type: start
-  - name: "New Rule"
+  - id: new-rule
     conditions:
       all: []
     actions:
@@ -1026,8 +1103,8 @@ rules:
         # Get rules again - should reload
         updated_rules = config.get_rules()
         assert len(updated_rules) == 2
-        assert updated_rules[0]['name'] == "Updated Rule"
-        assert updated_rules[1]['name'] == "New Rule"
+        assert updated_rules[0]['id'] == "updated-rule"
+        assert updated_rules[1]['id'] == "new-rule"
 
     def test_get_rules_skips_reload_when_file_unchanged(self, tmp_path, mocker):
         """Should not reload rules when file hasn't changed."""
@@ -1036,7 +1113,7 @@ rules:
 
         (config_dir / "rules.yml").write_text("""
 rules:
-  - name: "Test Rule"
+  - id: test-rule
     conditions:
       all: []
     actions:
@@ -1069,7 +1146,7 @@ rules:
         rules_file = config_dir / "rules.yml"
         rules_file.write_text("""
 rules:
-  - name: "Good Rule"
+  - id: good-rule
     conditions:
       all: []
     actions:
@@ -1080,7 +1157,7 @@ rules:
         config = Config(config_dir)
         good_rules = config.get_rules()
         assert len(good_rules) == 1
-        assert good_rules[0]['name'] == "Good Rule"
+        assert good_rules[0]['id'] == "good-rule"
 
         # Corrupt the rules file
         time.sleep(0.01)
@@ -1093,7 +1170,7 @@ rules:
 
         # Should still have the good rules
         assert len(rules_after_error) == 1
-        assert rules_after_error[0]['name'] == "Good Rule"
+        assert rules_after_error[0]['id'] == "good-rule"
 
         # Should have logged a warning
         assert "Failed to reload rules" in caplog.text

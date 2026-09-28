@@ -82,9 +82,22 @@ version: 1
 #       - type: add_tag
 #         params:
 #           tags: ["hd", "auto-tagged"]
+#
+#   meta:
+#     # Optional descriptive metadata for the conditions/actions blocks
+#     # above -- never read during $ref expansion, purely for tooling
+#     # (e.g. a block-library UI) to display a description or tags.
+#     conditions:
+#       private-tracker:
+#         description: "Matches when any tracker URL looks private/gated"
+#     actions:
+#       safe-delete:
+#         description: "Tag for review and stop, instead of deleting outright"
 
 # Example rules using refs (uncomment to enable):
-# - name: "Cleanup well-seeded private tracker torrents"
+# - id: cleanup-well-seeded-private
+#   meta:
+#     description: "Cleanup well-seeded private tracker torrents"
 #   enabled: true
 #   conditions:
 #     - $ref: conditions.private-tracker
@@ -94,7 +107,9 @@ version: 1
 #   actions:
 #     - $ref: actions.safe-delete
 #
-# - name: "Force seed private tracker under ratio"
+# - id: force-seed-private-under-ratio
+#   meta:
+#     description: "Force seed private tracker under ratio"
 #   enabled: true
 #   conditions:
 #     - $ref: conditions.private-tracker
@@ -106,7 +121,9 @@ version: 1
 #     - $ref: actions.force-seed
 
 rules:
-  - name: Block unwanted archive files on add
+  - id: block-unwanted-archives
+    meta:
+      description: "Block unwanted archive files on add"
     enabled: true
     stop_on_match: true  # Don't process other rules if matched
     context: torrent-imported  # Context can be any custom string you define
@@ -127,7 +144,9 @@ rules:
       #   params:
       #     delete_files: true
 
-  - name: Tag private tracker torrents
+  - id: tag-private-trackers
+    meta:
+      description: "Tag private tracker torrents"
     enabled: true
     stop_on_match: false
     conditions:
@@ -141,7 +160,9 @@ rules:
           tags:
             - private
 
-  - name: Auto-categorize HD movies
+  - id: auto-categorize-hd-movies
+    meta:
+      description: "Auto-categorize HD movies"
     enabled: true
     stop_on_match: false
     conditions:
@@ -162,7 +183,9 @@ rules:
             - hd
             - auto-categorized
 
-  - name: Auto-categorize TV shows
+  - id: auto-categorize-tv-shows
+    meta:
+      description: "Auto-categorize TV shows"
     enabled: true
     stop_on_match: false
     conditions:
@@ -178,7 +201,9 @@ rules:
         params:
           category: tv
 
-  - name: Remove torrents with all dead trackers
+  - id: remove-dead-tracker-torrents
+    meta:
+      description: "Remove torrents with all dead trackers"
     enabled: true
     stop_on_match: false
     conditions:
@@ -196,7 +221,9 @@ rules:
         params:
           delete_files: false
 
-  - name: Remove stalled magnet links
+  - id: remove-stalled-magnets
+    meta:
+      description: "Remove stalled magnet links"
     enabled: true
     stop_on_match: false
     conditions:
@@ -212,7 +239,9 @@ rules:
         params:
           delete_files: true
 
-  - name: Pause well-seeded torrents
+  - id: pause-well-seeded
+    meta:
+      description: "Pause well-seeded torrents"
     enabled: true
     stop_on_match: false
     conditions:
@@ -240,7 +269,9 @@ rules:
             - auto-stopped
             - seeded
 
-  - name: Force start private tracker torrents under ratio
+  - id: force-start-private-under-ratio
+    meta:
+      description: "Force start private tracker torrents under ratio"
     enabled: true
     stop_on_match: false
     conditions:
@@ -263,7 +294,9 @@ rules:
           tags:
             - private-seeding
 
-  - name: Delete old completed torrents
+  - id: delete-old-completed
+    meta:
+      description: "Delete old completed torrents"
     enabled: true
     stop_on_match: true
     conditions:
@@ -285,7 +318,9 @@ rules:
         params:
           delete_files: true
 
-  - name: Emergency space cleanup
+  - id: emergency-space-cleanup
+    meta:
+      description: "Emergency space cleanup"
     enabled: false
     stop_on_match: false
     conditions:
@@ -301,7 +336,9 @@ rules:
         params:
           delete_files: true
 
-  - name: Remove errored torrents
+  - id: remove-errored
+    meta:
+      description: "Remove errored torrents"
     enabled: true
     stop_on_match: false
     conditions:
@@ -314,7 +351,9 @@ rules:
         params:
           delete_files: false
 
-  - name: Remove missing files torrents
+  - id: remove-missing-files
+    meta:
+      description: "Remove missing files torrents"
     enabled: true
     stop_on_match: false
     conditions:
@@ -330,7 +369,9 @@ rules:
         params:
           delete_files: true
 
-  - name: Tag torrents from specific tracker
+  - id: tag-specific-tracker
+    meta:
+      description: "Tag torrents from specific tracker"
     enabled: false
     stop_on_match: false
     conditions:
@@ -344,7 +385,9 @@ rules:
           tags:
             - tracker-example
 
-  - name: Pause torrents with no seeders
+  - id: pause-no-seeders
+    meta:
+      description: "Pause torrents with no seeders"
     enabled: false
     stop_on_match: false
     conditions:
@@ -365,7 +408,9 @@ rules:
           tags:
             - no-seeds
 
-  - name: Limit upload speed for old torrents
+  - id: limit-upload-old-torrents
+    meta:
+      description: "Limit upload speed for old torrents"
     enabled: false
     stop_on_match: false
     conditions:
@@ -381,7 +426,9 @@ rules:
         params:
           limit: 102400
 
-  - name: Tag torrents when encryption is required
+  - id: tag-encryption-required
+    meta:
+      description: "Tag torrents when encryption is required"
     enabled: false
     stop_on_match: false
     context: torrent-imported  # Context can be any custom string you define
@@ -396,7 +443,9 @@ rules:
           tags:
             - encrypted-only
 
-  - name: Tag HD content from private trackers
+  - id: tag-hd-private
+    meta:
+      description: "Tag HD content from private trackers"
     enabled: false
     stop_on_match: false
     conditions:
@@ -421,7 +470,9 @@ rules:
         params:
           category: private-hd
 
-  - name: Recheck stalled downloads
+  - id: recheck-stalled-downloads
+    meta:
+      description: "Recheck stalled downloads"
     enabled: false
     stop_on_match: false
     conditions:

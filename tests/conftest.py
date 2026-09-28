@@ -828,7 +828,8 @@ def mock_app_preferences() -> Dict[str, Any]:
 def simple_rule() -> Dict[str, Any]:
     """Simple rule with basic conditions."""
     return {
-        "name": "Simple test rule",
+        "id": "simple-test-rule",
+        "meta": {"description": "Simple test rule"},
         "enabled": True,
         "stop_on_match": False,
         "conditions": {
@@ -909,7 +910,9 @@ dry_run: false
     rules_yml = config_dir / "rules.yml"
     rules_yml.write_text("""
 rules:
-  - name: "Test rule"
+  - id: test-rule
+    meta:
+      description: "Test rule"
     enabled: true
     stop_on_match: false
     conditions:

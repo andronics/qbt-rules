@@ -464,10 +464,11 @@ class TestStatisticsTracking:
 class TestByRuleStats:
     """Test the per-rule breakdown recorded in RuleStats.by_rule."""
 
-    def test_by_rule_keyed_by_name_when_no_id(self, mock_api, mock_config, sample_torrent):
-        """A rule without an 'id' is tracked under its 'name'."""
+    def test_by_rule_keyed_by_id(self, mock_api, mock_config, sample_torrent):
+        """A rule is tracked under its required 'id'."""
         rule = {
-            'name': 'Test rule',
+            'id': 'test-rule',
+            'meta': {'description': 'Test rule'},
             'enabled': True,
             'conditions': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]},
             'actions': [{'type': 'add_tag', 'params': {'tags': ['tag1']}}]
@@ -479,15 +480,15 @@ class TestByRuleStats:
         engine.run(context='adhoc-run')
 
         assert engine.stats.by_rule == {
-            'Test rule': {'matched': 1, 'actions_executed': 1, 'actions_skipped': 0, 'errors': 0}
+            'test-rule': {'matched': 1, 'actions_executed': 1, 'actions_skipped': 0, 'errors': 0}
         }
 
-    def test_by_rule_keyed_by_id_when_present(self, mock_api, mock_config, sample_torrent):
-        """A rule with an 'id' is tracked under that id, not its display name --
-        so a future rename of 'name' doesn't orphan its history."""
+    def test_by_rule_survives_meta_description_change(self, mock_api, mock_config, sample_torrent):
+        """The by_rule key is the id, not meta.description -- so a future
+        rename of the human-readable text doesn't orphan the rule's history."""
         rule = {
             'id': 'rule-abc123',
-            'name': 'Test rule (renamed)',
+            'meta': {'description': 'Renamed human-readable text'},
             'enabled': True,
             'conditions': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]},
             'actions': [{'type': 'add_tag', 'params': {'tags': ['tag1']}}]
@@ -499,19 +500,19 @@ class TestByRuleStats:
         engine.run(context='adhoc-run')
 
         assert 'rule-abc123' in engine.stats.by_rule
-        assert 'Test rule (renamed)' not in engine.stats.by_rule
+        assert 'Renamed human-readable text' not in engine.stats.by_rule
         assert engine.stats.by_rule['rule-abc123']['matched'] == 1
 
     def test_by_rule_tracks_skipped_and_errors_separately(self, mock_api, mock_config):
         """actions_skipped/errors are attributed to the rule that caused them."""
         skipped_rule = {
-            'name': 'Idempotent rule',
+            'id': 'idempotent-rule',
             'enabled': True,
             'conditions': {'all': [{'field': 'info.state', 'operator': '==', 'value': 'pausedDL'}]},
             'actions': [{'type': 'stop'}]  # Already paused -> skipped
         }
         error_rule = {
-            'name': 'Failing rule',
+            'id': 'failing-rule',
             'enabled': True,
             'conditions': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 0}]},
             'actions': [{'type': 'unknown_action'}]  # Will error
@@ -523,15 +524,15 @@ class TestByRuleStats:
         engine = RulesEngine(mock_api, mock_config)
         engine.run(context='adhoc-run')
 
-        assert engine.stats.by_rule['Idempotent rule']['actions_skipped'] == 1
-        assert engine.stats.by_rule['Idempotent rule']['errors'] == 0
-        assert engine.stats.by_rule['Failing rule']['errors'] == 1
-        assert engine.stats.by_rule['Failing rule']['actions_skipped'] == 0
+        assert engine.stats.by_rule['idempotent-rule']['actions_skipped'] == 1
+        assert engine.stats.by_rule['idempotent-rule']['errors'] == 0
+        assert engine.stats.by_rule['failing-rule']['errors'] == 1
+        assert engine.stats.by_rule['failing-rule']['actions_skipped'] == 0
 
     def test_by_rule_only_includes_enabled_rules_that_ran(self, mock_api, mock_config, sample_torrent):
         """A disabled rule never appears in by_rule, same as it never affects the aggregate counters."""
         disabled_rule = {
-            'name': 'Disabled rule',
+            'id': 'disabled-rule',
             'enabled': False,
             'conditions': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 0}]},
             'actions': [{'type': 'stop'}]
@@ -548,7 +549,7 @@ class TestByRuleStats:
         """An enabled rule that ran but never matched still gets a zeroed entry --
         distinguishing 'ran, matched nothing' from 'didn't run at all'."""
         rule = {
-            'name': 'Never matches',
+            'id': 'never-matches',
             'enabled': True,
             'conditions': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 999}]},
             'actions': [{'type': 'add_tag', 'params': {'tags': ['test']}}]
@@ -560,7 +561,7 @@ class TestByRuleStats:
         engine.run(context='adhoc-run')
 
         assert engine.stats.by_rule == {
-            'Never matches': {'matched': 0, 'actions_executed': 0, 'actions_skipped': 0, 'errors': 0}
+            'never-matches': {'matched': 0, 'actions_executed': 0, 'actions_skipped': 0, 'errors': 0}
         }
 
 

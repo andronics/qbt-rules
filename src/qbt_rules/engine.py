@@ -33,10 +33,10 @@ class RuleStats:
     actions_executed: int = 0
     actions_skipped: int = 0
     errors: int = 0
-    # Per-rule breakdown of the same counters above, keyed by rule identity
-    # (rule['id'] if present, else rule['name'] -- see RulesEngine.run()).
-    # Additive: existing consumers reading only the aggregate fields above
-    # are unaffected by this key's presence.
+    # Per-rule breakdown of the same counters above, keyed by rule['id']
+    # (required on every rule -- see Config._load_rules). Additive: existing
+    # consumers reading only the aggregate fields above are unaffected by
+    # this key's presence.
     by_rule: Dict[str, Dict[str, int]] = field(default_factory=dict)
 
 
@@ -706,7 +706,7 @@ class ActionExecutor:
         Args:
             torrent: Torrent dictionary
             message: Message template, e.g.
-                "[${rule.name}] ${info.name} matched" -- ${rule.name} is
+                "[${rule.id}] ${info.name} matched" -- ${rule.id} is
                 already substituted away by the time this runs; only
                 ${info.name} is resolved here, per-torrent
 
@@ -983,23 +983,24 @@ class RulesEngine:
             processed_torrents = set()
 
             for rule in rules:
+                # 'id' is this rule's stable identity (required + unique --
+                # see Config._load_rules). 'meta.description', if set, is
+                # the human-readable text for logs; falls back to the id
+                # itself when absent, since id is required and description
+                # isn't.
+                rule_id = rule.get('id', 'unnamed')
+                rule_label = rule.get('meta', {}).get('description') or rule_id
+
                 if not rule.get('enabled', True):
-                    logger.debug(f"Skipping disabled rule: {rule.get('name', 'unnamed')}")
+                    logger.debug(f"Skipping disabled rule: {rule_label}")
                     continue
 
-                # Stable identity for this rule across renames: prefer an
-                # explicit 'id' (optional, user-assigned) over 'name', since
-                # 'name' is just a display label a future rule-editor UI may
-                # let users change. Falls back to 'name' when 'id' is absent
-                # so this works unchanged for every rule written before 'id'
-                # existed.
-                rule_key = rule.get('id') or rule.get('name', 'unnamed')
                 rule_totals = self.stats.by_rule.setdefault(
-                    rule_key,
+                    rule_id,
                     {'matched': 0, 'actions_executed': 0, 'actions_skipped': 0, 'errors': 0}
                 )
 
-                logger.info(f"Processing rule: {rule.get('name', 'unnamed')}")
+                logger.info(f"Processing rule: {rule_label}")
 
                 matched_count = 0
                 for torrent in torrents:
@@ -1018,7 +1019,7 @@ class RulesEngine:
                         self.stats.rules_matched += 1
                         rule_totals['matched'] += 1
 
-                        logger.debug(f"Rule '{rule.get('name', 'unnamed')}' matched: {torrent.get('name', 'unknown')}")
+                        logger.debug(f"Rule '{rule_label}' matched: {torrent.get('name', 'unknown')}")
 
                         # Execute actions
                         for action in rule.get('actions', []):
@@ -1054,7 +1055,7 @@ class RulesEngine:
                             processed_torrents.add(torrent['hash'])
 
                 if matched_count > 0:
-                    logger.info(f"  Rule '{rule.get('name', 'unnamed')}' matched {matched_count} torrent(s)")
+                    logger.info(f"  Rule '{rule_label}' matched {matched_count} torrent(s)")
 
             self.stats.processed = len(processed_torrents)
 

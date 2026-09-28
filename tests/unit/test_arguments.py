@@ -481,7 +481,8 @@ class TestHandleUtilityArgs:
         mock_config = Mock()
         mock_config.get_rules.return_value = [
             {
-                'name': 'Test Rule',
+                'id': 'test-rule',
+                'meta': {'description': 'Test Rule'},
                 'enabled': True,
                 'stop_on_match': False,
                 'conditions': {'trigger': 'adhoc-run', 'all': []},
@@ -496,8 +497,8 @@ class TestHandleUtilityArgs:
 
         mock_print_table.assert_called_once()
         _, kwargs = mock_print_table.call_args
-        assert kwargs['headers'] == ['#', 'Enabled', 'Stop', 'Context', 'Name']
-        assert kwargs['rows'] == [[1, '✓', '-', 'any', 'Test Rule']]
+        assert kwargs['headers'] == ['#', 'Enabled', 'Stop', 'Context', 'ID', 'Description']
+        assert kwargs['rows'] == [[1, '✓', '-', 'any', 'test-rule', 'Test Rule']]
 
     @patch('qbt_rules.cli_ui.print_table')
     def test_list_rules_with_enabled_status(self, mock_print_table):
@@ -545,8 +546,9 @@ class TestHandleUtilityArgs:
         assert kwargs['rows'][2][3] == 'any'
 
     @patch('qbt_rules.cli_ui.print_table')
-    def test_list_rules_with_unnamed_rule(self, mock_print_table):
-        """list_rules handles rules with no name."""
+    def test_list_rules_with_rule_missing_id(self, mock_print_table):
+        """list_rules handles a rule dict with no 'id' gracefully (defensive
+        fallback here -- real Config loading requires 'id', see config.py)."""
         args = Mock()
         args.validate = False
         args.list_rules = True
@@ -554,14 +556,14 @@ class TestHandleUtilityArgs:
 
         mock_config = Mock()
         mock_config.get_rules.return_value = [
-            {'enabled': True, 'conditions': {}, 'actions': []},  # No name field
+            {'enabled': True, 'conditions': {}, 'actions': []},  # No id field
         ]
 
         handle_utility_args(args, mock_config)
 
-        # Should handle unnamed rule gracefully, defaulting to 'Unnamed'
+        # Should handle the missing id gracefully, defaulting to 'unnamed'
         _, kwargs = mock_print_table.call_args
-        assert kwargs['rows'][0][4] == 'Unnamed'
+        assert kwargs['rows'][0][4] == 'unnamed'
 
     @patch('qbt_rules.cli_ui.print_message')
     def test_list_rules_with_empty_list(self, mock_print_message):

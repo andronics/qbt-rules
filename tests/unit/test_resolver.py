@@ -126,7 +126,7 @@ class TestBlockMeta:
             'meta': {'conditions': {'well-seeded': {'description': 'Ratio >= 2.0'}}}
         }
         resolver = RuleResolver(refs=refs)
-        rule = {'name': 'r', 'conditions': [{'$ref': 'conditions.well-seeded'}], 'actions': []}
+        rule = {'id': 'r', 'conditions': [{'$ref': 'conditions.well-seeded'}], 'actions': []}
 
         resolved = resolver.resolve_rule(rule)
 
@@ -142,7 +142,7 @@ class TestVariableSubstitution:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.ratio', 'operator': '>=', 'value': '${vars.min_ratio}'}
             ],
@@ -158,7 +158,7 @@ class TestVariableSubstitution:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.added_on', 'operator': 'older_than', 'value': '${vars.cleanup_age}'}
             ],
@@ -174,7 +174,7 @@ class TestVariableSubstitution:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.category', 'operator': 'in', 'value': '${vars.protected_categories}'}
             ],
@@ -190,7 +190,7 @@ class TestVariableSubstitution:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [],
             'actions': [
                 {'type': 'add_tag', 'params': {'tags': ['ratio-${vars.min_ratio}']}}
@@ -206,7 +206,7 @@ class TestVariableSubstitution:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [],
             'actions': [
                 {'type': 'add_tag', 'params': {'tags': ['${vars.min_ratio}-to-${vars.max_ratio}']}}
@@ -222,7 +222,7 @@ class TestVariableSubstitution:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.ratio', 'operator': '>=', 'value': '${vars.unknown}'}
             ],
@@ -240,7 +240,7 @@ class TestVariableSubstitution:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.ratio', 'operator': '>=', 'value': '${min_ratio}'}  # Missing 'vars.'
             ],
@@ -258,36 +258,53 @@ class TestRuleFieldSubstitution:
     against the rule currently being processed, not a shared/global table
     like ${vars.*}."""
 
-    def test_substitute_rule_name_whole_string(self):
+    def test_substitute_rule_id_whole_string(self):
         resolver = RuleResolver(refs={})
         rule = {
-            'name': 'My Rule',
+            'id': 'my-rule',
             'conditions': [],
             'actions': [
-                {'type': 'notify', 'params': {'message': '${rule.name}'}}
+                {'type': 'notify', 'params': {'message': '${rule.id}'}}
             ]
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['actions'][0]['params']['message'] == 'My Rule'
+        assert resolved['actions'][0]['params']['message'] == 'my-rule'
 
-    def test_substitute_rule_name_embedded_in_string(self):
+    def test_substitute_rule_id_embedded_in_string(self):
         resolver = RuleResolver(refs={})
         rule = {
-            'name': 'My Rule',
+            'id': 'my-rule',
             'conditions': [],
             'actions': [
-                {'type': 'notify', 'params': {'message': '[${rule.name}] matched'}}
+                {'type': 'notify', 'params': {'message': '[${rule.id}] matched'}}
             ]
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['actions'][0]['params']['message'] == '[My Rule] matched'
+        assert resolved['actions'][0]['params']['message'] == '[my-rule] matched'
+
+    def test_substitute_rule_meta_description_nested_path(self):
+        """${rule.meta.description} -- a nested rule field, not just a
+        flat one -- since 'name' was dropped, meta.description is the
+        recommended place for human-readable text."""
+        resolver = RuleResolver(refs={})
+        rule = {
+            'id': 'my-rule',
+            'meta': {'description': 'Force-start queued public torrents'},
+            'conditions': [],
+            'actions': [
+                {'type': 'notify', 'params': {'message': '[${rule.meta.description}] matched'}}
+            ]
+        }
+
+        resolved = resolver.resolve_rule(rule)
+        assert resolved['actions'][0]['params']['message'] == '[Force-start queued public torrents] matched'
 
     def test_substitute_rule_context_string(self):
         resolver = RuleResolver(refs={})
         rule = {
-            'name': 'My Rule',
+            'id': 'my-rule',
             'context': 'weekly-cleanup',
             'conditions': [],
             'actions': [
@@ -303,7 +320,7 @@ class TestRuleFieldSubstitution:
         ${vars.*}: a whole-string token preserves the field's real type."""
         resolver = RuleResolver(refs={})
         rule = {
-            'name': 'My Rule',
+            'id': 'my-rule',
             'context': ['weekly-cleanup', 'nightly'],
             'conditions': [],
             'actions': [
@@ -317,7 +334,7 @@ class TestRuleFieldSubstitution:
     def test_substitute_rule_stop_on_match(self):
         resolver = RuleResolver(refs={})
         rule = {
-            'name': 'My Rule',
+            'id': 'my-rule',
             'stop_on_match': True,
             'conditions': [],
             'actions': [
@@ -333,7 +350,7 @@ class TestRuleFieldSubstitution:
 
         resolver = RuleResolver(refs={})
         rule = {
-            'name': 'My Rule',
+            'id': 'my-rule',
             'conditions': [],
             'actions': [
                 {'type': 'notify', 'params': {'message': '${rule.nmae}'}}  # typo
@@ -345,12 +362,32 @@ class TestRuleFieldSubstitution:
 
         assert 'nmae' in str(exc_info.value)
 
+    def test_unknown_nested_rule_field_raises_error(self):
+        """A typo'd second segment (rule.meta.descriptoin) is reported with
+        the full dotted path, not just the leaf segment."""
+        from qbt_rules.errors import UnknownRuleFieldError
+
+        resolver = RuleResolver(refs={})
+        rule = {
+            'id': 'my-rule',
+            'meta': {'description': 'Real description'},
+            'conditions': [],
+            'actions': [
+                {'type': 'notify', 'params': {'message': '${rule.meta.descriptoin}'}}  # typo
+            ]
+        }
+
+        with pytest.raises(UnknownRuleFieldError) as exc_info:
+            resolver.resolve_rule(rule)
+
+        assert 'meta.descriptoin' in str(exc_info.value)
+
     def test_invalid_rule_field_path_raises_error(self):
         from qbt_rules.errors import InvalidRuleFieldError
 
         resolver = RuleResolver(refs={})
         rule = {
-            'name': 'My Rule',
+            'id': 'my-rule',
             'conditions': [],
             'actions': [
                 {'type': 'notify', 'params': {'message': '${rule}'}}  # missing '.field'
@@ -363,15 +400,15 @@ class TestRuleFieldSubstitution:
     def test_rule_and_vars_tokens_together_in_one_string(self):
         resolver = RuleResolver(refs={'vars': {'min_ratio': 2.0}})
         rule = {
-            'name': 'My Rule',
+            'id': 'my-rule',
             'conditions': [],
             'actions': [
-                {'type': 'notify', 'params': {'message': '[${rule.name}] ratio >= ${vars.min_ratio}'}}
+                {'type': 'notify', 'params': {'message': '[${rule.id}] ratio >= ${vars.min_ratio}'}}
             ]
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['actions'][0]['params']['message'] == '[My Rule] ratio >= 2.0'
+        assert resolved['actions'][0]['params']['message'] == '[my-rule] ratio >= 2.0'
 
     def test_runtime_namespace_tokens_pass_through_untouched(self):
         """${info.*}/${trackers.*}/etc are resolved later, per-torrent, by
@@ -383,7 +420,7 @@ class TestRuleFieldSubstitution:
         vars token without checking its prefix first."""
         resolver = RuleResolver(refs={})
         rule = {
-            'name': 'My Rule',
+            'id': 'my-rule',
             'conditions': [],
             'actions': [
                 {'type': 'notify', 'params': {
@@ -403,7 +440,7 @@ class TestRuleFieldSubstitution:
         rather than silently passing through as literal text."""
         resolver = RuleResolver(refs={'vars': {'min_ratio': 2.0}})
         rule = {
-            'name': 'My Rule',
+            'id': 'My Rule',
             'conditions': [],
             'actions': [
                 {'type': 'notify', 'params': {'message': '${var.min_ratio}'}}
@@ -431,7 +468,7 @@ class TestReferenceExpansion:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'conditions.private-tracker'}],
             'actions': []
         }
@@ -455,7 +492,7 @@ class TestReferenceExpansion:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [],
             'actions': [{'$ref': 'actions.safe-delete'}]
         }
@@ -480,7 +517,7 @@ class TestReferenceExpansion:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'Tag iptorrent.com Trackers',
+            'id': 'Tag iptorrent.com Trackers',
             'conditions': [],
             'actions': [
                 {'$ref': 'actions.tag-private'},
@@ -511,7 +548,7 @@ class TestReferenceExpansion:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'Force Seed Under-Ratio Private Torrents',
+            'id': 'Force Seed Under-Ratio Private Torrents',
             'conditions': [],
             'actions': [{'$ref': 'actions.force-seed-private'}],
         }
@@ -535,7 +572,7 @@ class TestReferenceExpansion:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'conditions.under-seeded-private'}],
             'actions': [],
         }
@@ -550,7 +587,7 @@ class TestReferenceExpansion:
         resolver = RuleResolver(refs={})
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [],
             'actions': [],
             'some_field': [[1, 2], [3, 4]],
@@ -578,7 +615,7 @@ class TestReferenceExpansion:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'$ref': 'conditions.well-seeded'},
                 {'none': [{'$ref': 'conditions.protected'}]}
@@ -596,7 +633,7 @@ class TestReferenceExpansion:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'conditions.unknown'}],
             'actions': []
         }
@@ -613,7 +650,7 @@ class TestReferenceExpansion:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [],
             'actions': [{'$ref': 'actions.unknown'}]
         }
@@ -629,7 +666,7 @@ class TestReferenceExpansion:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'private-tracker'}],  # Missing 'conditions.'
             'actions': []
         }
@@ -645,7 +682,7 @@ class TestReferenceExpansion:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'unknown.something'}],
             'actions': []
         }
@@ -672,7 +709,7 @@ class TestCircularReferences:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'conditions.loop'}],
             'actions': []
         }
@@ -701,7 +738,7 @@ class TestResolutionPipeline:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'conditions.well-seeded'}],
             'actions': []
         }
@@ -746,7 +783,7 @@ class TestResolutionPipeline:
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'name': 'Cleanup well-seeded private tracker torrents',
+            'id': 'Cleanup well-seeded private tracker torrents',
             'enabled': True,
             'conditions': [
                 {'$ref': 'conditions.private-tracker'},
@@ -783,7 +820,7 @@ class TestNoRefsBackwardCompatibility:
         resolver = RuleResolver(refs={})
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.ratio', 'operator': '>=', 'value': 1.0}
             ],
@@ -800,7 +837,7 @@ class TestNoRefsBackwardCompatibility:
         resolver = RuleResolver(refs={'vars': {'min_ratio': 2.0}})
 
         rule = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [
                 {'field': 'info.ratio', 'operator': '>=', 'value': 1.0}  # Static, not ${vars.*}
             ],
@@ -825,7 +862,7 @@ class TestDeepCopy:
         resolver = RuleResolver(refs=refs)
 
         original = {
-            'name': 'test',
+            'id': 'test',
             'conditions': [{'$ref': 'conditions.test'}],
             'actions': []
         }
