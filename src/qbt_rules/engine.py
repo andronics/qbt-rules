@@ -61,8 +61,8 @@ class ConditionEvaluator:
         self.transfer_info: Optional[Dict] = None
         self.app_preferences: Optional[Dict] = None
 
-        # Aggregate torrent-count snapshot for the stats.* namespace -- set
-        # once per run by RulesEngine.run() before any rule is evaluated
+        # Aggregate torrent-count/sum snapshot for the stats.* namespace --
+        # set once per run by RulesEngine.run() before any rule is evaluated
         # (see its docstring for snapshot semantics). Defaults here so
         # stats.* still resolves to 0 rather than erroring if the evaluator
         # is ever used standalone, outside of RulesEngine.run().
@@ -71,6 +71,10 @@ class ConditionEvaluator:
             'category': {},
             'tag': {},
             'total': 0,
+            'dlspeed': 0,
+            'upspeed': 0,
+            'seeds': 0,
+            'peers': 0,
         }
 
     def clear_caches(self):
@@ -318,12 +322,15 @@ class ConditionEvaluator:
             return self.app_preferences.get(property_name)
 
         elif endpoint == 'stats':
-            # Aggregate torrent counts - snapshot taken once per run by
+            # Aggregate torrent counts/sums - snapshot taken once per run by
             # RulesEngine.run(), not recomputed per rule (see self.stats
             # docstring in __init__). Unlike other endpoints, missing keys
             # default to 0 rather than raising/None, since "0 torrents in
             # this state" and "this state doesn't exist" are the same thing
-            # to a numeric condition operator.
+            # to a numeric condition operator. stats.dlspeed/upspeed/seeds/
+            # peers are plain scalars (fleet-wide sums), not nested like
+            # state/category/tag, so they fall through to the final
+            # self.stats.get(property_name, 0) below.
             parts = property_name.split('.', 1)
             if len(parts) == 2 and parts[0] in ('state', 'category', 'tag'):
                 return self.stats.get(parts[0], {}).get(parts[1], 0)
@@ -976,12 +983,17 @@ class RulesEngine:
             logger.info(f"Fetched {len(torrents)} torrent(s)")
 
             # stats.* namespace: a once-per-run snapshot of aggregate counts
-            # across ALL torrents (not just `torrents` above, which may be
-            # filtered to one torrent in webhook mode). Computed from data
-            # already in memory -- no additional qBittorrent API calls, since
-            # state/category/tags are all already present on each torrent
-            # dict from the initial /torrents/info fetch (tags via the same
-            # parse_tags() helper info.tags uses).
+            # and sums across ALL torrents (not just `torrents` above, which
+            # may be filtered to one torrent in webhook mode). Computed from
+            # data already in memory -- no additional qBittorrent API calls,
+            # since state/category/tags/speeds/seeds/peers are all already
+            # present on each torrent dict from the initial /torrents/info
+            # fetch (tags via the same parse_tags() helper info.tags uses).
+            # dlspeed/upspeed/seeds/peers are fleet-wide sums of the same
+            # per-torrent info.dlspeed/upspeed/num_seeds/num_leechs values,
+            # not qBittorrent's own transfer.dl_info_speed/etc -- they total
+            # only the torrents this run actually fetched, and won't include
+            # protocol overhead/DHT traffic the global transfer figures do.
             # Snapshot semantics: this is NOT recomputed as rules run, so an
             # earlier rule's action (e.g. force_start) won't be reflected in
             # stats.* for a later rule's check within the same run.
@@ -990,6 +1002,10 @@ class RulesEngine:
                 'category': Counter(t.get('category') for t in all_torrents if t.get('category')),
                 'tag': Counter(tag for t in all_torrents for tag in parse_tags(t)),
                 'total': len(all_torrents),
+                'dlspeed': sum(t.get('dlspeed', 0) for t in all_torrents),
+                'upspeed': sum(t.get('upspeed', 0) for t in all_torrents),
+                'seeds': sum(t.get('num_seeds', 0) for t in all_torrents),
+                'peers': sum(t.get('num_leechs', 0) for t in all_torrents),
             }
 
             # Get rules (execute in YAML file order)
