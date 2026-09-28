@@ -374,6 +374,76 @@ class TestSingleTorrentMode:
 
         assert engine.stats.rules_matched == 1
 
+    def test_single_torrent_mode_stats_reflects_all_torrents(self, mock_api, mock_config, sample_torrent, downloading_torrent, simple_rule):
+        """stats.* aggregates over ALL torrents, not just the one being evaluated in webhook mode."""
+        mock_config.get_rules = Mock(return_value=[simple_rule])
+        mock_api.torrents_data = {
+            sample_torrent['hash']: sample_torrent,       # state: uploading
+            downloading_torrent['hash']: downloading_torrent,  # state: downloading
+        }
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='torrent-imported', torrent_hash=sample_torrent['hash'])
+
+        assert engine.stats.total_torrents == 1  # only the targeted torrent
+        assert engine.evaluator.stats['total'] == 2  # but stats.* sees the whole fleet
+        assert engine.evaluator.stats['count_by_state']['uploading'] == 1
+        assert engine.evaluator.stats['count_by_state']['downloading'] == 1
+
+
+# ============================================================================
+# stats.* Aggregate Namespace
+# ============================================================================
+
+class TestStatsNamespace:
+    """Test the stats.* aggregate-count snapshot computed once per run."""
+
+    def test_stats_snapshot_counts_by_state_and_category(self, mock_api, mock_config, sample_torrent, downloading_torrent):
+        """Counter over torrent state/category is built from the full torrent list."""
+        mock_config.get_rules = Mock(return_value=[])
+        mock_api.torrents_data = {
+            sample_torrent['hash']: sample_torrent,             # state=uploading, category=''
+            downloading_torrent['hash']: downloading_torrent,   # state=downloading, category=movies
+        }
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        assert engine.evaluator.stats['total'] == 2
+        assert engine.evaluator.stats['count_by_state'] == {'uploading': 1, 'downloading': 1}
+        # Torrents with an empty/falsy category are excluded from count_by_category
+        assert engine.evaluator.stats['count_by_category'] == {'movies': 1}
+
+    def test_stats_field_usable_in_condition(self, mock_api, mock_config, sample_torrent, downloading_torrent):
+        """A rule condition can reference stats.count_by_state.<state> against the numeric operators."""
+        rule = {
+            'name': 'Cap check',
+            'enabled': True,
+            'conditions': {'all': [{'field': 'stats.count_by_state.downloading', 'operator': '<', 'value': 5}]},
+            'actions': [{'type': 'add_tag', 'params': {'tags': ['under-cap']}}]
+        }
+        mock_config.get_rules = Mock(return_value=[rule])
+        mock_api.torrents_data = {
+            sample_torrent['hash']: sample_torrent,
+            downloading_torrent['hash']: downloading_torrent,
+        }
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        assert engine.stats.rules_matched == 2  # both torrents see the same run-wide snapshot
+
+    def test_stats_no_additional_api_calls(self, mock_api, mock_config, sample_torrent):
+        """Computing stats.* must not introduce extra qBittorrent API calls."""
+        mock_config.get_rules = Mock(return_value=[])
+        mock_api.torrents_data = {sample_torrent['hash']: sample_torrent}
+        mock_api.get_torrents = Mock(wraps=mock_api.get_torrents)
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        mock_api.get_torrents.assert_called_once()
+
 
 # ============================================================================
 # Statistics Tracking

@@ -345,6 +345,27 @@ class TestRuleFieldSubstitution:
         assert resolved['actions'][0]['params']['message'] == '${info.name} ratio ${info.ratio} trackers ${trackers.url}'
         assert resolved['actions'][0]['params']['whole_value'] == '${info.ratio}'
 
+    def test_stats_namespace_token_passes_through_untouched(self):
+        """${stats.*} (aggregate torrent counts) is resolved at runtime by
+        engine.py, same as ${info.*}/${trackers.*} -- resolve_rule() must
+        leave a whole-string ${stats.count_by_state.queuedUP} value alone
+        rather than treating it as a malformed vars/rule token."""
+        resolver = RuleResolver(refs={})
+        rule = {
+            'name': 'My Rule',
+            'conditions': [],
+            'actions': [
+                {'type': 'notify', 'params': {
+                    'message': 'Queued: ${stats.count_by_state.queuedUP} of ${stats.total}',
+                    'whole_value': '${stats.count_by_state.queuedUP}',
+                }}
+            ]
+        }
+
+        resolved = resolver.resolve_rule(rule)
+        assert resolved['actions'][0]['params']['message'] == 'Queued: ${stats.count_by_state.queuedUP} of ${stats.total}'
+        assert resolved['actions'][0]['params']['whole_value'] == '${stats.count_by_state.queuedUP}'
+
     def test_mistyped_vars_prefix_still_raises_error(self):
         """A near-miss like ${var.x} (singular) isn't a recognized runtime
         namespace either, so it must still surface as an actionable error

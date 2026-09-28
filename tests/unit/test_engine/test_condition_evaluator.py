@@ -597,6 +597,51 @@ class TestFieldAccessGlobal:
 
         mock_api.get_app_preferences.assert_called_once()
 
+    def test_stats_total(self, mock_api, sample_torrent):
+        """Access stats.total."""
+        evaluator = ConditionEvaluator(mock_api)
+        evaluator.stats = {'count_by_state': {}, 'count_by_category': {}, 'total': 42}
+
+        assert evaluator._get_field_value(sample_torrent, 'stats.total') == 42
+
+    def test_stats_count_by_state(self, mock_api, sample_torrent):
+        """Access stats.count_by_state.<state>."""
+        evaluator = ConditionEvaluator(mock_api)
+        evaluator.stats = {
+            'count_by_state': {'queuedUP': 3, 'uploading': 5},
+            'count_by_category': {},
+            'total': 8,
+        }
+
+        assert evaluator._get_field_value(sample_torrent, 'stats.count_by_state.queuedUP') == 3
+        assert evaluator._get_field_value(sample_torrent, 'stats.count_by_state.uploading') == 5
+
+    def test_stats_count_by_category(self, mock_api, sample_torrent):
+        """Access stats.count_by_category.<category>."""
+        evaluator = ConditionEvaluator(mock_api)
+        evaluator.stats = {
+            'count_by_state': {},
+            'count_by_category': {'movies': 2},
+            'total': 2,
+        }
+
+        assert evaluator._get_field_value(sample_torrent, 'stats.count_by_category.movies') == 2
+
+    def test_stats_missing_state_defaults_to_zero(self, mock_api, sample_torrent):
+        """A state/category with no matching torrents resolves to 0, not None/KeyError."""
+        evaluator = ConditionEvaluator(mock_api)
+        evaluator.stats = {'count_by_state': {'uploading': 5}, 'count_by_category': {}, 'total': 5}
+
+        assert evaluator._get_field_value(sample_torrent, 'stats.count_by_state.queuedUP') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.count_by_category.movies') == 0
+
+    def test_stats_defaults_before_run(self, mock_api, sample_torrent):
+        """Before RulesEngine.run() populates it, stats.* resolves to 0 rather than erroring."""
+        evaluator = ConditionEvaluator(mock_api)
+
+        assert evaluator._get_field_value(sample_torrent, 'stats.total') == 0
+        assert evaluator._get_field_value(sample_torrent, 'stats.count_by_state.queuedUP') == 0
+
 
 # ============================================================================
 # Field Access - Error Handling

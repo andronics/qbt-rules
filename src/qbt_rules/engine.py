@@ -4,6 +4,7 @@ Core logic for evaluating conditions and executing actions
 """
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 from typing import Dict, List, Any, Optional, Tuple
 
@@ -21,7 +22,9 @@ logger = get_logger(__name__)
 # etc -- the per-torrent counterpart to resolver.py's TOKEN_PATTERN, which
 # handles the load-time-only ${vars.*}/${rule.*} tokens and deliberately
 # leaves these untouched for ActionExecutor to resolve here instead.
-ACTION_TEMPLATE_PATTERN = re.compile(r'\$\{(\w+\.\w+)\}')
+# One-or-more `.segment` repeats (not just one) so multi-level paths like
+# ${stats.count_by_state.queuedUP} match too, not just single-dot fields.
+ACTION_TEMPLATE_PATTERN = re.compile(r'\$\{(\w+(?:\.\w+)+)\}')
 
 
 @dataclass
@@ -57,6 +60,17 @@ class ConditionEvaluator:
         # Global context cache (shared across all torrents)
         self.transfer_info: Optional[Dict] = None
         self.app_preferences: Optional[Dict] = None
+
+        # Aggregate torrent-count snapshot for the stats.* namespace -- set
+        # once per run by RulesEngine.run() before any rule is evaluated
+        # (see its docstring for snapshot semantics). Defaults here so
+        # stats.* still resolves to 0 rather than erroring if the evaluator
+        # is ever used standalone, outside of RulesEngine.run().
+        self.stats: Dict[str, Any] = {
+            'count_by_state': {},
+            'count_by_category': {},
+            'total': 0,
+        }
 
     def clear_caches(self):
         """Clear all caches (call between rule executions)"""
@@ -201,7 +215,7 @@ class ConditionEvaluator:
         """
         Public entry point for resolving a dot-notation torrent field
         (info.*, trackers.*, files.*, peers.*, properties.*, webseeds.*,
-        transfer.*, app.*)
+        transfer.*, app.*, stats.*)
 
         Exposed so ActionExecutor's notify templating (${info.x}/
         ${trackers.x}/etc in a message) can share this evaluator's
@@ -301,6 +315,18 @@ class ConditionEvaluator:
             if self.app_preferences is None:
                 self.app_preferences = self.api.get_app_preferences()
             return self.app_preferences.get(property_name)
+
+        elif endpoint == 'stats':
+            # Aggregate torrent counts - snapshot taken once per run by
+            # RulesEngine.run(), not recomputed per rule (see self.stats
+            # docstring in __init__). Unlike other endpoints, missing keys
+            # default to 0 rather than raising/None, since "0 torrents in
+            # this state" and "this state doesn't exist" are the same thing
+            # to a numeric condition operator.
+            parts = property_name.split('.', 1)
+            if len(parts) == 2 and parts[0] in ('count_by_state', 'count_by_category'):
+                return self.stats.get(parts[0], {}).get(parts[1], 0)
+            return self.stats.get(property_name, 0)
 
         else:
             raise FieldError(
@@ -659,7 +685,7 @@ class ActionExecutor:
 
         Uses the same ${namespace.field} dot-notation conditions already
         use (info.*, trackers.*, files.*, peers.*, properties.*,
-        webseeds.*, transfer.*, app.*), resolved via self.field_resolver
+        webseeds.*, transfer.*, app.*, stats.*), resolved via self.field_resolver
         so trackers/files/peers share the same lazy-loaded, per-run cache
         the condition evaluator already populated for this torrent,
         rather than re-fetching from the qBittorrent API. A collection
@@ -929,19 +955,37 @@ class RulesEngine:
         logger.info("=" * 60)
 
         try:
-            # Fetch torrents
+            # Fetch torrents. Always a single API call, even in single-torrent
+            # (webhook) mode below -- the full list is also what stats.* is
+            # computed from, so the fleet-wide aggregate is correct even when
+            # only one torrent is actually being evaluated this run.
+            all_torrents = self.api.get_torrents()
+
             if torrent_hash:
                 # Single torrent mode (webhook)
-                torrents = [t for t in self.api.get_torrents() if t['hash'] == torrent_hash]
+                torrents = [t for t in all_torrents if t['hash'] == torrent_hash]
                 if not torrents:
                     logger.warning(f"Torrent not found: {torrent_hash}")
                     return
             else:
                 # All torrents mode (weekly-cleanup/adhoc-run)
-                torrents = self.api.get_torrents()
+                torrents = all_torrents
 
             self.stats.total_torrents = len(torrents)
             logger.info(f"Fetched {len(torrents)} torrent(s)")
+
+            # stats.* namespace: a once-per-run snapshot of aggregate counts
+            # across ALL torrents (not just `torrents` above, which may be
+            # filtered to one torrent in webhook mode). Computed from data
+            # already in memory -- no additional qBittorrent API calls.
+            # Snapshot semantics: this is NOT recomputed as rules run, so an
+            # earlier rule's action (e.g. force_start) won't be reflected in
+            # stats.* for a later rule's check within the same run.
+            self.evaluator.stats = {
+                'count_by_state': Counter(t.get('state') for t in all_torrents),
+                'count_by_category': Counter(t.get('category') for t in all_torrents if t.get('category')),
+                'total': len(all_torrents),
+            }
 
             # Get rules (execute in YAML file order)
             rules = self.config.get_rules()
