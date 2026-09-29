@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > before inserting its own, so a manual entry for a version gets duplicated when that
 > version is tagged.**
 
+## [0.7.1] - 2026-09-29
+
+### ✨ New Features
+- feat: add release_force_start action and live-updating stats.* for quota-gated rules
+
+### 🔧 Maintenance
+- chore: Bump version to 0.7.1
+
+
 ## [0.7.0] - 2026-09-28
 
 ### ✨ New Features
