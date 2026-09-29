@@ -91,6 +91,30 @@ class TestIdempotencyChecks:
         torrent = {'tags': 'hd,new,old'}
         assert executor._should_skip_idempotent(torrent, 'remove_tag', {'tags': ['old']}) is False
 
+    def test_force_start_already_forced(self, mock_api):
+        """force_start: skip if already force-started."""
+        executor = ActionExecutor(mock_api, dry_run=False)
+        torrent = {'force_start': True}
+        assert executor._should_skip_idempotent(torrent, 'force_start', {}) is True
+
+    def test_force_start_not_forced(self, mock_api):
+        """force_start: don't skip if not force-started."""
+        executor = ActionExecutor(mock_api, dry_run=False)
+        torrent = {'force_start': False}
+        assert executor._should_skip_idempotent(torrent, 'force_start', {}) is False
+
+    def test_release_force_start_already_released(self, mock_api):
+        """release_force_start: skip if already not force-started."""
+        executor = ActionExecutor(mock_api, dry_run=False)
+        torrent = {'force_start': False}
+        assert executor._should_skip_idempotent(torrent, 'release_force_start', {}) is True
+
+    def test_release_force_start_still_forced(self, mock_api):
+        """release_force_start: don't skip if still force-started."""
+        executor = ActionExecutor(mock_api, dry_run=False)
+        torrent = {'force_start': True}
+        assert executor._should_skip_idempotent(torrent, 'release_force_start', {}) is False
+
 
 # ============================================================================
 # Action Execution - Control Actions
@@ -129,6 +153,18 @@ class TestControlActions:
 
         assert success is True
         mock_api.force_start_torrents.assert_called_once_with([sample_torrent['hash']])
+
+    def test_release_force_start_action(self, mock_api, sample_torrent):
+        """Execute release_force_start action."""
+        mock_api.force_start_torrents = Mock(return_value=True)
+        sample_torrent = {**sample_torrent, 'force_start': True}
+        executor = ActionExecutor(mock_api, dry_run=False)
+
+        success, skipped = executor.execute(sample_torrent, {'type': 'release_force_start'})
+
+        assert success is True
+        assert skipped is False
+        mock_api.force_start_torrents.assert_called_once_with([sample_torrent['hash']], enable=False)
 
     def test_recheck_action(self, mock_api, sample_torrent):
         """Execute recheck action."""

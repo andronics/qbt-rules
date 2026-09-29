@@ -97,6 +97,7 @@ class MockQBittorrentAPI:
             'stop': [],
             'start': [],
             'force_start': [],
+            'release_force_start': [],
             'recheck': [],
             'reannounce': [],
             'delete': [],
@@ -181,12 +182,17 @@ class MockQBittorrentAPI:
                 self.torrents_data[hash]['state'] = 'downloading'
         return True
 
-    def force_start_torrents(self, hashes):
-        """Force start torrents."""
-        self.calls['force_start'].append(hashes)
+    def force_start_torrents(self, hashes, enable=True):
+        """Force start torrents, or release them back to normal queue management if enable=False."""
+        if enable:
+            self.calls['force_start'].append(hashes)
+        else:
+            self.calls['release_force_start'].append(hashes)
         for hash in hashes:
             if hash in self.torrents_data:
-                self.torrents_data[hash]['state'] = 'forceDL'
+                self.torrents_data[hash]['force_start'] = enable
+                if enable:
+                    self.torrents_data[hash]['state'] = 'forceDL'
         return True
 
     def recheck_torrents(self, hashes):

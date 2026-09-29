@@ -566,6 +566,12 @@ class ActionExecutor:
             remove_tags = set(params.get('tags', []))
             return not remove_tags.intersection(current_tags)
 
+        elif action_type == 'force_start':
+            return bool(torrent.get('force_start'))
+
+        elif action_type == 'release_force_start':
+            return not torrent.get('force_start')
+
         # Non-idempotent actions
         return False
 
@@ -618,6 +624,12 @@ class ActionExecutor:
             success = self.api.force_start_torrents([torrent_hash])
             if success:
                 logger.info(f"  Force started {torrent['name']}")
+            return success
+
+        elif action_type == 'release_force_start':
+            success = self.api.force_start_torrents([torrent_hash], enable=False)
+            if success:
+                logger.info(f"  Released force-start for {torrent['name']}")
             return success
 
         elif action_type == 'recheck':
@@ -1093,6 +1105,21 @@ class RulesEngine:
 
                         # Execute actions
                         for action in rule.get('actions', []):
+                            # Snapshot state/tags before executing so stats.* (the
+                            # fleet-wide Counter snapshot taken once at the top of
+                            # run() -- see its docstring) can be kept live for the
+                            # rest of THIS run. Without this, a quota condition like
+                            # stats.tag.force-seeding stays frozen at its
+                            # start-of-run value all the way through the run, so a
+                            # budget check that should stop admitting new torrents
+                            # once full would instead admit every remaining match in
+                            # one pass. Must be captured before execute() runs, not
+                            # after -- execute() is what mutates the torrent (via
+                            # the API call it makes), so capturing afterward would
+                            # already see the post-action value as "pre".
+                            pre_state = torrent.get('state')
+                            pre_tags = set(parse_tags(torrent))
+
                             success, skipped = self.executor.execute(torrent, action)
                             if success:
                                 if skipped:
@@ -1109,10 +1136,28 @@ class RulesEngine:
                                         if updated:
                                             torrent.update(updated)
                                             logger.debug(f"Updated cache for {torrent.get('name', 'unknown')} after action")
+
+                                            post_state = torrent.get('state')
+                                            if post_state != pre_state:
+                                                self.evaluator.stats['state'][pre_state] -= 1
+                                                self.evaluator.stats['state'][post_state] += 1
+
+                                            post_tags = set(parse_tags(torrent))
+                                            for tag in post_tags - pre_tags:
+                                                self.evaluator.stats['tag'][tag] += 1
+                                            for tag in pre_tags - post_tags:
+                                                self.evaluator.stats['tag'][tag] -= 1
                                         else:
                                             # Torrent was deleted
                                             logger.debug(f"Torrent {torrent['hash']} no longer exists (likely deleted)")
                                             torrent['_deleted'] = True
+
+                                            self.evaluator.stats['state'][pre_state] -= 1
+                                            self.evaluator.stats['total'] -= 1
+                                            for tag in pre_tags:
+                                                self.evaluator.stats['tag'][tag] -= 1
+                                            if torrent.get('category'):
+                                                self.evaluator.stats['category'][torrent['category']] -= 1
                                     except Exception as e:
                                         logger.warning(f"Failed to update cache for {torrent['hash']}: {e}")
                                         # Continue execution - don't fail the rule

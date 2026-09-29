@@ -228,9 +228,9 @@ class QBittorrentAPI:
         self.client.torrents_resume(torrent_hashes=hashes)
         return True
 
-    def force_start_torrents(self, hashes: List[str]) -> bool:
-        """Force start torrents"""
-        self.client.torrents_set_force_start(enable=True, torrent_hashes=hashes)
+    def force_start_torrents(self, hashes: List[str], enable: bool = True) -> bool:
+        """Force start torrents, or release them back to normal queue management if enable=False"""
+        self.client.torrents_set_force_start(enable=enable, torrent_hashes=hashes)
         return True
 
     def recheck_torrents(self, hashes: List[str]) -> bool:
