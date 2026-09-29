@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > before inserting its own, so a manual entry for a version gets duplicated when that
 > version is tagged.**
 
+## [0.7.1] - 2026-09-29
+
+### ✨ New Features
+- feat: add release_force_start action and live-updating stats.* for quota-gated rules
+
+### 🔧 Maintenance
+- chore: Bump version to 0.7.1
+
+
+## [0.7.0] - 2026-09-28
+
+### ✨ New Features
+- feat!: require unique rule id, drop name, add meta.description
+- feat: v0.7 forward-compat foundations (rule id, per-rule stats, ref metadata, eval trace, schema version)
+- feat(engine): add stats.dlspeed/upspeed/seeds/peers fleet-wide sums
+- feat(engine): add stats.* namespace for aggregate torrent counts
+
+### ♻️ Refactoring
+- refactor(engine): rename stats.peers to stats.leechs
+- refactor(engine): rename stats.count_by_* to stats.*, add stats.tag.*
+
+### 🔧 Maintenance
+- chore: Bump version to 0.7.0
+
+
 ## [0.6.2] - 2026-09-24
 
 ### ✨ New Features
