@@ -465,6 +465,55 @@ class TestStatsNamespace:
 
         assert engine.stats.rules_matched == 2  # both torrents see the same run-wide snapshot
 
+    def test_stats_tag_updates_live_within_a_run_for_quota_gating(
+        self, mock_api, mock_config, sample_torrent, downloading_torrent, seeding_torrent
+    ):
+        """
+        stats.tag.* must reflect actions taken earlier in the SAME run, not
+        just the run's starting snapshot -- otherwise a quota condition like
+        stats.tag.force-seeding < budget would admit every matching torrent
+        in one pass instead of stopping once the budget is reached.
+        """
+        rule = {
+            'id': 'quota-gate',
+            'enabled': True,
+            'conditions': {'all': [{'field': 'stats.tag.force-seeding', 'operator': '<', 'value': 2}]},
+            'actions': [{'type': 'add_tag', 'params': {'tags': ['force-seeding']}}]
+        }
+        mock_config.get_rules = Mock(return_value=[rule])
+        mock_api.torrents_data = {
+            sample_torrent['hash']: sample_torrent,
+            downloading_torrent['hash']: downloading_torrent,
+            seeding_torrent['hash']: seeding_torrent,
+        }
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        tagged = [t for t in mock_api.torrents_data.values() if 'force-seeding' in t.get('tags', '')]
+        assert len(tagged) == 2  # budget of 2 -- the third torrent must not be admitted this run
+        assert engine.evaluator.stats['tag']['force-seeding'] == 2
+
+    def test_stats_state_updates_live_within_a_run(self, mock_api, mock_config, downloading_torrent, seeding_torrent):
+        """stats.state.* reflects a state-changing action (force_start) taken earlier in the same run."""
+        rule = {
+            'id': 'admit-until-cap',
+            'enabled': True,
+            'conditions': {'all': [{'field': 'stats.state.forceDL', 'operator': '<', 'value': 1}]},
+            'actions': [{'type': 'force_start'}]
+        }
+        mock_config.get_rules = Mock(return_value=[rule])
+        mock_api.torrents_data = {
+            downloading_torrent['hash']: downloading_torrent,
+            seeding_torrent['hash']: seeding_torrent,
+        }
+
+        engine = RulesEngine(mock_api, mock_config)
+        engine.run(context='adhoc-run')
+
+        assert len(mock_api.calls['force_start']) == 1  # cap of 1 -- second torrent must not be admitted this run
+        assert engine.evaluator.stats['state']['forceDL'] == 1
+
     def test_stats_no_additional_api_calls(self, mock_api, mock_config, sample_torrent):
         """Computing stats.* must not introduce extra qBittorrent API calls."""
         mock_config.get_rules = Mock(return_value=[])
