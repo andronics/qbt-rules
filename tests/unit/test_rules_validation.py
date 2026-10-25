@@ -337,14 +337,14 @@ class TestActionLint:
         ''')
         assert find(result, 'counts as TRUE')['severity'] == 'error'
 
-    def test_keep_files_warns_about_the_ignored_parameter(self):
+    def test_keep_files_is_an_error(self):
         """The real-world mistake: keep_files is ignored and files ARE deleted"""
         result = self.rule_with_actions('''
                   - type: delete_torrent
                     params: {keep_files: true}
         ''')
-        assert find(result, 'files ARE deleted')['severity'] == 'warning'
-        assert result['valid']
+        assert find(result, 'files ARE deleted')['severity'] == 'error'
+        assert not result['valid']
 
     def test_unknown_param_warns(self):
         result = self.rule_with_actions('''

@@ -497,7 +497,7 @@ class TestHandleUtilityArgs:
         ({'type': 'set_category'}, {}, 0, None),
         ({'type': 'set_upload_limit'}, {}, 0, None),
         ({'type': 'set_download_limit'}, {}, 0, None),
-        ({'type': 'delete_torrent', 'params': {'keep_files': True}}, {}, 0, 'ignored'),
+        ({'type': 'delete_torrent', 'params': {'keep_files': True}}, {}, 1, 'files ARE deleted'),
         ({'type': 'start', 'params': {'extra': True}}, {}, 0, 'ignored'),
         ({'type': 'notify', 'params': {'service': 'generic', 'body': [1, 2],
                                      'url': 'https://example.invalid/hook'}}, {}, 0, None),

@@ -609,7 +609,7 @@ class _Linter:
             if name in spec['params']:
                 continue
             if action_type == 'delete_torrent' and 'keep' in str(name).lower():
-                self.add(WARNING, f"delete_torrent has no '{name}' param, so it is ignored and the files ARE "
+                self.add(ERROR, f"delete_torrent has no '{name}' param, so it is ignored and the files ARE "
                                 f"deleted (delete_files defaults to true) -- use delete_files: false",
                          path + ('params', name), on_key=True)
             else:

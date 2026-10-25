@@ -1998,17 +1998,29 @@ class TestEditorRoutes:
 
     def test_unknown_action_parameter_warns_without_blocking_save(self, client, key, config_dir):
         etag = client.get('/api/rules/source', headers=key).get_json()['etag']
-        content = self.RULES.replace(
-            '{type: stop}', '{type: delete_torrent, params: {keep_files: true}}')
+        content = self.RULES.replace('{type: stop}', '{type: stop, params: {force: true}}')
 
         response = self.put(client, content, etag, key)
 
         assert response.status_code == 200
         validation = response.get_json()['validation']
         assert validation['counts']['error'] == 0
-        assert any(issue['severity'] == 'warning' and 'files ARE deleted' in issue['message']
+        assert any(issue['severity'] == 'warning' and "no param 'force'" in issue['message']
                    for issue in validation['issues'])
         assert (config_dir / 'rules.yml').read_text() == content
+
+    def test_keep_files_blocks_save(self, client, key, config_dir):
+        """keep_files is ignored, so delete_torrent would delete the files"""
+        etag = client.get('/api/rules/source', headers=key).get_json()['etag']
+        content = self.RULES.replace(
+            '{type: stop}', '{type: delete_torrent, params: {keep_files: true}}')
+
+        response = self.put(client, content, etag, key)
+
+        assert response.status_code == 422
+        assert any(issue['severity'] == 'error' and 'files ARE deleted' in issue['message']
+                   for issue in response.get_json()['validation']['issues'])
+        assert (config_dir / 'rules.yml').read_text() == self.RULES
 
     def test_editor_disabled_is_read_only(self, make_client, key, config_dir):
         client = make_client(editor=False)
