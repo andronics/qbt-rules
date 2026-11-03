@@ -6,6 +6,7 @@ rules.yml on its first save.
 """
 
 import dataclasses
+import re
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
@@ -88,7 +89,13 @@ def test_dashboard_and_login_say_why(config: Config) -> None:
     page = client.get("/login").text
     assert "No API key is configured on the server" in page
     # And no key logs in
-    assert client.post("/login", data={"key": "anything", "next": "/"}).status_code == 302
+    token = re.search(r'name="csrf_token" value="([^"]+)"', page)
+    assert token is not None
+    data = {"key": "anything", "next": "/", "csrf_token": token.group(1)}
+    response = client.post("/login", data=data)
+    assert response.status_code == 302
+    assert "error=1" in response.headers["Location"]
+    assert client.get("/?key=").status_code == 302
     assert client.get("/").status_code == 302
 
 

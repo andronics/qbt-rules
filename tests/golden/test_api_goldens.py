@@ -1,7 +1,7 @@
 """
 Golden responses for the JSON API -- the safety net for the Flask -> FastAPI port
 
-Every JSON route in api.py (plus /metrics, still the Flask dashboard's, and
+Every JSON route in api.py (plus /metrics, web.py's prometheus_client output, and
 the 404/405/413/500 handlers) is driven through FastAPI's TestClient against
 a real queue -- SQLite and fakeredis -- and its status, Content-Type,
 selected headers (SELECTED_HEADERS) and exact body are compared with a
@@ -370,7 +370,12 @@ class Env:
         return {"completed": completed, "failed": failed, "pending": pending}
 
     def login(self, client):
-        client.post("/login", data={"key": API_KEY, "next": "/rules/edit"})
+        """The dashboard's login form, with the CSRF token it carries"""
+        form = client.get("/login").text
+        token = re.search(r'name="csrf_token" value="([^"]+)"', form)
+        assert token is not None
+        data = {"key": API_KEY, "next": "/rules/edit", "csrf_token": token.group(1)}
+        assert client.post("/login", data=data).status_code == 302
 
     def etag(self, client) -> str:
         etag: str = client.get("/api/rules/source", headers=KEY).json()["etag"]

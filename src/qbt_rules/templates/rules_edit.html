@@ -304,28 +304,28 @@
 {% block scripts %}
 {% if config_available %}
 <script>
-  // The JSON API is the FastAPI app's (api.py), not this Flask app's: plain paths
+  // Relative URLs (web.relative_url): they work under any path prefix
   window.QBT_EDITOR = {
     csrfToken: {{ csrf_token()|tojson }},
     urls: {
-      source: {{ (request.script_root ~ '/api/rules/source')|tojson }},
-      validate: {{ (request.script_root ~ '/api/rules/validate')|tojson }},
-      history: {{ (request.script_root ~ '/api/rules/history')|tojson }},
-      catalog: {{ (request.script_root ~ '/api/rules/catalog')|tojson }},
-      config: {{ (request.script_root ~ '/api/config/source')|tojson }},
-      execute: {{ (request.script_root ~ '/api/execute')|tojson }},
-      jobsApi: {{ (request.script_root ~ '/api/jobs')|tojson }},
-      jobsPage: {{ url_for('dashboard_jobs')|tojson }},
-      acePath: {{ url_for('static', filename='vendor/ace')|tojson }}
+      source: {{ href('rules_source')|tojson }},
+      validate: {{ href('rules_validate')|tojson }},
+      history: {{ href('rules_history')|tojson }},
+      catalog: {{ href('rules_catalog')|tojson }},
+      config: {{ href('config_source')|tojson }},
+      execute: {{ href('execute')|tojson }},
+      jobsApi: {{ href('list_jobs')|tojson }},
+      jobsPage: {{ href('dashboard_jobs')|tojson }},
+      acePath: {{ static_href('vendor/ace', versioned=False)|tojson }}
     }
   };
 </script>
-<script src="{{ url_for('static', filename='vendor/ace/ace.js', v=version) }}"></script>
-<script src="{{ url_for('static', filename='vendor/ace/mode-yaml.js', v=version) }}"></script>
-<script src="{{ url_for('static', filename='vendor/ace/ext-language_tools.js', v=version) }}"></script>
-<script src="{{ url_for('static', filename='vendor/ace/ext-searchbox.js', v=version) }}"></script>
-<script src="{{ url_for('static', filename='vendor/ace/theme-tomorrow_night.js', v=version) }}"></script>
-<script src="{{ url_for('static', filename='vendor/ace/theme-tomorrow.js', v=version) }}"></script>
-<script src="{{ url_for('static', filename='editor.js', v=version) }}"></script>
+<script src="{{ static_href('vendor/ace/ace.js') }}"></script>
+<script src="{{ static_href('vendor/ace/mode-yaml.js') }}"></script>
+<script src="{{ static_href('vendor/ace/ext-language_tools.js') }}"></script>
+<script src="{{ static_href('vendor/ace/ext-searchbox.js') }}"></script>
+<script src="{{ static_href('vendor/ace/theme-tomorrow_night.js') }}"></script>
+<script src="{{ static_href('vendor/ace/theme-tomorrow.js') }}"></script>
+<script src="{{ static_href('editor.js') }}"></script>
 {% endif %}
 {% endblock %}

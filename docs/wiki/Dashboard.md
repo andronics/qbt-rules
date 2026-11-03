@@ -4,7 +4,7 @@ A server-rendered web UI for glancing at what qbt-rules is doing — worker/queu
 
 ### Overview
 
-The dashboard reuses the exact same data the [JSON API](HTTP-API-Reference) already exposes — no separate database, no new query logic. It's server-rendered HTML (Flask + Jinja2), not a JavaScript single-page app: every page is a full HTTP request, there's no client-side framework or build step involved.
+The dashboard reuses the exact same data the [JSON API](HTTP-API-Reference) already exposes — no separate database, no new query logic. It's server-rendered HTML (FastAPI routes with Jinja2 templates, on the same app as the JSON API), not a JavaScript single-page app: every page is a full HTTP request, there's no client-side framework or build step involved.
 
 | Page | Path | Shows |
 |------|------|-------|
@@ -17,17 +17,27 @@ The dashboard reuses the exact same data the [JSON API](HTTP-API-Reference) alre
 
 ### Authentication
 
-Same key as the JSON API (see [Security](Security#api-authentication)). Open any dashboard page without it and you're redirected to `/login`, which asks for the API key once and keeps you signed in with a session cookie (`qbt_rules_session`, valid for 31 days; changing the API key logs everyone out). The JSON API accepts the same session, so the dashboard's pages call it directly. 0.11 changed the cookie, so a 0.10.x login is dropped once on upgrade. The `?key=` query parameter still works too: every link within the dashboard carries it forward automatically as you navigate.
+Same key as the JSON API (see [Security](Security#api-authentication)). Open any dashboard page without a session and you're redirected to `/login?next=<that page>`, which asks for the API key once and keeps you signed in with a session cookie (`qbt_rules_session`, valid for 31 days; changing the API key logs everyone out). The form posts the key in the request body, never in a URL, along with a CSRF token from your session. After signing in you land back on the page you asked for: `next` only ever holds a path on this server (a full URL, `//host` or a backslash trick is reduced to a path), so a crafted link can't send you to another site. The JSON API accepts the same session, so the dashboard's pages call it directly. 0.11 changed the cookie, so a 0.10.x login is dropped once on upgrade.
+
+With no API key configured, the pages send you to the login form, which says what to set instead of asking for a key.
+
+**A one-off link with `?key=`** still works, as a way in (a bookmark, a link from another tool):
 
 ```text
-http://localhost:5000/dashboard?key=YOUR_API_KEY
+http://localhost:5000/jobs?key=YOUR_API_KEY
 ```
 
-**Trade-off of `?key=`:** because the key lives in the URL rather than a header, it's more likely to end up in browser history or autocomplete than a scripted client's `X-API-Key` header would be. There's no built-in mitigation beyond what's already true of the JSON API's `?key=` support — if that's a concern, put the server behind a reverse proxy with its own auth (see [Security](Security#network-exposure)) and treat the dashboard link like any other bookmarked credential. As a smaller mitigation, the server's access log replaces every `key=` value with `[REDACTED]`, so the key never lands in a log line.
+A valid key starts the same session and then redirects to the same URL **without** `key=` (other query parameters are kept), so the key doesn't stay in the address bar, and the page you end up on (and its history entry) doesn't carry it. 0.10.x served the page with the key left in the URL, and its links carried it forward; since 0.11 no dashboard link carries the key. The first request still has the key in its URL, so it can still reach the browser history as a redirected entry, and anything that logs full URLs in front of the server (a reverse proxy) sees it once: prefer the form. The server's own access log replaces every `key=` value with `[REDACTED]`. A wrong key sends you to the login form with an error. A script can send the key as an `X-API-Key` header instead, which signs in and serves the page directly.
+
+### Behind a Reverse Proxy
+
+Every link, form action, script URL and redirect the dashboard emits is relative to the current page (`../jobs`, `./login?next=...`), never an absolute path. So the dashboard works under a path prefix (for example a proxy or ingress that serves it at `https://example.org/qbt/` and strips `/qbt` before passing requests on) without any setting: the browser resolves each link against wherever it really is. Open the prefix with its trailing slash (`/qbt/`, not `/qbt`). The rules editor's calls to the JSON API are relative too.
+
+Static files (`/static/...`, the editor's script and the vendored Ace editor) need no login. Pages ask for them with `?v=<version>`, so an upgrade never runs a cached old script; they're served with `Cache-Control: no-cache` and an ETag, so a reload revalidates cheaply.
 
 ### Rules View Availability
 
-The rules page needs a `Config` reference that isn't always available depending on how `create_app()` was called — in the normal `qbt-rules serve` startup path it always is, so this only matters if you're embedding `create_app()` yourself outside the standard CLI entry point. If it's unavailable, the page says so rather than erroring.
+The rules pages need the running rules config, which `qbt-rules serve` always provides, so this only matters if you build the app yourself (`api.create_app` with `Services(rules=None)`). Without it, the rules page and the editor say so rather than erroring.
 
 ### What It Doesn't Do
 
