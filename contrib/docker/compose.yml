@@ -25,7 +25,7 @@ services:
       PUID: "1000"
       PGID: "1000"
       TZ: "Europe/London"
-      # QBT_RULES_LOG_LEVEL: DEBUG
+      # QBT_RULES_LOGGING_LEVEL: DEBUG
       # QBT_RULES_SOME_TOKEN_FILE: /run/secrets/qbt-rules/some-token
 
     # Hardening: read-only root, no new privileges, only the capabilities it needs

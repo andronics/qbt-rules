@@ -102,7 +102,7 @@ class RuleResolver:
 
         # Apply instance-scoped variable overrides
         # Fully implemented - awaiting Config class integration to pass instance_id
-        # Currently Config always passes instance_id=None (see config_loader.py:496)
+        # Currently config_loader.py always passes instance_id=None
         if instance_id and instances:
             instance = instances.get(instance_id, {})
             instance_refs = instance.get("refs", {})
