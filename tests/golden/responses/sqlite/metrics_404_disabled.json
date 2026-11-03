@@ -1,0 +1,11 @@
+{
+  "case": "metrics_404_disabled",
+  "backend": "sqlite",
+  "request": "GET /metrics",
+  "status": 404,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Not Found\",\"message\":\"Endpoint not found\"}\n"
+}

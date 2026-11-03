@@ -1,0 +1,11 @@
+{
+  "case": "rules_history_version_404_bad_id",
+  "backend": "redis",
+  "request": "GET /api/rules/history/..%2Frules.yml",
+  "status": 404,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Not Found\",\"message\":\"Endpoint not found\"}\n"
+}

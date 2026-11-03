@@ -1,0 +1,11 @@
+{
+  "case": "rules_history_version_404",
+  "backend": "sqlite",
+  "request": "GET /api/rules/history/20200101T000000000000Z",
+  "status": 404,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Not Found\",\"message\":\"No saved version 20200101T000000000000Z\"}\n"
+}

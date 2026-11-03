@@ -1,0 +1,14 @@
+{
+  "case": "stats_200",
+  "backend": "redis",
+  "request": "GET /api/stats",
+  "status": 200,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [
+    "timestamp",
+    "worker.last_job_completed"
+  ],
+  "masked": [],
+  "body": "{\"jobs\":{\"cancelled\":0,\"completed\":1,\"failed\":1,\"pending\":1,\"processing\":0,\"total\":3},\"performance\":{\"average_execution_time\":\"3.0s\"},\"queue\":{\"backend\":\"RedisQueue\",\"depth\":1},\"timestamp\":\"2026-11-03T12:30:00+00:00\",\"worker\":{\"last_job_completed\":\"2026-11-03T12:01:02+00:00\",\"status\":\"running\"}}\n"
+}

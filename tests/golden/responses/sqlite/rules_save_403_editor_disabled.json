@@ -1,0 +1,11 @@
+{
+  "case": "rules_save_403_editor_disabled",
+  "backend": "sqlite",
+  "request": "PUT /api/rules/source",
+  "status": 403,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Forbidden\",\"message\":\"Saving is turned off (server.editor_enabled: false)\"}\n"
+}

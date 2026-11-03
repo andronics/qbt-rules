@@ -1,0 +1,11 @@
+{
+  "case": "rules_save_428_no_if_match",
+  "backend": "redis",
+  "request": "PUT /api/rules/source",
+  "status": 428,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Precondition Required\",\"message\":\"Send the ETag from GET /api/rules/source as If-Match, so a save cannot overwrite changes made since\"}\n"
+}

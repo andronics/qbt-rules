@@ -1,0 +1,11 @@
+{
+  "case": "job_get_404",
+  "backend": "sqlite",
+  "request": "GET /api/jobs/no-such-job",
+  "status": 404,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Not Found\",\"message\":\"Job not found: no-such-job\"}\n"
+}

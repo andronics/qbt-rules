@@ -1,0 +1,15 @@
+{
+  "case": "rules_save_200_etag_in_body",
+  "backend": "sqlite",
+  "request": "PUT /api/rules/source",
+  "status": 200,
+  "content_type": "application/json",
+  "headers": {
+    "ETag": "\"1f31607749019f775e832d7cf2589a338859126403a78e2844b4a9cad428963f\""
+  },
+  "timestamp_paths": [
+    "modified_at"
+  ],
+  "masked": [],
+  "body": "{\"etag\":\"1f31607749019f775e832d7cf2589a338859126403a78e2844b4a9cad428963f\",\"modified_at\":\"2026-11-03T12:30:00+00:00\",\"saved\":true,\"size\":199,\"validation\":{\"counts\":{\"error\":0,\"info\":0,\"warning\":0},\"issues\":[],\"summary\":{\"contexts\":[],\"refs\":{\"actions\":[],\"conditions\":[],\"vars\":[]},\"rules\":[{\"context\":null,\"description\":null,\"enabled\":true,\"id\":\"pause-stalled\",\"index\":0,\"line\":3,\"stop_on_match\":false}]},\"valid\":true}}\n"
+}

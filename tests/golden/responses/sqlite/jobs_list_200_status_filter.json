@@ -1,0 +1,15 @@
+{
+  "case": "jobs_list_200_status_filter",
+  "backend": "sqlite",
+  "request": "GET /api/jobs?status=completed",
+  "status": 200,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [
+    "jobs[0].completed_at",
+    "jobs[0].created_at",
+    "jobs[0].started_at"
+  ],
+  "masked": [],
+  "body": "{\"jobs\":[{\"completed_at\":\"Tue, 03 Nov 2026 12:00:04 GMT\",\"context\":\"weekly-cleanup\",\"created_at\":\"Tue, 03 Nov 2026 12:00:00 GMT\",\"dry_run\":false,\"error\":null,\"hash\":null,\"job_id\":\"00000000-0000-4000-8000-000000000001\",\"result\":{\"actions_executed\":2,\"rules_matched\":1,\"torrents_processed\":12},\"started_at\":\"Tue, 03 Nov 2026 12:00:01 GMT\",\"status\":\"completed\"}],\"limit\":50,\"offset\":0,\"total\":1}\n"
+}

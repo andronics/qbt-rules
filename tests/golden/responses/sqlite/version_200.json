@@ -1,0 +1,13 @@
+{
+  "case": "version_200",
+  "backend": "sqlite",
+  "request": "GET /api/version",
+  "status": 200,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [
+    "python_version"
+  ],
+  "body": "{\"api_version\":\"1.0\",\"python_version\":\"<python_version>\",\"version\":\"0.0.0+golden\"}\n"
+}

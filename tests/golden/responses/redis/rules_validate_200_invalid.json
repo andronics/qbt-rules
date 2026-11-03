@@ -1,0 +1,11 @@
+{
+  "case": "rules_validate_200_invalid",
+  "backend": "redis",
+  "request": "POST /api/rules/validate",
+  "status": 200,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"counts\":{\"error\":1,\"info\":0,\"warning\":1},\"issues\":[{\"column\":17,\"end_column\":null,\"end_line\":4,\"line\":4,\"message\":\"Empty conditions match every torrent\",\"path\":\"rules[0].conditions\",\"severity\":\"warning\"},{\"column\":32,\"end_column\":39,\"end_line\":7,\"line\":7,\"message\":\"params.delete_files is the string 'false', which counts as TRUE -- write false without quotes\",\"path\":\"rules[0].actions[0].params.delete_files\",\"severity\":\"error\"}],\"summary\":{\"contexts\":[],\"refs\":{\"actions\":[],\"conditions\":[],\"vars\":[]},\"rules\":[{\"context\":null,\"description\":null,\"enabled\":true,\"id\":\"remove-finished\",\"index\":0,\"line\":3,\"stop_on_match\":false}]},\"valid\":false}\n"
+}

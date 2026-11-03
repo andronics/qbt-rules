@@ -1,0 +1,11 @@
+{
+  "case": "rules_save_503_no_config",
+  "backend": "redis",
+  "request": "PUT /api/rules/source",
+  "status": 503,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Service Unavailable\",\"message\":\"The server was started without a config directory\"}\n"
+}

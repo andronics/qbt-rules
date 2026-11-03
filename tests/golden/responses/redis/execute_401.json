@@ -1,0 +1,11 @@
+{
+  "case": "execute_401",
+  "backend": "redis",
+  "request": "POST /api/execute",
+  "status": 401,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Unauthorized\",\"message\":\"Invalid or missing API key\"}\n"
+}
