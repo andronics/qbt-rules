@@ -17,8 +17,8 @@ from pathlib import Path
 # first file pytest loads (before any test module's own `from qbt_rules
 # import metrics`/engine.py/worker.py/etc. imports can trigger prometheus_client's
 # actual first import), not inside a per-test fixture in test_metrics.py.
-_metrics_test_dir = tempfile.mkdtemp(prefix='qbtr-test-metrics-')
-os.environ.setdefault('PROMETHEUS_MULTIPROC_DIR', _metrics_test_dir)
+_metrics_test_dir = tempfile.mkdtemp(prefix="qbtr-test-metrics-")
+os.environ.setdefault("PROMETHEUS_MULTIPROC_DIR", _metrics_test_dir)
 atexit.register(shutil.rmtree, _metrics_test_dir, ignore_errors=True)
 
 
@@ -52,24 +52,25 @@ def reset_metrics_module_state():
 def clean_environment_variables():
     """Clean up environment variables before and after each test."""
     # Store original value
-    original_dry_run = os.environ.get('QBT_RULES_DRY_RUN')
+    original_dry_run = os.environ.get("QBT_RULES_DRY_RUN")
 
     # Clean before test
-    os.environ.pop('QBT_RULES_DRY_RUN', None)
+    os.environ.pop("QBT_RULES_DRY_RUN", None)
 
     yield
 
     # Clean after test
-    os.environ.pop('QBT_RULES_DRY_RUN', None)
+    os.environ.pop("QBT_RULES_DRY_RUN", None)
 
     # Restore original value if it existed
     if original_dry_run is not None:
-        os.environ['QBT_RULES_DRY_RUN'] = original_dry_run
+        os.environ["QBT_RULES_DRY_RUN"] = original_dry_run
 
 
 # ============================================================================
 # Mock QBittorrent API
 # ============================================================================
+
 
 class MockQBittorrentAPI:
     """Mock QBittorrentAPI client for testing without real qBittorrent instance."""
@@ -82,35 +83,35 @@ class MockQBittorrentAPI:
         self.properties_data = {}
         self.webseeds_data = {}
         self.transfer_info_data = {
-            'dl_info_speed': 1048576,  # 1 MB/s
-            'up_info_speed': 524288,   # 512 KB/s
-            'dl_info_data': 1073741824,  # 1 GB
-            'up_info_data': 2147483648,  # 2 GB
+            "dl_info_speed": 1048576,  # 1 MB/s
+            "up_info_speed": 524288,  # 512 KB/s
+            "dl_info_data": 1073741824,  # 1 GB
+            "up_info_data": 2147483648,  # 2 GB
         }
         self.app_preferences = {
-            'locale': 'en',
-            'save_path': '/downloads',
+            "locale": "en",
+            "save_path": "/downloads",
         }
 
         # Track API calls for verification
         self.calls = {
-            'stop': [],
-            'start': [],
-            'force_start': [],
-            'release_force_start': [],
-            'recheck': [],
-            'reannounce': [],
-            'delete': [],
-            'set_category': [],
-            'add_tags': [],
-            'remove_tags': [],
-            'set_upload_limit': [],
-            'set_download_limit': [],
-            'increase_priority': [],
-            'decrease_priority': [],
-            'set_top_priority': [],
-            'set_bottom_priority': [],
-            'set_file_priority': [],
+            "stop": [],
+            "start": [],
+            "force_start": [],
+            "release_force_start": [],
+            "recheck": [],
+            "reannounce": [],
+            "delete": [],
+            "set_category": [],
+            "add_tags": [],
+            "remove_tags": [],
+            "set_upload_limit": [],
+            "set_download_limit": [],
+            "increase_priority": [],
+            "decrease_priority": [],
+            "set_top_priority": [],
+            "set_bottom_priority": [],
+            "set_file_priority": [],
         }
 
     def get_torrent(self, torrent_hash):
@@ -122,11 +123,11 @@ class MockQBittorrentAPI:
         torrents = list(self.torrents_data.values())
 
         if category:
-            torrents = [t for t in torrents if t.get('category') == category]
+            torrents = [t for t in torrents if t.get("category") == category]
         if tag:
-            torrents = [t for t in torrents if tag in t.get('tags', '').split(',')]
+            torrents = [t for t in torrents if tag in t.get("tags", "").split(",")]
         if hashes:
-            torrents = [t for t in torrents if t['hash'] in hashes]
+            torrents = [t for t in torrents if t["hash"] in hashes]
 
         return torrents
 
@@ -169,46 +170,46 @@ class MockQBittorrentAPI:
     # Action methods that track calls
     def stop_torrents(self, hashes):
         """Stop torrents."""
-        self.calls['stop'].append(hashes)
+        self.calls["stop"].append(hashes)
         for hash in hashes:
             if hash in self.torrents_data:
-                self.torrents_data[hash]['state'] = 'pausedDL'
+                self.torrents_data[hash]["state"] = "pausedDL"
         return True
 
     def start_torrents(self, hashes):
         """Start torrents."""
-        self.calls['start'].append(hashes)
+        self.calls["start"].append(hashes)
         for hash in hashes:
             if hash in self.torrents_data:
-                self.torrents_data[hash]['state'] = 'downloading'
+                self.torrents_data[hash]["state"] = "downloading"
         return True
 
     def force_start_torrents(self, hashes, enable=True):
         """Force start torrents, or release them back to normal queue management if enable=False."""
         if enable:
-            self.calls['force_start'].append(hashes)
+            self.calls["force_start"].append(hashes)
         else:
-            self.calls['release_force_start'].append(hashes)
+            self.calls["release_force_start"].append(hashes)
         for hash in hashes:
             if hash in self.torrents_data:
-                self.torrents_data[hash]['force_start'] = enable
+                self.torrents_data[hash]["force_start"] = enable
                 if enable:
-                    self.torrents_data[hash]['state'] = 'forceDL'
+                    self.torrents_data[hash]["state"] = "forceDL"
         return True
 
     def recheck_torrents(self, hashes):
         """Recheck torrents."""
-        self.calls['recheck'].append(hashes)
+        self.calls["recheck"].append(hashes)
         return True
 
     def reannounce_torrents(self, hashes):
         """Reannounce torrents."""
-        self.calls['reannounce'].append(hashes)
+        self.calls["reannounce"].append(hashes)
         return True
 
     def delete_torrents(self, hashes, delete_files=False):
         """Delete torrents."""
-        self.calls['delete'].append({'hashes': hashes, 'delete_files': delete_files})
+        self.calls["delete"].append({"hashes": hashes, "delete_files": delete_files})
         for hash in hashes:
             if hash in self.torrents_data:
                 del self.torrents_data[hash]
@@ -216,77 +217,85 @@ class MockQBittorrentAPI:
 
     def set_category(self, hashes, category):
         """Set torrent category."""
-        self.calls['set_category'].append({'hashes': hashes, 'category': category})
+        self.calls["set_category"].append({"hashes": hashes, "category": category})
         for hash in hashes:
             if hash in self.torrents_data:
-                self.torrents_data[hash]['category'] = category
+                self.torrents_data[hash]["category"] = category
         return True
 
     def add_tags(self, hashes, tags):
         """Add tags to torrents."""
-        self.calls['add_tags'].append({'hashes': hashes, 'tags': tags})
+        self.calls["add_tags"].append({"hashes": hashes, "tags": tags})
         for hash in hashes:
             if hash in self.torrents_data:
-                current = self.torrents_data[hash].get('tags', '')
-                current_list = [t.strip() for t in current.split(',') if t.strip()]
+                current = self.torrents_data[hash].get("tags", "")
+                current_list = [t.strip() for t in current.split(",") if t.strip()]
                 # tags is already a list
-                new_tags = [t.strip() for t in tags if t.strip()] if isinstance(tags, list) else [tags.strip()]
+                new_tags = (
+                    [t.strip() for t in tags if t.strip()]
+                    if isinstance(tags, list)
+                    else [tags.strip()]
+                )
                 combined = list(set(current_list + new_tags))
-                self.torrents_data[hash]['tags'] = ','.join(combined)
+                self.torrents_data[hash]["tags"] = ",".join(combined)
         return True
 
     def remove_tags(self, hashes, tags):
         """Remove tags from torrents."""
-        self.calls['remove_tags'].append({'hashes': hashes, 'tags': tags})
+        self.calls["remove_tags"].append({"hashes": hashes, "tags": tags})
         for hash in hashes:
             if hash in self.torrents_data:
-                current = self.torrents_data[hash].get('tags', '')
-                current_list = [t.strip() for t in current.split(',') if t.strip()]
+                current = self.torrents_data[hash].get("tags", "")
+                current_list = [t.strip() for t in current.split(",") if t.strip()]
                 # tags is already a list
-                remove_tags = [t.strip() for t in tags if t.strip()] if isinstance(tags, list) else [tags.strip()]
+                remove_tags = (
+                    [t.strip() for t in tags if t.strip()]
+                    if isinstance(tags, list)
+                    else [tags.strip()]
+                )
                 remaining = [t for t in current_list if t not in remove_tags]
-                self.torrents_data[hash]['tags'] = ','.join(remaining)
+                self.torrents_data[hash]["tags"] = ",".join(remaining)
         return True
 
     def set_upload_limit(self, hashes, limit):
         """Set upload limit."""
-        self.calls['set_upload_limit'].append({'hashes': hashes, 'limit': limit})
+        self.calls["set_upload_limit"].append({"hashes": hashes, "limit": limit})
         for hash in hashes:
             if hash in self.torrents_data:
-                self.torrents_data[hash]['up_limit'] = limit
+                self.torrents_data[hash]["up_limit"] = limit
         return True
 
     def set_download_limit(self, hashes, limit):
         """Set download limit."""
-        self.calls['set_download_limit'].append({'hashes': hashes, 'limit': limit})
+        self.calls["set_download_limit"].append({"hashes": hashes, "limit": limit})
         for hash in hashes:
             if hash in self.torrents_data:
-                self.torrents_data[hash]['dl_limit'] = limit
+                self.torrents_data[hash]["dl_limit"] = limit
         return True
 
     def increase_priority(self, hashes):
         """Increase torrent priority."""
-        self.calls['increase_priority'].append(hashes)
+        self.calls["increase_priority"].append(hashes)
         return True
 
     def decrease_priority(self, hashes):
         """Decrease torrent priority."""
-        self.calls['decrease_priority'].append(hashes)
+        self.calls["decrease_priority"].append(hashes)
         return True
 
     def set_top_priority(self, hashes):
         """Set maximum torrent priority."""
-        self.calls['set_top_priority'].append(hashes)
+        self.calls["set_top_priority"].append(hashes)
         return True
 
     def set_bottom_priority(self, hashes):
         """Set minimum torrent priority."""
-        self.calls['set_bottom_priority'].append(hashes)
+        self.calls["set_bottom_priority"].append(hashes)
         return True
 
     def set_file_priority(self, torrent_hash, file_ids, priority):
         """Set the priority of individual files in one torrent."""
-        self.calls['set_file_priority'].append((torrent_hash, list(file_ids), priority))
+        self.calls["set_file_priority"].append((torrent_hash, list(file_ids), priority))
         return True
 
 
@@ -299,6 +308,7 @@ def mock_api():
 # ============================================================================
 # Torrent Fixtures - Various States
 # ============================================================================
+
 
 @pytest.fixture
 def sample_torrent() -> Dict[str, Any]:
@@ -420,6 +430,7 @@ def paused_torrent() -> Dict[str, Any]:
 def completed_torrent() -> Dict[str, Any]:
     """Recently completed torrent."""
     import time
+
     now = int(time.time())
     return {
         "hash": "completed999",
@@ -451,6 +462,7 @@ def completed_torrent() -> Dict[str, Any]:
 def old_seeded_torrent() -> Dict[str, Any]:
     """Old torrent that has been seeding for a long time."""
     import time
+
     now = int(time.time())
     return {
         "hash": "oldseeder",
@@ -539,6 +551,7 @@ def small_torrent() -> Dict[str, Any]:
 # ============================================================================
 # Collection Fixtures - Trackers, Files, Peers, etc.
 # ============================================================================
+
 
 @pytest.fixture
 def mock_trackers() -> List[Dict[str, Any]]:
@@ -836,6 +849,7 @@ def mock_app_preferences() -> Dict[str, Any]:
 # Rule Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def simple_rule() -> Dict[str, Any]:
     """Simple rule with basic conditions."""
@@ -846,13 +860,9 @@ def simple_rule() -> Dict[str, Any]:
         "stop_on_match": False,
         "conditions": {
             "context": "adhoc-run",
-            "all": [
-                {"field": "info.ratio", "operator": ">=", "value": 1.0}
-            ]
+            "all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}],
         },
-        "actions": [
-            {"type": "add_tag", "params": {"tag": "test"}}
-        ]
+        "actions": [{"type": "add_tag", "params": {"tag": "test"}}],
     }
 
 
@@ -870,22 +880,27 @@ def complex_rule() -> Dict[str, Any]:
                 {
                     "any": [
                         {"field": "info.ratio", "operator": ">=", "value": 2.0},
-                        {"field": "info.completion_on", "operator": "older_than", "value": "30 days"},
+                        {
+                            "field": "info.completion_on",
+                            "operator": "older_than",
+                            "value": "30 days",
+                        },
                     ]
-                }
-            ]
+                },
+            ],
         },
         "actions": [
             {"type": "add_tag", "params": {"tag": "ready-to-delete"}},
             {"type": "set_category", "params": {"category": "old"}},
             {"type": "stop"},
-        ]
+        ],
     }
 
 
 # ============================================================================
 # Config Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def mock_config():
@@ -946,12 +961,14 @@ rules:
 # Redis Test Infrastructure
 # ============================================================================
 
+
 @pytest.fixture(scope="session")
 def redis_available():
     """Check if Redis is available for testing."""
     try:
         import redis
-        client = redis.Redis(host='localhost', port=6379, socket_connect_timeout=1)
+
+        client = redis.Redis(host="localhost", port=6379, socket_connect_timeout=1)
         client.ping()
         client.close()
         return True
@@ -970,11 +987,12 @@ def redis_client(redis_available):
     if redis_available:
         # Use real Redis
         import redis
+
         client = redis.Redis(
-            host='localhost',
+            host="localhost",
             port=6379,
             db=15,  # Use dedicated test database
-            decode_responses=True  # Decode to strings (matches RedisQueue expectation)
+            decode_responses=True,  # Decode to strings (matches RedisQueue expectation)
         )
         # Clean up test database
         client.flushdb()
@@ -986,6 +1004,7 @@ def redis_client(redis_available):
         # Try to use fakeredis as fallback
         try:
             from fakeredis import FakeRedis
+
             client = FakeRedis(decode_responses=True)  # Decode to strings
             yield client
         except ImportError:
@@ -1004,6 +1023,4 @@ def redis_url(redis_available):
 
 def pytest_configure(config):
     """Configure pytest with custom markers and settings."""
-    config.addinivalue_line(
-        "markers", "requires_redis: mark test as requiring real Redis server"
-    )
+    config.addinivalue_line("markers", "requires_redis: mark test as requiring real Redis server")

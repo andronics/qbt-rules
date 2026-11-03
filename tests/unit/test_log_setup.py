@@ -10,22 +10,35 @@ import pytest
 
 import qbt_rules.log_setup as qbt_logging
 from qbt_rules.log_setup import (
-    setup_logging, get_logger, set_file_rotation, LOG_FORMAT_SIMPLE, LOG_FORMAT_DETAILED,
-    CONSOLE_FORMAT_BARE, DEFAULT_MAX_BYTES, DEFAULT_BACKUP_COUNT
+    setup_logging,
+    get_logger,
+    set_file_rotation,
+    LOG_FORMAT_SIMPLE,
+    LOG_FORMAT_DETAILED,
+    CONSOLE_FORMAT_BARE,
+    DEFAULT_MAX_BYTES,
+    DEFAULT_BACKUP_COUNT,
 )
 
 
-def _logging_config(level="INFO", file=None, trace_mode=False, http_access=False, client_mode=False,
-                    max_bytes=DEFAULT_MAX_BYTES, backup_count=DEFAULT_BACKUP_COUNT):
+def _logging_config(
+    level="INFO",
+    file=None,
+    trace_mode=False,
+    http_access=False,
+    client_mode=False,
+    max_bytes=DEFAULT_MAX_BYTES,
+    backup_count=DEFAULT_BACKUP_COUNT,
+):
     """Build a resolved logging_config dict, matching legacy_cli.py's get_logging_config() shape."""
     return {
-        'level': level,
-        'file': file,
-        'trace_mode': trace_mode,
-        'http_access': http_access,
-        'client_mode': client_mode,
-        'max_bytes': max_bytes,
-        'backup_count': backup_count,
+        "level": level,
+        "file": file,
+        "trace_mode": trace_mode,
+        "http_access": http_access,
+        "client_mode": client_mode,
+        "max_bytes": max_bytes,
+        "backup_count": backup_count,
     }
 
 
@@ -89,7 +102,8 @@ class TestSetupLogging:
     def _console_handler(self):
         root_logger = logging.getLogger()
         return next(
-            h for h in root_logger.handlers
+            h
+            for h in root_logger.handlers
             if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
         )
 
@@ -132,7 +146,9 @@ class TestSetupLogging:
         over client mode's normally-bare console format."""
         log_file = tmp_path / "test.log"
 
-        setup_logging(_logging_config(level="DEBUG", file=log_file, trace_mode=True, client_mode=True))
+        setup_logging(
+            _logging_config(level="DEBUG", file=log_file, trace_mode=True, client_mode=True)
+        )
 
         assert self._console_handler().formatter._fmt == LOG_FORMAT_DETAILED
 
@@ -143,7 +159,11 @@ class TestSetupLogging:
 
         # Verify error message to stderr
         captured = capsys.readouterr()
-        assert "Failed to setup file logging" in captured.err or "PermissionError" in captured.err or len(captured.err) > 0
+        assert (
+            "Failed to setup file logging" in captured.err
+            or "PermissionError" in captured.err
+            or len(captured.err) > 0
+        )
 
         # Console handler should still work
         root_logger = logging.getLogger()
@@ -166,7 +186,11 @@ class TestSetupLogging:
         setup_logging(_logging_config(level="WARNING", file=log_file))
 
         root_logger = logging.getLogger()
-        console_handlers = [h for h in root_logger.handlers if isinstance(h, logging.StreamHandler) and h.stream == sys.stderr]
+        console_handlers = [
+            h
+            for h in root_logger.handlers
+            if isinstance(h, logging.StreamHandler) and h.stream == sys.stderr
+        ]
         assert len(console_handlers) >= 1
 
     def test_clears_existing_handlers(self, tmp_path):
@@ -196,8 +220,11 @@ class TestSetupLogging:
         assert root_logger.level == logging.DEBUG
 
         # Console handler should have DEBUG level (stream is stderr, not a file)
-        console_handlers = [h for h in root_logger.handlers
-                           if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)]
+        console_handlers = [
+            h
+            for h in root_logger.handlers
+            if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+        ]
         assert len(console_handlers) > 0
         assert console_handlers[0].level == logging.DEBUG
 
@@ -212,8 +239,11 @@ class TestSetupLogging:
         assert root_logger.level == logging.DEBUG
 
         # Console handler should have ERROR level (stream is stderr, not a file)
-        console_handlers = [h for h in root_logger.handlers
-                           if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)]
+        console_handlers = [
+            h
+            for h in root_logger.handlers
+            if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+        ]
         assert len(console_handlers) > 0
         assert console_handlers[0].level == logging.ERROR
 
@@ -271,7 +301,7 @@ class TestLogRotation:
 
     def test_missing_rotation_keys_use_defaults(self, tmp_path):
         config = _logging_config(file=tmp_path / "test.log")
-        del config['max_bytes'], config['backup_count']
+        del config["max_bytes"], config["backup_count"]
 
         setup_logging(config)
 

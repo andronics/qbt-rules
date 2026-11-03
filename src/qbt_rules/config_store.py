@@ -50,19 +50,19 @@ from qbt_rules.config_loader import ENV_VAR_MAP
 
 logger = logging.getLogger(__name__)
 
-HISTORY_DIRNAME = '.history'
+HISTORY_DIRNAME = ".history"
 HISTORY_KEEP = 20
 
 # rules.yml.20261021T031542123456Z -- UTC, microseconds so two saves in
 # one second don't collide
-_VERSION_ID = re.compile(r'^\d{8}T\d{12}Z$')
+_VERSION_ID = re.compile(r"^\d{8}T\d{12}Z$")
 
 
 class FileConflictError(Exception):
     """The file changed since the caller read it"""
 
-    def __init__(self, current: 'FileSnapshot'):
-        super().__init__('File changed on disk')
+    def __init__(self, current: "FileSnapshot"):
+        super().__init__("File changed on disk")
         self.current = current
 
 
@@ -78,7 +78,12 @@ class FileSnapshot:
     size: int
 
     def to_dict(self) -> Dict[str, Any]:
-        return {'content': self.text, 'etag': self.etag, 'modified_at': self.modified_at, 'size': self.size}
+        return {
+            "content": self.text,
+            "etag": self.etag,
+            "modified_at": self.modified_at,
+            "size": self.size,
+        }
 
 
 def compute_etag(data: bytes) -> str:
@@ -101,7 +106,7 @@ class EditableFile:
         data = self.path.read_bytes()
         st = self.path.stat()
         return FileSnapshot(
-            text=data.decode('utf-8'),
+            text=data.decode("utf-8"),
             etag=compute_etag(data),
             modified_at=_iso(st.st_mtime),
             size=len(data),
@@ -113,7 +118,10 @@ class EditableFile:
         if not os.access(self.path, os.W_OK):
             try:
                 mode = stat.S_IMODE(self.path.stat().st_mode)
-                return False, f"{self.path.name} is read-only on disk (mode {mode:04o}) -- make it writable to edit here"
+                return (
+                    False,
+                    f"{self.path.name} is read-only on disk (mode {mode:04o}) -- make it writable to edit here",
+                )
             except OSError as e:
                 return False, f"{self.path.name} cannot be read: {e.strerror}"
         if not os.access(self.path.parent, os.W_OK | os.X_OK):
@@ -128,7 +136,7 @@ class EditableFile:
         if fcntl is None:  # pragma: no cover
             yield
             return
-        with open(self.history_dir / f'.{self.path.name}.lock', 'a') as lock_file:
+        with open(self.history_dir / f".{self.path.name}.lock", "a") as lock_file:
             fcntl.flock(lock_file, fcntl.LOCK_EX)
             try:
                 yield
@@ -154,25 +162,29 @@ class EditableFile:
         if not ok:
             raise FileNotWritableError(reason)
 
-        new_data = text.encode('utf-8')
+        new_data = text.encode("utf-8")
         with self._lock():
             current = self.read()
             if if_match != current.etag:
                 raise FileConflictError(current)
-            if new_data == current.text.encode('utf-8'):
+            if new_data == current.text.encode("utf-8"):
                 return current, False
 
-            self._backup(current.text.encode('utf-8'))
+            self._backup(current.text.encode("utf-8"))
             self._replace(new_data)
-            logger.info(f"{self.path.name} saved from the web editor ({len(new_data)} bytes, "
-                        f"previous version kept in {self.history_dir})")
+            logger.info(
+                f"{self.path.name} saved from the web editor ({len(new_data)} bytes, "
+                f"previous version kept in {self.history_dir})"
+            )
             return self.read(), True
 
     def _replace(self, data: bytes):
         st = self.path.stat()
-        fd, tmp = tempfile.mkstemp(prefix=f'.{self.path.name}.', suffix='.tmp', dir=self.path.parent)
+        fd, tmp = tempfile.mkstemp(
+            prefix=f".{self.path.name}.", suffix=".tmp", dir=self.path.parent
+        )
         try:
-            with os.fdopen(fd, 'wb') as f:
+            with os.fdopen(fd, "wb") as f:
                 f.write(data)
                 f.flush()
                 os.fsync(f.fileno())
@@ -193,7 +205,7 @@ class EditableFile:
                 raise
             # Single-file bind mount: rewrite in place instead
             logger.debug(f"Atomic replace of {self.path} failed ({e.strerror}); rewriting in place")
-            with open(self.path, 'r+b') as f:
+            with open(self.path, "r+b") as f:
                 f.write(data)
                 f.truncate()
                 f.flush()
@@ -212,9 +224,9 @@ class EditableFile:
     # -- history ------------------------------------------------------------
 
     def _backup(self, data: bytes):
-        version_id = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
-        (self.history_dir / f'{self.path.name}.{version_id}').write_bytes(data)
-        for old in self._versions()[self.keep:]:
+        version_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        (self.history_dir / f"{self.path.name}.{version_id}").write_bytes(data)
+        for old in self._versions()[self.keep :]:
             try:
                 old[1].unlink()
             except OSError:
@@ -222,40 +234,42 @@ class EditableFile:
 
     def _versions(self) -> List[Tuple[str, Path]]:
         """(id, path) newest first"""
-        prefix = f'{self.path.name}.'
+        prefix = f"{self.path.name}."
         found = []
         if self.history_dir.is_dir():
             for p in self.history_dir.iterdir():
-                if p.name.startswith(prefix) and _VERSION_ID.match(p.name[len(prefix):]):
-                    found.append((p.name[len(prefix):], p))
+                if p.name.startswith(prefix) and _VERSION_ID.match(p.name[len(prefix) :]):
+                    found.append((p.name[len(prefix) :], p))
         return sorted(found, reverse=True)
 
     def history(self) -> List[Dict[str, Any]]:
         out = []
         for version_id, p in self._versions():
-            saved = datetime.strptime(version_id, '%Y%m%dT%H%M%S%fZ').replace(tzinfo=timezone.utc)
-            out.append({'id': version_id, 'saved_at': saved.isoformat(), 'size': p.stat().st_size})
+            saved = datetime.strptime(version_id, "%Y%m%dT%H%M%S%fZ").replace(tzinfo=timezone.utc)
+            out.append({"id": version_id, "saved_at": saved.isoformat(), "size": p.stat().st_size})
         return out
 
     def read_version(self, version_id: str) -> Optional[str]:
-        if not _VERSION_ID.match(version_id or ''):
+        if not _VERSION_ID.match(version_id or ""):
             return None
-        p = self.history_dir / f'{self.path.name}.{version_id}'
-        return p.read_text('utf-8') if p.is_file() else None
+        p = self.history_dir / f"{self.path.name}.{version_id}"
+        return p.read_text("utf-8") if p.is_file() else None
 
 
 # ---------------------------------------------------------------------------
 # config.yml, read-only
 # ---------------------------------------------------------------------------
 
-_SECRET_KEY = re.compile(r'(api_key|apikey|password|passwd|secret|token|webhook_url|redis_url)$', re.IGNORECASE)
-REDACTED = '<redacted>'
+_SECRET_KEY = re.compile(
+    r"(api_key|apikey|password|passwd|secret|token|webhook_url|redis_url)$", re.IGNORECASE
+)
+REDACTED = "<redacted>"
 
 
 def _env_var_for(config_key: str) -> str:
     """The env var that overrides a config.yml key -- legacy_cli.py's
     resolve_section_config naming, plus ENV_VAR_MAP's exceptions"""
-    return ENV_VAR_MAP.get(config_key, 'QBT_RULES_' + config_key.upper().replace('.', '_'))
+    return ENV_VAR_MAP.get(config_key, "QBT_RULES_" + config_key.upper().replace(".", "_"))
 
 
 def redacted_config_view(text: str, environ: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
@@ -280,15 +294,21 @@ def redacted_config_view(text: str, environ: Optional[Dict[str, str]] = None) ->
     try:
         root = yaml.compose(text)
     except yaml.YAMLError as e:
-        mark = getattr(e, 'problem_mark', None)
+        mark = getattr(e, "problem_mark", None)
         return {
-            'content': '',
-            'redacted': [],
-            'issues': [{
-                'severity': 'error', 'message': f'config.yml has a YAML syntax error, so it is not shown: {e}',
-                'path': '', 'line': mark.line + 1 if mark else None, 'column': mark.column + 1 if mark else None,
-                'end_line': None, 'end_column': None,
-            }],
+            "content": "",
+            "redacted": [],
+            "issues": [
+                {
+                    "severity": "error",
+                    "message": f"config.yml has a YAML syntax error, so it is not shown: {e}",
+                    "path": "",
+                    "line": mark.line + 1 if mark else None,
+                    "column": mark.column + 1 if mark else None,
+                    "end_line": None,
+                    "end_column": None,
+                }
+            ],
         }
 
     spans: List[Tuple[int, int]] = []
@@ -301,33 +321,43 @@ def redacted_config_view(text: str, environ: Optional[Dict[str, str]] = None) ->
                 if not isinstance(key_node, yaml.ScalarNode):
                     continue
                 key_path = path + [str(key_node.value)]
-                dotted = '.'.join(key_path)
+                dotted = ".".join(key_path)
                 if isinstance(value_node, yaml.ScalarNode):
-                    if (_SECRET_KEY.search(key_node.value) and value_node.value
-                            and not str(value_node.value).startswith('${')):
+                    if (
+                        _SECRET_KEY.search(key_node.value)
+                        and value_node.value
+                        and not str(value_node.value).startswith("${")
+                    ):
                         spans.append((value_node.start_mark.index, value_node.end_mark.index))
                         redacted.append(dotted)
                     env_var = _env_var_for(dotted)
-                    for name in (f'{env_var}_FILE', env_var):
+                    for name in (f"{env_var}_FILE", env_var):
                         if name in environ:
-                            issues.append({
-                                'severity': 'info',
-                                'message': f'Overridden by the {name} environment variable -- '
-                                           f'the value here is not used',
-                                'path': dotted,
-                                'line': key_node.start_mark.line + 1,
-                                'column': key_node.start_mark.column + 1,
-                                'end_line': key_node.end_mark.line + 1,
-                                'end_column': key_node.end_mark.column + 1,
-                            })
+                            issues.append(
+                                {
+                                    "severity": "info",
+                                    "message": f"Overridden by the {name} environment variable -- "
+                                    f"the value here is not used",
+                                    "path": dotted,
+                                    "line": key_node.start_mark.line + 1,
+                                    "column": key_node.start_mark.column + 1,
+                                    "end_line": key_node.end_mark.line + 1,
+                                    "end_column": key_node.end_mark.column + 1,
+                                }
+                            )
                             break
-                elif dotted == 'schedule' and 'QBT_RULES_SCHEDULE_0_CRON' in environ:
-                    issues.append({
-                        'severity': 'info',
-                        'message': 'Replaced by the QBT_RULES_SCHEDULE_<N>_CRON environment variables',
-                        'path': dotted, 'line': key_node.start_mark.line + 1,
-                        'column': key_node.start_mark.column + 1, 'end_line': None, 'end_column': None,
-                    })
+                elif dotted == "schedule" and "QBT_RULES_SCHEDULE_0_CRON" in environ:
+                    issues.append(
+                        {
+                            "severity": "info",
+                            "message": "Replaced by the QBT_RULES_SCHEDULE_<N>_CRON environment variables",
+                            "path": dotted,
+                            "line": key_node.start_mark.line + 1,
+                            "column": key_node.start_mark.column + 1,
+                            "end_line": None,
+                            "end_column": None,
+                        }
+                    )
                 walk(value_node, key_path)
 
     if root is not None:
@@ -337,4 +367,4 @@ def redacted_config_view(text: str, environ: Optional[Dict[str, str]] = None) ->
     for start, end in sorted(spans, reverse=True):
         out = out[:start] + f'"{REDACTED}"' + out[end:]
 
-    return {'content': out, 'redacted': redacted, 'issues': issues}
+    return {"content": out, "redacted": redacted, "issues": issues}

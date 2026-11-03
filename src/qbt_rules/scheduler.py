@@ -40,10 +40,7 @@ class Scheduler:
     """
 
     def __init__(
-        self,
-        queue: QueueManager,
-        entries: List[Dict[str, str]],
-        poll_interval: float = 30.0
+        self, queue: QueueManager, entries: List[Dict[str, str]], poll_interval: float = 30.0
     ):
         """
         Initialize scheduler
@@ -64,13 +61,15 @@ class Scheduler:
         now = time.time()
         self._entries = []
         for entry in entries:
-            cron_iter = croniter(entry['cron'], now)
-            self._entries.append({
-                'cron': entry['cron'],
-                'context': entry['context'],
-                'iter': cron_iter,
-                'next_fire': cron_iter.get_next(float),
-            })
+            cron_iter = croniter(entry["cron"], now)
+            self._entries.append(
+                {
+                    "cron": entry["cron"],
+                    "context": entry["context"],
+                    "iter": cron_iter,
+                    "next_fire": cron_iter.get_next(float),
+                }
+            )
 
         logger.info(f"Scheduler initialized with {len(self._entries)} entries")
 
@@ -122,12 +121,12 @@ class Scheduler:
             Dictionary with scheduler status information
         """
         return {
-            'running': self.running,
-            'thread_alive': self.is_alive(),
-            'entry_count': len(self._entries),
-            'last_fire': self.last_fire,
-            'next_fires': [
-                {'context': e['context'], 'cron': e['cron'], 'next_fire': e['next_fire']}
+            "running": self.running,
+            "thread_alive": self.is_alive(),
+            "entry_count": len(self._entries),
+            "last_fire": self.last_fire,
+            "next_fires": [
+                {"context": e["context"], "cron": e["cron"], "next_fire": e["next_fire"]}
                 for e in self._entries
             ],
         }
@@ -140,9 +139,9 @@ class Scheduler:
             try:
                 now = time.time()
                 for entry in self._entries:
-                    if now >= entry['next_fire']:
+                    if now >= entry["next_fire"]:
                         self._fire(entry)
-                        entry['next_fire'] = entry['iter'].get_next(float)
+                        entry["next_fire"] = entry["iter"].get_next(float)
 
                 time.sleep(self.poll_interval)
 
@@ -161,12 +160,16 @@ class Scheduler:
         this replaces.
         """
         try:
-            job_id = self.queue.enqueue(context=entry['context'])
-            logger.info(f"Scheduled job enqueued: {job_id} (context={entry['context']}, cron={entry['cron']})")
-            self.last_fire = {'context': entry['context'], 'job_id': job_id, 'at': time.time()}
+            job_id = self.queue.enqueue(context=entry["context"])
+            logger.info(
+                f"Scheduled job enqueued: {job_id} (context={entry['context']}, cron={entry['cron']})"
+            )
+            self.last_fire = {"context": entry["context"], "job_id": job_id, "at": time.time()}
             metrics.record_scheduler_fire(True)
         except Exception as e:
-            logger.error(f"Failed to enqueue scheduled job (context={entry['context']}): {e}", exc_info=True)
+            logger.error(
+                f"Failed to enqueue scheduled job (context={entry['context']}): {e}", exc_info=True
+            )
             metrics.record_scheduler_fire(False)
 
     def __repr__(self) -> str:

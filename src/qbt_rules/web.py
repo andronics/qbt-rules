@@ -27,7 +27,10 @@ from qbt_rules.worker import Worker
 from qbt_rules.config_loader import Config, parse_bool
 from qbt_rules.log_setup import set_file_rotation
 from qbt_rules.config_store import (
-    EditableFile, FileConflictError, FileNotWritableError, redacted_config_view,
+    EditableFile,
+    FileConflictError,
+    FileNotWritableError,
+    redacted_config_view,
 )
 from qbt_rules.rules_validation import validate_rules_text
 from qbt_rules.__version__ import __version__
@@ -35,7 +38,7 @@ from qbt_rules import metrics, schema
 
 # Accepted spellings for boolean query parameters (parse_bool's true set
 # plus their opposites)
-BOOL_VALUES = {'true', 'false', '1', '0', 'yes', 'no', 'on', 'off'}
+BOOL_VALUES = {"true", "false", "1", "0", "yes", "no", "on", "off"}
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +55,7 @@ rules_store: Optional[EditableFile] = None
 # enough that a validate/save request can't be used to exhaust memory
 MAX_REQUEST_BYTES = 2 * 1024 * 1024
 
-SAFE_METHODS = ('GET', 'HEAD', 'OPTIONS')
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 
 
 def _timeago(value) -> str:
@@ -69,7 +72,7 @@ def _timeago(value) -> str:
         unchanged if it isn't valid ISO-8601, or '' for None
     """
     if value is None:
-        return ''
+        return ""
 
     if isinstance(value, str):
         try:
@@ -82,17 +85,20 @@ def _timeago(value) -> str:
 
     seconds = (datetime.now(timezone.utc) - value).total_seconds()
     if seconds < 60:
-        return 'just now'
+        return "just now"
 
     for unit_seconds, unit_name in (
-        (86400 * 365, 'year'), (86400 * 30, 'month'), (86400, 'day'),
-        (3600, 'hour'), (60, 'minute'),
+        (86400 * 365, "year"),
+        (86400 * 30, "month"),
+        (86400, "day"),
+        (3600, "hour"),
+        (60, "minute"),
     ):
         count = int(seconds / unit_seconds)
         if count >= 1:
             return f"{count} {unit_name}{'' if count == 1 else 's'} ago"
 
-    return 'just now'
+    return "just now"
 
 
 def create_app(
@@ -101,7 +107,7 @@ def create_app(
     api_key: str,
     config: Optional[Config] = None,
     metrics_config: Optional[Dict[str, Any]] = None,
-    editor: bool = True
+    editor: bool = True,
 ) -> Flask:
     """
     Create and configure Flask application
@@ -127,24 +133,31 @@ def create_app(
     Returns:
         Configured Flask app
     """
-    global queue, worker, api_key_config, dashboard_config, metrics_enabled, editor_enabled, rules_store
+    global \
+        queue, \
+        worker, \
+        api_key_config, \
+        dashboard_config, \
+        metrics_enabled, \
+        editor_enabled, \
+        rules_store
 
     queue = queue_manager
     worker = worker_instance
     api_key_config = api_key
     dashboard_config = config
-    metrics_enabled = bool(metrics_config and metrics_config.get('enabled'))
+    metrics_enabled = bool(metrics_config and metrics_config.get("enabled"))
     editor_enabled = editor
     rules_store = EditableFile(config.rules_file) if config is not None else None
 
     app = Flask(__name__)
-    app.config['JSON_SORT_KEYS'] = False
-    app.config['MAX_CONTENT_LENGTH'] = MAX_REQUEST_BYTES
+    app.config["JSON_SORT_KEYS"] = False
+    app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
     # Lax keeps the dashboard session cookie off cross-site POST/PUTs --
     # the first line of defence for the editor's write endpoints, with the
     # X-CSRF-Token check in require_api_key_or_session as the second
-    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-    app.jinja_env.filters['timeago'] = _timeago
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.jinja_env.filters["timeago"] = _timeago
 
     # Signs the dashboard session cookie -- derived deterministically from
     # api_key rather than a fresh random value, so it's identical across
@@ -153,7 +166,7 @@ def create_app(
     # one worker fail to validate on another under server.workers > 1).
     # Hashed rather than reused as-is so the raw API key is never doing
     # double duty as both the auth credential and the cookie-signing key.
-    app.secret_key = hashlib.sha256(f'qbt-rules-dashboard-session:{api_key}'.encode()).digest()
+    app.secret_key = hashlib.sha256(f"qbt-rules-dashboard-session:{api_key}".encode()).digest()
 
     @app.context_processor
     def _inject_version():
@@ -161,11 +174,11 @@ def create_app(
         base.html's shared topbar, without threading it through every
         individual route's render_template() call -- and {{ csrf_token() }}
         for pages that call the JSON API with the session cookie."""
-        return {'version': __version__, 'csrf_token': _csrf_token}
+        return {"version": __version__, "csrf_token": _csrf_token}
 
     # Disable Flask's default logger (use our configured logger instead)
     app.logger.disabled = True
-    logging.getLogger('werkzeug').setLevel(logging.WARNING)
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
     # Register blueprints/routes
     register_routes(app)
@@ -189,17 +202,15 @@ def require_api_key(f):
 
     Returns 401 if missing or invalid.
     """
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
         # Get API key from query param or header
-        key = request.args.get('key') or request.headers.get('X-API-Key')
+        key = request.args.get("key") or request.headers.get("X-API-Key")
 
         # Constant-time comparison to prevent timing attacks
         if not key or not secrets.compare_digest(key, api_key_config):
-            return jsonify({
-                'error': 'Unauthorized',
-                'message': 'Invalid or missing API key'
-            }), 401
+            return jsonify({"error": "Unauthorized", "message": "Invalid or missing API key"}), 401
 
         return f(*args, **kwargs)
 
@@ -208,9 +219,9 @@ def require_api_key(f):
 
 def _csrf_token() -> str:
     """This session's CSRF token, created on first use"""
-    if 'csrf_token' not in session:
-        session['csrf_token'] = secrets.token_urlsafe(32)
-    return session['csrf_token']
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_urlsafe(32)
+    return session["csrf_token"]
 
 
 def require_api_key_or_session(f):
@@ -224,28 +235,28 @@ def require_api_key_or_session(f):
     another site can't read or set -- or it's refused. Unauthenticated
     requests get the same JSON 401 as require_api_key, never a redirect.
     """
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        key = request.args.get('key') or request.headers.get('X-API-Key')
+        key = request.args.get("key") or request.headers.get("X-API-Key")
         if key:
             if secrets.compare_digest(key, api_key_config):
                 return f(*args, **kwargs)
-        elif session.get('authenticated'):
+        elif session.get("authenticated"):
             if request.method in SAFE_METHODS:
                 return f(*args, **kwargs)
-            sent = request.headers.get('X-CSRF-Token', '')
-            expected = session.get('csrf_token', '')
+            sent = request.headers.get("X-CSRF-Token", "")
+            expected = session.get("csrf_token", "")
             if sent and expected and secrets.compare_digest(sent, expected):
                 return f(*args, **kwargs)
-            return jsonify({
-                'error': 'Forbidden',
-                'message': 'Missing or invalid X-CSRF-Token header -- reload the page and try again'
-            }), 403
+            return jsonify(
+                {
+                    "error": "Forbidden",
+                    "message": "Missing or invalid X-CSRF-Token header -- reload the page and try again",
+                }
+            ), 403
 
-        return jsonify({
-            'error': 'Unauthorized',
-            'message': 'Invalid or missing API key'
-        }), 401
+        return jsonify({"error": "Unauthorized", "message": "Invalid or missing API key"}), 401
 
     return decorated_function
 
@@ -257,9 +268,9 @@ def _next_url_without_key() -> str:
     dashboard request redirects back to after a successful login.
     """
     args = request.args.to_dict(flat=False)
-    args.pop('key', None)
-    query = '&'.join(f'{k}={v}' for k, vs in args.items() for v in vs)
-    return request.path + (f'?{query}' if query else '')
+    args.pop("key", None)
+    query = "&".join(f"{k}={v}" for k, vs in args.items() for v in vs)
+    return request.path + (f"?{query}" if query else "")
 
 
 def _sanitize_next(next_url: Optional[str]) -> str:
@@ -276,11 +287,11 @@ def _sanitize_next(next_url: Optional[str]) -> str:
     bare path+query, never a full URL, and can't be tricked into treating
     a scheme-relative or absolute URL as one.
     """
-    parsed = urlparse(next_url or '')
+    parsed = urlparse(next_url or "")
     params = parse_qs(parsed.query)
-    params.pop('key', None)
+    params.pop("key", None)
     query = urlencode(params, doseq=True)
-    return (parsed.path or '/') + (f'?{query}' if query else '')
+    return (parsed.path or "/") + (f"?{query}" if query else "")
 
 
 def require_api_key_dashboard(f):
@@ -297,24 +308,25 @@ def require_api_key_dashboard(f):
     to the /login form, carrying the originally requested URL through as
     ?next= so a successful login lands back where the user was headed.
     """
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        key = request.args.get('key') or request.headers.get('X-API-Key')
+        key = request.args.get("key") or request.headers.get("X-API-Key")
 
         if key and secrets.compare_digest(key, api_key_config):
             session.permanent = True
-            session['authenticated'] = True
+            session["authenticated"] = True
             return f(*args, **kwargs)
 
-        if session.get('authenticated'):
+        if session.get("authenticated"):
             return f(*args, **kwargs)
 
-        login_kwargs = {'next': _next_url_without_key()}
+        login_kwargs = {"next": _next_url_without_key()}
         if key:
             # A key was provided but it was wrong, as opposed to a first
             # visit with no key/session at all -- show an error on the form.
-            login_kwargs['error'] = 1
-        return redirect(url_for('login', **login_kwargs))
+            login_kwargs["error"] = 1
+        return redirect(url_for("login", **login_kwargs))
 
     return decorated_function
 
@@ -322,7 +334,7 @@ def require_api_key_dashboard(f):
 def register_routes(app: Flask):
     """Register all API routes"""
 
-    @app.route('/api/execute', methods=['POST'])
+    @app.route("/api/execute", methods=["POST"])
     @require_api_key_or_session
     def execute():
         """
@@ -340,15 +352,17 @@ def register_routes(app: Flask):
             400: Invalid parameters
             401: Unauthorized
         """
-        context = request.args.get('context')
-        hash_filter = request.args.get('hash')
-        dry_run_arg = request.args.get('dry_run')
+        context = request.args.get("context")
+        hash_filter = request.args.get("hash")
+        dry_run_arg = request.args.get("dry_run")
         if dry_run_arg is not None and dry_run_arg.lower() not in BOOL_VALUES:
             # Reject rather than guess: a typo here must not run deletes for real
-            return jsonify({
-                'error': 'Bad Request',
-                'message': f"dry_run must be one of {', '.join(sorted(BOOL_VALUES))}"
-            }), 400
+            return jsonify(
+                {
+                    "error": "Bad Request",
+                    "message": f"dry_run must be one of {', '.join(sorted(BOOL_VALUES))}",
+                }
+            ), 400
         dry_run = parse_bool(dry_run_arg)
 
         try:
@@ -358,19 +372,18 @@ def register_routes(app: Flask):
             # Get full job details
             job = queue.get_job(job_id)
 
-            logger.info(f"Job queued: {job_id} (context={context}, hash={hash_filter}"
-                        f"{', dry_run=True' if dry_run else ''})")
+            logger.info(
+                f"Job queued: {job_id} (context={context}, hash={hash_filter}"
+                f"{', dry_run=True' if dry_run else ''})"
+            )
 
             return jsonify(job), 202
 
         except Exception as e:
             logger.error(f"Error queueing job: {e}", exc_info=True)
-            return jsonify({
-                'error': 'Internal Server Error',
-                'message': str(e)
-            }), 500
+            return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
 
-    @app.route('/api/jobs', methods=['GET'])
+    @app.route("/api/jobs", methods=["GET"])
     @require_api_key
     def list_jobs():
         """
@@ -387,43 +400,27 @@ def register_routes(app: Flask):
             200: List of jobs
             401: Unauthorized
         """
-        status = request.args.get('status')
-        context = request.args.get('context')
-        limit = int(request.args.get('limit', 50))
-        offset = int(request.args.get('offset', 0))
+        status = request.args.get("status")
+        context = request.args.get("context")
+        limit = int(request.args.get("limit", 50))
+        offset = int(request.args.get("offset", 0))
 
         # Validate status
         if status and not QueueManager.validate_status(status):
-            return jsonify({
-                'error': 'Bad Request',
-                'message': f'Invalid status: {status}'
-            }), 400
+            return jsonify({"error": "Bad Request", "message": f"Invalid status: {status}"}), 400
 
         try:
-            jobs = queue.list_jobs(
-                status=status,
-                context=context,
-                limit=limit,
-                offset=offset
-            )
+            jobs = queue.list_jobs(status=status, context=context, limit=limit, offset=offset)
 
             total = queue.count_jobs(status=status)
 
-            return jsonify({
-                'total': total,
-                'limit': limit,
-                'offset': offset,
-                'jobs': jobs
-            }), 200
+            return jsonify({"total": total, "limit": limit, "offset": offset, "jobs": jobs}), 200
 
         except Exception as e:
             logger.error(f"Error listing jobs: {e}", exc_info=True)
-            return jsonify({
-                'error': 'Internal Server Error',
-                'message': str(e)
-            }), 500
+            return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
 
-    @app.route('/api/jobs/<job_id>', methods=['GET'])
+    @app.route("/api/jobs/<job_id>", methods=["GET"])
     @require_api_key_or_session
     def get_job(job_id: str):
         """
@@ -443,14 +440,11 @@ def register_routes(app: Flask):
         job = queue.get_job(job_id)
 
         if not job:
-            return jsonify({
-                'error': 'Not Found',
-                'message': f'Job not found: {job_id}'
-            }), 404
+            return jsonify({"error": "Not Found", "message": f"Job not found: {job_id}"}), 404
 
         return jsonify(job), 200
 
-    @app.route('/api/jobs/<job_id>', methods=['DELETE'])
+    @app.route("/api/jobs/<job_id>", methods=["DELETE"])
     @require_api_key
     def cancel_job(job_id: str):
         """
@@ -471,33 +465,30 @@ def register_routes(app: Flask):
         job = queue.get_job(job_id)
 
         if not job:
-            return jsonify({
-                'error': 'Not Found',
-                'message': f'Job not found: {job_id}'
-            }), 404
+            return jsonify({"error": "Not Found", "message": f"Job not found: {job_id}"}), 404
 
-        if job['status'] != JobStatus.PENDING:
-            return jsonify({
-                'error': 'Bad Request',
-                'message': f"Cannot cancel job in status: {job['status']}"
-            }), 400
+        if job["status"] != JobStatus.PENDING:
+            return jsonify(
+                {"error": "Bad Request", "message": f"Cannot cancel job in status: {job['status']}"}
+            ), 400
 
         success = queue.cancel_job(job_id)
 
         if success:
             logger.info(f"Job cancelled: {job_id}")
-            return jsonify({
-                'job_id': job_id,
-                'status': JobStatus.CANCELLED,
-                'message': 'Job cancelled successfully'
-            }), 200
+            return jsonify(
+                {
+                    "job_id": job_id,
+                    "status": JobStatus.CANCELLED,
+                    "message": "Job cancelled successfully",
+                }
+            ), 200
         else:
-            return jsonify({
-                'error': 'Internal Server Error',
-                'message': 'Failed to cancel job'
-            }), 500
+            return jsonify(
+                {"error": "Internal Server Error", "message": "Failed to cancel job"}
+            ), 500
 
-    @app.route('/api/health', methods=['GET'])
+    @app.route("/api/health", methods=["GET"])
     def health():
         """
         Health check endpoint (no authentication required)
@@ -522,31 +513,35 @@ def register_routes(app: Flask):
             errors.append(f"Too many processing jobs: {processing_count}")
 
         if errors:
-            return jsonify({
-                'status': 'unhealthy',
-                'errors': errors,
-                'timestamp': datetime.now(timezone.utc).isoformat()
-            }), 503
+            return jsonify(
+                {
+                    "status": "unhealthy",
+                    "errors": errors,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            ), 503
 
         # Healthy response
         worker_status = worker.get_status()
 
-        return jsonify({
-            'status': 'healthy',
-            'version': __version__,
-            'queue': {
-                'backend': queue.__class__.__name__,
-                'pending_jobs': queue.get_queue_depth(),
-                'processing_jobs': queue.count_jobs(JobStatus.PROCESSING)
-            },
-            'worker': {
-                'status': 'running' if worker_status['running'] else 'stopped',
-                'last_job_completed': worker_status['last_job_completed']
-            },
-            'timestamp': datetime.now(timezone.utc).isoformat()
-        }), 200
+        return jsonify(
+            {
+                "status": "healthy",
+                "version": __version__,
+                "queue": {
+                    "backend": queue.__class__.__name__,
+                    "pending_jobs": queue.get_queue_depth(),
+                    "processing_jobs": queue.count_jobs(JobStatus.PROCESSING),
+                },
+                "worker": {
+                    "status": "running" if worker_status["running"] else "stopped",
+                    "last_job_completed": worker_status["last_job_completed"],
+                },
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        ), 200
 
-    @app.route('/api/stats', methods=['GET'])
+    @app.route("/api/stats", methods=["GET"])
     @require_api_key
     def stats():
         """
@@ -563,37 +558,38 @@ def register_routes(app: Flask):
             queue_stats = queue.get_stats()
             worker_status = worker.get_status()
 
-            return jsonify({
-                'jobs': {
-                    'total': queue_stats['total_jobs'],
-                    'pending': queue_stats['pending'],
-                    'processing': queue_stats['processing'],
-                    'completed': queue_stats['completed'],
-                    'failed': queue_stats['failed'],
-                    'cancelled': queue_stats['cancelled']
-                },
-                'performance': {
-                    'average_execution_time': f"{queue_stats['average_execution_time']}s" if queue_stats['average_execution_time'] else None,
-                },
-                'queue': {
-                    'backend': queue.__class__.__name__,
-                    'depth': queue.get_queue_depth()
-                },
-                'worker': {
-                    'status': 'running' if worker_status['running'] else 'stopped',
-                    'last_job_completed': worker_status['last_job_completed']
-                },
-                'timestamp': datetime.now(timezone.utc).isoformat()
-            }), 200
+            return jsonify(
+                {
+                    "jobs": {
+                        "total": queue_stats["total_jobs"],
+                        "pending": queue_stats["pending"],
+                        "processing": queue_stats["processing"],
+                        "completed": queue_stats["completed"],
+                        "failed": queue_stats["failed"],
+                        "cancelled": queue_stats["cancelled"],
+                    },
+                    "performance": {
+                        "average_execution_time": f"{queue_stats['average_execution_time']}s"
+                        if queue_stats["average_execution_time"]
+                        else None,
+                    },
+                    "queue": {
+                        "backend": queue.__class__.__name__,
+                        "depth": queue.get_queue_depth(),
+                    },
+                    "worker": {
+                        "status": "running" if worker_status["running"] else "stopped",
+                        "last_job_completed": worker_status["last_job_completed"],
+                    },
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            ), 200
 
         except Exception as e:
             logger.error(f"Error getting stats: {e}", exc_info=True)
-            return jsonify({
-                'error': 'Internal Server Error',
-                'message': str(e)
-            }), 500
+            return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
 
-    @app.route('/api/version', methods=['GET'])
+    @app.route("/api/version", methods=["GET"])
     def version():
         """
         Get version information (no authentication required)
@@ -601,46 +597,52 @@ def register_routes(app: Flask):
         Returns:
             200: Version info
         """
-        return jsonify({
-            'version': __version__,
-            'api_version': '1.0',
-            'python_version': os.sys.version.split()[0]
-        }), 200
+        return jsonify(
+            {
+                "version": __version__,
+                "api_version": "1.0",
+                "python_version": os.sys.version.split()[0],
+            }
+        ), 200
 
     @app.errorhandler(413)
     def too_large(error):
         """Handle bodies over MAX_CONTENT_LENGTH"""
-        return jsonify({
-            'error': 'Payload Too Large',
-            'message': f'Request body exceeds {MAX_REQUEST_BYTES // (1024 * 1024)} MB'
-        }), 413
+        return jsonify(
+            {
+                "error": "Payload Too Large",
+                "message": f"Request body exceeds {MAX_REQUEST_BYTES // (1024 * 1024)} MB",
+            }
+        ), 413
 
     @app.errorhandler(404)
     def not_found(error):
         """Handle 404 errors"""
-        return jsonify({
-            'error': 'Not Found',
-            'message': 'Endpoint not found'
-        }), 404
+        return jsonify({"error": "Not Found", "message": "Endpoint not found"}), 404
 
     @app.errorhandler(500)
     def internal_error(error):
         """Handle 500 errors"""
         logger.error(f"Internal server error: {error}", exc_info=True)
-        return jsonify({
-            'error': 'Internal Server Error',
-            'message': 'An unexpected error occurred'
-        }), 500
+        return jsonify(
+            {"error": "Internal Server Error", "message": "An unexpected error occurred"}
+        ), 500
 
 
 def _editor_state() -> Dict[str, Any]:
     """Whether rules.yml can be saved from the editor right now, and why not"""
     if rules_store is None:
-        return {'editable': False, 'readonly_reason': 'The server was started without a config directory'}
+        return {
+            "editable": False,
+            "readonly_reason": "The server was started without a config directory",
+        }
     if not editor_enabled:
-        return {'editable': False, 'readonly_reason': 'Saving is turned off (server.editor_enabled: false)'}
+        return {
+            "editable": False,
+            "readonly_reason": "Saving is turned off (server.editor_enabled: false)",
+        }
     ok, reason = rules_store.writable()
-    return {'editable': ok, 'readonly_reason': reason}
+    return {"editable": ok, "readonly_reason": reason}
 
 
 def _strip_etag(value: Optional[str]) -> Optional[str]:
@@ -648,7 +650,7 @@ def _strip_etag(value: Optional[str]) -> Optional[str]:
     if not isinstance(value, str):
         return None
     value = value.strip()
-    if value.startswith('W/'):
+    if value.startswith("W/"):
         value = value[2:]
     return value.strip('"') or None
 
@@ -676,15 +678,19 @@ def register_editor_routes(app: Flask):
     """
 
     def _unavailable():
-        return jsonify({
-            'error': 'Service Unavailable',
-            'message': 'The server was started without a config directory'
-        }), 503
+        return jsonify(
+            {
+                "error": "Service Unavailable",
+                "message": "The server was started without a config directory",
+            }
+        ), 503
 
     def _bad_content():
-        return jsonify({'error': 'Bad Request', 'message': "Body must be JSON with a 'content' string"}), 400
+        return jsonify(
+            {"error": "Bad Request", "message": "Body must be JSON with a 'content' string"}
+        ), 400
 
-    @app.route('/api/rules/source', methods=['GET'])
+    @app.route("/api/rules/source", methods=["GET"])
     @require_api_key_or_session
     def rules_source():
         """
@@ -696,12 +702,12 @@ def register_editor_routes(app: Flask):
         if rules_store is None:
             return _unavailable()
         snapshot = rules_store.read()
-        response = jsonify({**snapshot.to_dict(), 'path': str(rules_store.path), **_editor_state()})
-        response.headers['ETag'] = f'"{snapshot.etag}"'
-        response.headers['Cache-Control'] = 'no-store'
+        response = jsonify({**snapshot.to_dict(), "path": str(rules_store.path), **_editor_state()})
+        response.headers["ETag"] = f'"{snapshot.etag}"'
+        response.headers["Cache-Control"] = "no-store"
         return response, 200
 
-    @app.route('/api/rules/validate', methods=['POST'])
+    @app.route("/api/rules/validate", methods=["POST"])
     @require_api_key_or_session
     def rules_validate():
         """
@@ -714,12 +720,12 @@ def register_editor_routes(app: Flask):
                  end_line, end_column}], counts, summary}
             400: No content
         """
-        content = _json_body().get('content')
+        content = _json_body().get("content")
         if not isinstance(content, str):
             return _bad_content()
         return jsonify(validate_rules_text(content)), 200
 
-    @app.route('/api/rules/source', methods=['PUT'])
+    @app.route("/api/rules/source", methods=["PUT"])
     @require_api_key_or_session
     def rules_save():
         """
@@ -740,40 +746,46 @@ def register_editor_routes(app: Flask):
             return _unavailable()
 
         body = _json_body()
-        content = body.get('content')
+        content = body.get("content")
         if not isinstance(content, str):
             return _bad_content()
 
         state = _editor_state()
-        if not state['editable']:
-            return jsonify({'error': 'Forbidden', 'message': state['readonly_reason']}), 403
+        if not state["editable"]:
+            return jsonify({"error": "Forbidden", "message": state["readonly_reason"]}), 403
 
-        if_match = _strip_etag(request.headers.get('If-Match')) or _strip_etag(body.get('etag'))
+        if_match = _strip_etag(request.headers.get("If-Match")) or _strip_etag(body.get("etag"))
         if not if_match:
-            return jsonify({
-                'error': 'Precondition Required',
-                'message': 'Send the ETag from GET /api/rules/source as If-Match, so a save '
-                           'cannot overwrite changes made since'
-            }), 428
+            return jsonify(
+                {
+                    "error": "Precondition Required",
+                    "message": "Send the ETag from GET /api/rules/source as If-Match, so a save "
+                    "cannot overwrite changes made since",
+                }
+            ), 428
 
         validation = validate_rules_text(content)
-        if not validation['valid']:
-            return jsonify({
-                'error': 'Unprocessable Entity',
-                'message': f"rules.yml has {validation['counts']['error']} error(s) -- not saved",
-                'validation': validation,
-            }), 422
+        if not validation["valid"]:
+            return jsonify(
+                {
+                    "error": "Unprocessable Entity",
+                    "message": f"rules.yml has {validation['counts']['error']} error(s) -- not saved",
+                    "validation": validation,
+                }
+            ), 422
 
         try:
             snapshot, changed = rules_store.write(content, if_match)
         except FileNotWritableError as e:
-            return jsonify({'error': 'Forbidden', 'message': str(e)}), 403
+            return jsonify({"error": "Forbidden", "message": str(e)}), 403
         except FileConflictError as e:
-            return jsonify({
-                'error': 'Precondition Failed',
-                'message': 'rules.yml changed since you opened it',
-                'current': e.current.to_dict(),
-            }), 412
+            return jsonify(
+                {
+                    "error": "Precondition Failed",
+                    "message": "rules.yml changed since you opened it",
+                    "current": e.current.to_dict(),
+                }
+            ), 412
 
         if changed:
             # This process serves the new rules immediately; every other
@@ -784,17 +796,19 @@ def register_editor_routes(app: Flask):
             except Exception as e:
                 logger.warning(f"Saved rules.yml but reloading it failed: {e}")
 
-        response = jsonify({
-            'saved': changed,
-            'etag': snapshot.etag,
-            'modified_at': snapshot.modified_at,
-            'size': snapshot.size,
-            'validation': validation,
-        })
-        response.headers['ETag'] = f'"{snapshot.etag}"'
+        response = jsonify(
+            {
+                "saved": changed,
+                "etag": snapshot.etag,
+                "modified_at": snapshot.modified_at,
+                "size": snapshot.size,
+                "validation": validation,
+            }
+        )
+        response.headers["ETag"] = f'"{snapshot.etag}"'
         return response, 200
 
-    @app.route('/api/rules/history', methods=['GET'])
+    @app.route("/api/rules/history", methods=["GET"])
     @require_api_key_or_session
     def rules_history():
         """
@@ -805,9 +819,9 @@ def register_editor_routes(app: Flask):
         """
         if rules_store is None:
             return _unavailable()
-        return jsonify({'versions': rules_store.history()}), 200
+        return jsonify({"versions": rules_store.history()}), 200
 
-    @app.route('/api/rules/history/<version_id>', methods=['GET'])
+    @app.route("/api/rules/history/<version_id>", methods=["GET"])
     @require_api_key_or_session
     def rules_history_version(version_id: str):
         """
@@ -821,10 +835,10 @@ def register_editor_routes(app: Flask):
             return _unavailable()
         content = rules_store.read_version(version_id)
         if content is None:
-            return jsonify({'error': 'Not Found', 'message': f'No saved version {version_id}'}), 404
-        return jsonify({'id': version_id, 'content': content}), 200
+            return jsonify({"error": "Not Found", "message": f"No saved version {version_id}"}), 404
+        return jsonify({"id": version_id, "content": content}), 200
 
-    @app.route('/api/rules/catalog', methods=['GET'])
+    @app.route("/api/rules/catalog", methods=["GET"])
     @require_api_key_or_session
     def rules_catalog():
         """
@@ -833,10 +847,10 @@ def register_editor_routes(app: Flask):
         """
         catalog = schema.catalog()
         schedule = dashboard_config.schedule if dashboard_config is not None else []
-        catalog['schedule_contexts'] = sorted({str(entry.get('context')) for entry in schedule})
+        catalog["schedule_contexts"] = sorted({str(entry.get("context")) for entry in schedule})
         return jsonify(catalog), 200
 
-    @app.route('/api/config/source', methods=['GET'])
+    @app.route("/api/config/source", methods=["GET"])
     @require_api_key_or_session
     def config_source():
         """
@@ -847,13 +861,15 @@ def register_editor_routes(app: Flask):
         """
         if dashboard_config is None:
             return _unavailable()
-        view = redacted_config_view(dashboard_config.config_file.read_text('utf-8'))
-        response = jsonify({**view, 'path': str(dashboard_config.config_file)})
-        response.headers['Cache-Control'] = 'no-store'
+        view = redacted_config_view(dashboard_config.config_file.read_text("utf-8"))
+        response = jsonify({**view, "path": str(dashboard_config.config_file)})
+        response.headers["Cache-Control"] = "no-store"
         return response, 200
 
 
-_TRACEBACK_EXCEPTION_LINE = re.compile(r'^[A-Za-z_][\w.]*(?:Error|Exception|Warning)\b.*:', re.MULTILINE)
+_TRACEBACK_EXCEPTION_LINE = re.compile(
+    r"^[A-Za-z_][\w.]*(?:Error|Exception|Warning)\b.*:", re.MULTILINE
+)
 
 
 def _summarize_error(error: str) -> str:
@@ -881,7 +897,7 @@ def _summarize_error(error: str) -> str:
         lines = error.strip().splitlines()
         return lines[-1] if lines else error
 
-    return error[matches[-1].start():].strip()
+    return error[matches[-1].start() :].strip()
 
 
 def register_dashboard_routes(app: Flask):
@@ -898,7 +914,7 @@ def register_dashboard_routes(app: Flask):
     so navigating between pages stays authenticated.
     """
 
-    @app.route('/login', methods=['GET', 'POST'])
+    @app.route("/login", methods=["GET", "POST"])
     def login():
         """
         API key entry form for browser use
@@ -914,26 +930,26 @@ def register_dashboard_routes(app: Flask):
         the POST that reads it back -- so a crafted next can't send anyone
         off-site.
         """
-        if request.method == 'POST':
-            key = request.form.get('key', '')
-            next_url = _sanitize_next(request.form.get('next'))
+        if request.method == "POST":
+            key = request.form.get("key", "")
+            next_url = _sanitize_next(request.form.get("next"))
 
             if key and secrets.compare_digest(key, api_key_config):
                 session.permanent = True
-                session['authenticated'] = True
+                session["authenticated"] = True
                 return redirect(next_url)
 
-            return redirect(url_for('login', next=next_url, error=1))
+            return redirect(url_for("login", next=next_url, error=1))
 
-        next_url = _sanitize_next(request.args.get('next'))
+        next_url = _sanitize_next(request.args.get("next"))
 
         return render_template(
-            'login.html',
+            "login.html",
             next=next_url,
-            error=bool(request.args.get('error')),
+            error=bool(request.args.get("error")),
         )
 
-    @app.route('/', methods=['GET'])
+    @app.route("/", methods=["GET"])
     @require_api_key_dashboard
     def dashboard_overview():
         """Dashboard home: job counts by status, recent activity, rules summary"""
@@ -941,34 +957,38 @@ def register_dashboard_routes(app: Flask):
         recent_jobs = queue.list_jobs(limit=5)
 
         rules = dashboard_config.get_rules() if dashboard_config is not None else None
-        rules_summary = {
-            'total': len(rules),
-            'enabled': sum(1 for r in rules if r.get('enabled', True)),
-            'rules': rules,
-        } if rules is not None else None
+        rules_summary = (
+            {
+                "total": len(rules),
+                "enabled": sum(1 for r in rules if r.get("enabled", True)),
+                "rules": rules,
+            }
+            if rules is not None
+            else None
+        )
 
         return render_template(
-            'dashboard.html',
-            active='overview',
+            "dashboard.html",
+            active="overview",
             queue_stats=queue_stats,
             recent_jobs=recent_jobs,
             rules_summary=rules_summary,
         )
 
-    @app.route('/jobs', methods=['GET'])
+    @app.route("/jobs", methods=["GET"])
     @require_api_key_dashboard
     def dashboard_jobs():
         """Paginated job list, optionally filtered by status"""
-        status = request.args.get('status')
-        limit = int(request.args.get('limit', 50))
-        offset = int(request.args.get('offset', 0))
+        status = request.args.get("status")
+        limit = int(request.args.get("limit", 50))
+        offset = int(request.args.get("offset", 0))
 
         jobs = queue.list_jobs(status=status, limit=limit, offset=offset)
         total = queue.count_jobs(status=status)
 
         return render_template(
-            'jobs.html',
-            active='jobs',
+            "jobs.html",
+            active="jobs",
             jobs=jobs,
             total=total,
             limit=limit,
@@ -976,22 +996,22 @@ def register_dashboard_routes(app: Flask):
             status=status,
         )
 
-    @app.route('/jobs/<job_id>', methods=['GET'])
+    @app.route("/jobs/<job_id>", methods=["GET"])
     @require_api_key_dashboard
     def dashboard_job_detail(job_id: str):
         """Single job's full detail, including result/error if present"""
         job = queue.get_job(job_id)
-        error_summary = _summarize_error(job['error']) if job and job.get('error') else None
+        error_summary = _summarize_error(job["error"]) if job and job.get("error") else None
 
         return render_template(
-            'job_detail.html',
-            active='jobs',
+            "job_detail.html",
+            active="jobs",
             job=job,
             job_id=job_id,
             error_summary=error_summary,
         ), (200 if job else 404)
 
-    @app.route('/rules', methods=['GET'])
+    @app.route("/rules", methods=["GET"])
     @require_api_key_dashboard
     def dashboard_rules():
         """Read-only rules.yml view, sourced from the same hot-reload-aware
@@ -1002,28 +1022,28 @@ def register_dashboard_routes(app: Flask):
         # per-rule "Show resolved YAML" panel, without mutating the rule
         # dicts get_rules() returns (those may be a direct reference to the
         # engine's cached resolved rules, not a defensive copy).
-        rules_with_yaml = [
-            (rule, yaml.dump(rule, default_flow_style=False, sort_keys=False))
-            for rule in rules
-        ] if rules else []
+        rules_with_yaml = (
+            [(rule, yaml.dump(rule, default_flow_style=False, sort_keys=False)) for rule in rules]
+            if rules
+            else []
+        )
 
         return render_template(
-            'rules.html',
-            active='rules',
+            "rules.html",
+            active="rules",
             rules=rules,
             rules_with_yaml=rules_with_yaml,
             config_available=dashboard_config is not None,
         )
 
-
-    @app.route('/rules/edit', methods=['GET'])
+    @app.route("/rules/edit", methods=["GET"])
     @require_api_key_dashboard
     def dashboard_rules_edit():
         """rules.yml editor -- the page itself is static; everything it
         shows comes from the /api/rules/* and /api/config/source endpoints"""
         return render_template(
-            'rules_edit.html',
-            active='rules',
+            "rules_edit.html",
+            active="rules",
             config_available=dashboard_config is not None,
         )
 
@@ -1037,7 +1057,7 @@ def register_metrics_routes(app: Flask):
     Gunicorn forks), so prometheus_client is guaranteed importable here.
     """
 
-    @app.route('/metrics', methods=['GET'])
+    @app.route("/metrics", methods=["GET"])
     @require_api_key
     def metrics_endpoint():
         """
@@ -1057,8 +1077,8 @@ def register_metrics_routes(app: Flask):
             queue_backend=queue.__class__.__name__,
             queue_depth=queue.get_queue_depth(),
             job_counts=queue.get_stats(),
-            worker_running=worker_status['running'],
-            worker_last_job_completed=worker_status['last_job_completed'],
+            worker_running=worker_status["running"],
+            worker_last_job_completed=worker_status["last_job_completed"],
             schedule_entry_count=schedule_entry_count,
         )
         return Response(output, mimetype=metrics.content_type())
@@ -1077,11 +1097,11 @@ def _register_http_metrics_hooks(app: Flask):
 
     @app.after_request
     def _metrics_record_request(response):
-        if request.endpoint != 'metrics_endpoint' and hasattr(g, '_metrics_start_time'):
+        if request.endpoint != "metrics_endpoint" and hasattr(g, "_metrics_start_time"):
             duration = time.time() - g._metrics_start_time
             metrics.record_http_request(
                 method=request.method,
-                endpoint=request.endpoint or 'unknown',
+                endpoint=request.endpoint or "unknown",
                 status=response.status_code,
                 duration=duration,
             )
@@ -1090,11 +1110,11 @@ def _register_http_metrics_hooks(app: Flask):
 
 def run_server(
     app: Flask,
-    host: str = '0.0.0.0',
+    host: str = "0.0.0.0",
     port: int = 5000,
     workers: int = 1,
     log_http_access: bool = False,
-    metrics_enabled: bool = False
+    metrics_enabled: bool = False,
 ):
     """
     Run Flask app with Gunicorn in production mode
@@ -1121,7 +1141,7 @@ def run_server(
             # Only filter if log_http_access is False
             if not log_http_access:
                 # Skip logging for health check endpoint
-                if environ.get('PATH_INFO') == '/api/health':
+                if environ.get("PATH_INFO") == "/api/health":
                     return
                 # Skip logging for dashboard pages -- the dashboard's only
                 # auth mechanism is a ?key= query param, and a browsing
@@ -1132,12 +1152,12 @@ def run_server(
                 # root, not under a shared /dashboard/ prefix) rather than
                 # "not /api/* and not /metrics", so unrelated 404 probes
                 # (bots, scanners) still get logged as before.
-                path = environ.get('PATH_INFO', '')
-                if path == '/' or path.startswith(('/jobs', '/rules', '/login')):
+                path = environ.get("PATH_INFO", "")
+                if path == "/" or path.startswith(("/jobs", "/rules", "/login")):
                     return
                 # Skip logging for the Prometheus scrape endpoint -- polled
                 # every 15-30s by a scraper, same volume rationale as health
-                if environ.get('PATH_INFO') == '/metrics':
+                if environ.get("PATH_INFO") == "/metrics":
                     return
 
             # Log all other requests (or all requests if log_http_access is True)
@@ -1216,23 +1236,24 @@ def run_server(
         in case a future metric genuinely needs a live-mode Gauge.
         """
         from prometheus_client import multiprocess
+
         multiprocess.mark_process_dead(worker_process.pid)
 
     options = {
-        'bind': f'{host}:{port}',
-        'workers': workers,
-        'worker_class': 'sync',
-        'timeout': 120,
-        'accesslog': '-',  # Log to stdout
-        'errorlog': '-',   # Log to stderr
-        'loglevel': 'warning',
-        'logger_class': FilteredLogger,  # Use custom logger to filter health checks
-        'preload_app': True,  # Load app before forking workers
-        'post_fork': post_fork,  # Restart worker thread after fork
-        'when_ready': when_ready,  # Master stops rotating the log file
+        "bind": f"{host}:{port}",
+        "workers": workers,
+        "worker_class": "sync",
+        "timeout": 120,
+        "accesslog": "-",  # Log to stdout
+        "errorlog": "-",  # Log to stderr
+        "loglevel": "warning",
+        "logger_class": FilteredLogger,  # Use custom logger to filter health checks
+        "preload_app": True,  # Load app before forking workers
+        "post_fork": post_fork,  # Restart worker thread after fork
+        "when_ready": when_ready,  # Master stops rotating the log file
     }
     if metrics_enabled:
-        options['child_exit'] = child_exit
+        options["child_exit"] = child_exit
 
     logger.info(f"Starting Gunicorn server on {host}:{port} with {workers} worker(s)")
 

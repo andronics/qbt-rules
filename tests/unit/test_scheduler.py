@@ -31,8 +31,8 @@ def mock_queue(mocker):
 def entries():
     """A couple of representative schedule entries"""
     return [
-        {'cron': '*/30 * * * *', 'context': 'cron'},
-        {'cron': '0 3 * * *', 'context': 'nightly'},
+        {"cron": "*/30 * * * *", "context": "cron"},
+        {"cron": "0 3 * * *", "context": "nightly"},
     ]
 
 
@@ -54,15 +54,15 @@ class TestSchedulerInitialization:
         """Should parse every entry into an internal cron iterator"""
         s = Scheduler(mock_queue, entries)
         assert len(s._entries) == 2
-        assert s._entries[0]['context'] == 'cron'
-        assert s._entries[1]['context'] == 'nightly'
+        assert s._entries[0]["context"] == "cron"
+        assert s._entries[1]["context"] == "nightly"
 
     def test_init_computes_next_fire_for_each_entry(self, mock_queue, entries):
         """Should compute a next_fire timestamp in the future for each entry"""
         now = time.time()
         s = Scheduler(mock_queue, entries)
         for entry in s._entries:
-            assert entry['next_fire'] > now
+            assert entry["next_fire"] > now
 
     def test_init_default_poll_interval(self, mock_queue, entries):
         """Should use default poll interval of 30.0"""
@@ -117,7 +117,7 @@ class TestSchedulerStart:
     def test_start_thread_name(self, scheduler):
         """Should name thread 'scheduler'"""
         scheduler.start()
-        assert scheduler.thread.name == 'scheduler'
+        assert scheduler.thread.name == "scheduler"
         scheduler.stop()
 
     def test_start_thread_daemon_false(self, scheduler):
@@ -173,8 +173,8 @@ class TestSchedulerStop:
         mock_queue.enqueue.side_effect = blocking_enqueue
 
         s = Scheduler(mock_queue, entries, poll_interval=0.01)
-        s._entries[0]['next_fire'] = time.time() - 1  # fire immediately, then block in enqueue()
-        s._entries[1]['next_fire'] = time.time() + 3600
+        s._entries[0]["next_fire"] = time.time() - 1  # fire immediately, then block in enqueue()
+        s._entries[1]["next_fire"] = time.time() + 3600
 
         s.start()
         time.sleep(0.05)  # Let it start and enter the blocking enqueue call
@@ -226,26 +226,26 @@ class TestSchedulerGetStatus:
 
     def test_get_status_includes_running(self, scheduler):
         status = scheduler.get_status()
-        assert status['running'] is False
+        assert status["running"] is False
 
     def test_get_status_includes_entry_count(self, scheduler):
         status = scheduler.get_status()
-        assert status['entry_count'] == 2
+        assert status["entry_count"] == 2
 
     def test_get_status_includes_last_fire_none_initially(self, scheduler):
         status = scheduler.get_status()
-        assert status['last_fire'] is None
+        assert status["last_fire"] is None
 
     def test_get_status_includes_next_fires(self, scheduler):
         status = scheduler.get_status()
-        assert len(status['next_fires']) == 2
-        assert status['next_fires'][0]['context'] == 'cron'
+        assert len(status["next_fires"]) == 2
+        assert status["next_fires"][0]["context"] == "cron"
 
     def test_get_status_running_scheduler(self, scheduler):
         scheduler.start()
         status = scheduler.get_status()
-        assert status['running'] is True
-        assert status['thread_alive'] is True
+        assert status["running"] is True
+        assert status["thread_alive"] is True
         scheduler.stop()
 
 
@@ -255,20 +255,20 @@ class TestSchedulerFiring:
     def test_fires_when_due(self, mock_queue, entries):
         """Should enqueue a job when an entry's next_fire has passed"""
         s = Scheduler(mock_queue, entries, poll_interval=0.01)
-        s._entries[0]['next_fire'] = time.time() - 1  # already due
-        s._entries[1]['next_fire'] = time.time() + 3600  # not due
+        s._entries[0]["next_fire"] = time.time() - 1  # already due
+        s._entries[1]["next_fire"] = time.time() + 3600  # not due
 
         s.start()
         time.sleep(0.1)
         s.stop()
 
-        mock_queue.enqueue.assert_called_once_with(context='cron')
+        mock_queue.enqueue.assert_called_once_with(context="cron")
 
     def test_does_not_fire_when_not_due(self, mock_queue, entries):
         """Should not enqueue anything if no entry is due yet"""
         s = Scheduler(mock_queue, entries, poll_interval=0.01)
         for entry in s._entries:
-            entry['next_fire'] = time.time() + 3600
+            entry["next_fire"] = time.time() + 3600
 
         s.start()
         time.sleep(0.05)
@@ -279,49 +279,49 @@ class TestSchedulerFiring:
     def test_advances_next_fire_after_firing(self, mock_queue, entries):
         """Should compute a new next_fire after firing, in the future"""
         s = Scheduler(mock_queue, entries, poll_interval=0.01)
-        s._entries[0]['next_fire'] = time.time() - 1
-        s._entries[1]['next_fire'] = time.time() + 3600
+        s._entries[0]["next_fire"] = time.time() - 1
+        s._entries[1]["next_fire"] = time.time() + 3600
 
         s.start()
         time.sleep(0.1)
         s.stop()
 
-        assert s._entries[0]['next_fire'] > time.time()
+        assert s._entries[0]["next_fire"] > time.time()
 
     def test_updates_last_fire(self, mock_queue, entries):
         """Should record the last fire's context, job_id, and timestamp"""
         s = Scheduler(mock_queue, entries, poll_interval=0.01)
-        s._entries[0]['next_fire'] = time.time() - 1
-        s._entries[1]['next_fire'] = time.time() + 3600
+        s._entries[0]["next_fire"] = time.time() - 1
+        s._entries[1]["next_fire"] = time.time() + 3600
 
         s.start()
         time.sleep(0.1)
         s.stop()
 
         assert s.last_fire is not None
-        assert s.last_fire['context'] == 'cron'
-        assert s.last_fire['job_id'] == 'job-123'
+        assert s.last_fire["context"] == "cron"
+        assert s.last_fire["job_id"] == "job-123"
 
     def test_multiple_due_entries_all_fire(self, mock_queue, entries):
         """Should fire every due entry in the same tick, not just the first"""
         s = Scheduler(mock_queue, entries, poll_interval=0.01)
-        s._entries[0]['next_fire'] = time.time() - 1
-        s._entries[1]['next_fire'] = time.time() - 1
+        s._entries[0]["next_fire"] = time.time() - 1
+        s._entries[1]["next_fire"] = time.time() - 1
 
         s.start()
         time.sleep(0.1)
         s.stop()
 
         assert mock_queue.enqueue.call_count == 2
-        contexts = {c.kwargs['context'] for c in mock_queue.enqueue.call_args_list}
-        assert contexts == {'cron', 'nightly'}
+        contexts = {c.kwargs["context"] for c in mock_queue.enqueue.call_args_list}
+        assert contexts == {"cron", "nightly"}
 
     def test_enqueue_error_does_not_crash_loop(self, mock_queue, entries):
         """Should log and continue if queue.enqueue() raises"""
         mock_queue.enqueue.side_effect = Exception("queue error")
         s = Scheduler(mock_queue, entries, poll_interval=0.01)
-        s._entries[0]['next_fire'] = time.time() - 1
-        s._entries[1]['next_fire'] = time.time() + 3600
+        s._entries[0]["next_fire"] = time.time() - 1
+        s._entries[1]["next_fire"] = time.time() + 3600
 
         s.start()
         time.sleep(0.1)
@@ -332,17 +332,17 @@ class TestSchedulerFiring:
     def test_loop_survives_unexpected_error(self, mock_queue, entries):
         """Should log and keep running if the loop body itself raises (not just _fire)"""
         s = Scheduler(mock_queue, entries, poll_interval=0.01)
-        s._entries[0]['next_fire'] = time.time() - 1
-        s._entries[1]['next_fire'] = time.time() + 3600
+        s._entries[0]["next_fire"] = time.time() - 1
+        s._entries[1]["next_fire"] = time.time() + 3600
 
         # Make advancing the cron iterator explode after it fires once,
         # simulating an unexpected error outside of _fire()'s own try/except
-        original_get_next = s._entries[0]['iter'].get_next
+        original_get_next = s._entries[0]["iter"].get_next
 
         def failing_get_next(*args, **kwargs):
             raise RuntimeError("boom")
 
-        s._entries[0]['iter'].get_next = failing_get_next
+        s._entries[0]["iter"].get_next = failing_get_next
 
         s.start()
         time.sleep(0.1)
@@ -354,8 +354,8 @@ class TestSchedulerFiring:
         """A single overdue entry fires once per tick, not repeatedly to 'catch up'"""
         s = Scheduler(mock_queue, entries, poll_interval=0.01)
         # Simulate a fire time far in the past
-        s._entries[0]['next_fire'] = time.time() - 10000
-        s._entries[1]['next_fire'] = time.time() + 3600
+        s._entries[0]["next_fire"] = time.time() - 10000
+        s._entries[1]["next_fire"] = time.time() + 3600
 
         s.start()
         time.sleep(0.1)
@@ -363,7 +363,7 @@ class TestSchedulerFiring:
 
         # Fired once (advances to the next real future occurrence, not a backlog)
         assert mock_queue.enqueue.call_count == 1
-        assert s._entries[0]['next_fire'] > time.time()
+        assert s._entries[0]["next_fire"] > time.time()
 
 
 class TestSchedulerRepr:
@@ -371,12 +371,12 @@ class TestSchedulerRepr:
 
     def test_repr_before_start(self, scheduler):
         repr_str = repr(scheduler)
-        assert 'Scheduler' in repr_str
-        assert 'running=False' in repr_str
-        assert 'entries=2' in repr_str
+        assert "Scheduler" in repr_str
+        assert "running=False" in repr_str
+        assert "entries=2" in repr_str
 
     def test_repr_after_start(self, scheduler):
         scheduler.start()
         repr_str = repr(scheduler)
-        assert 'running=True' in repr_str
+        assert "running=True" in repr_str
         scheduler.stop()

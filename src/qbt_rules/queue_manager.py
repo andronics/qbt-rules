@@ -13,6 +13,7 @@ import uuid
 
 class JobStatus:
     """Job status constants"""
+
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -38,8 +39,12 @@ class QueueManager(ABC):
     """
 
     @abstractmethod
-    def enqueue(self, context: Optional[str] = None, hash_filter: Optional[str] = None,
-                dry_run: bool = False) -> str:
+    def enqueue(
+        self,
+        context: Optional[str] = None,
+        hash_filter: Optional[str] = None,
+        dry_run: bool = False,
+    ) -> str:
         """
         Add job to queue
 
@@ -86,7 +91,7 @@ class QueueManager(ABC):
         status: Optional[str] = None,
         context: Optional[str] = None,
         limit: int = 50,
-        offset: int = 0
+        offset: int = 0,
     ) -> List[Dict[str, Any]]:
         """
         List jobs with filtering and pagination
@@ -123,7 +128,7 @@ class QueueManager(ABC):
         started_at: Optional[datetime] = None,
         completed_at: Optional[datetime] = None,
         result: Optional[Dict[str, Any]] = None,
-        error: Optional[str] = None
+        error: Optional[str] = None,
     ) -> bool:
         """
         Update job status and optional fields
@@ -227,7 +232,7 @@ class QueueManager(ABC):
         completed_at: Optional[datetime] = None,
         result: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
-        dry_run: bool = False
+        dry_run: bool = False,
     ) -> Dict[str, Any]:
         """
         Create standardized job dictionary
@@ -239,20 +244,26 @@ class QueueManager(ABC):
             created_at = datetime.now(timezone.utc)
 
         return {
-            'job_id': job_id,
-            'context': context,
-            'hash': hash_filter,
-            'dry_run': dry_run,
-            'status': status,
-            'created_at': created_at.isoformat() if isinstance(created_at, datetime) else created_at,
-            'started_at': started_at.isoformat() if isinstance(started_at, datetime) else started_at,
-            'completed_at': completed_at.isoformat() if isinstance(completed_at, datetime) else completed_at,
-            'result': result,
-            'error': error
+            "job_id": job_id,
+            "context": context,
+            "hash": hash_filter,
+            "dry_run": dry_run,
+            "status": status,
+            "created_at": created_at.isoformat()
+            if isinstance(created_at, datetime)
+            else created_at,
+            "started_at": started_at.isoformat()
+            if isinstance(started_at, datetime)
+            else started_at,
+            "completed_at": completed_at.isoformat()
+            if isinstance(completed_at, datetime)
+            else completed_at,
+            "result": result,
+            "error": error,
         }
 
 
-def create_queue(backend: str = 'sqlite', **kwargs) -> QueueManager:
+def create_queue(backend: str = "sqlite", **kwargs) -> QueueManager:
     """
     Factory function to create queue backend
 
@@ -274,20 +285,20 @@ def create_queue(backend: str = 'sqlite', **kwargs) -> QueueManager:
         >>> queue = create_queue('sqlite', db_path='/data/queue.db')
         >>> queue = create_queue('redis', redis_url='redis://localhost:6379/0')
     """
-    if backend == 'sqlite':
+    if backend == "sqlite":
         from qbt_rules.queue_backends.sqlite_queue import SQLiteQueue
-        db_path = kwargs.get('db_path', '/config/qbt-rules.db')
+
+        db_path = kwargs.get("db_path", "/config/qbt-rules.db")
         return SQLiteQueue(db_path=db_path)
 
-    elif backend == 'redis':
+    elif backend == "redis":
         try:
             from qbt_rules.queue_backends.redis_queue import RedisQueue
         except ImportError:
             raise ValueError(
-                "Redis backend requires 'redis' package. "
-                "Install with: pip install qbt-rules[redis]"
+                "Redis backend requires 'redis' package. Install with: pip install qbt-rules[redis]"
             )
-        redis_url = kwargs.get('redis_url', 'redis://localhost:6379/0')
+        redis_url = kwargs.get("redis_url", "redis://localhost:6379/0")
         return RedisQueue(redis_url=redis_url)
 
     else:

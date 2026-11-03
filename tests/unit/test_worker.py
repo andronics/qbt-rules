@@ -74,7 +74,7 @@ def worker(mock_queue, mock_api, mock_config):
         queue=mock_queue,
         api=mock_api,
         config=mock_config,
-        poll_interval=0.01  # Short interval for testing
+        poll_interval=0.01,  # Short interval for testing
     )
 
 
@@ -165,7 +165,7 @@ class TestWorkerStart:
         """Should name thread 'worker'"""
         worker.start()
 
-        assert worker.thread.name == 'worker'
+        assert worker.thread.name == "worker"
 
         # Cleanup
         worker.stop()
@@ -250,8 +250,10 @@ class TestWorkerStop:
     def test_stop_timeout_logs_warning(self, worker, mock_queue, caplog):
         """Should log warning when worker doesn't stop within timeout"""
         import logging
+
         # Make worker hang by blocking indefinitely
         import threading
+
         block_event = threading.Event()
 
         def blocking_dequeue():
@@ -329,22 +331,22 @@ class TestWorkerGetStatus:
         """Should include running flag"""
         status = worker.get_status()
 
-        assert 'running' in status
-        assert status['running'] is False
+        assert "running" in status
+        assert status["running"] is False
 
     def test_get_status_includes_thread_alive(self, worker):
         """Should include thread_alive flag"""
         status = worker.get_status()
 
-        assert 'thread_alive' in status
-        assert status['thread_alive'] is False
+        assert "thread_alive" in status
+        assert status["thread_alive"] is False
 
     def test_get_status_includes_last_job_completed(self, worker):
         """Should include last_job_completed"""
         status = worker.get_status()
 
-        assert 'last_job_completed' in status
-        assert status['last_job_completed'] is None
+        assert "last_job_completed" in status
+        assert status["last_job_completed"] is None
 
     def test_get_status_includes_queue_depth(self, worker, mock_queue):
         """Should include queue depth"""
@@ -352,8 +354,8 @@ class TestWorkerGetStatus:
 
         status = worker.get_status()
 
-        assert 'queue_depth' in status
-        assert status['queue_depth'] == 5
+        assert "queue_depth" in status
+        assert status["queue_depth"] == 5
 
     def test_get_status_running_worker(self, worker):
         """Should show running status for started worker"""
@@ -361,8 +363,8 @@ class TestWorkerGetStatus:
 
         status = worker.get_status()
 
-        assert status['running'] is True
-        assert status['thread_alive'] is True
+        assert status["running"] is True
+        assert status["thread_alive"] is True
 
         # Cleanup
         worker.stop()
@@ -374,7 +376,7 @@ class TestWorkerGetStatus:
 
         status = worker.get_status()
 
-        assert status['last_job_completed'] == '2025-01-01T12:00:00'
+        assert status["last_job_completed"] == "2025-01-01T12:00:00"
 
 
 class TestWorkerRunLoop:
@@ -392,17 +394,17 @@ class TestWorkerRunLoop:
     def test_run_loop_processes_job_when_available(self, worker, mock_queue, mocker):
         """Should process job when dequeued"""
         job = {
-            'job_id': 'test-job-1',
-            'context': 'test',
-            'hash': None,
-            'status': JobStatus.PROCESSING
+            "job_id": "test-job-1",
+            "context": "test",
+            "hash": None,
+            "status": JobStatus.PROCESSING,
         }
 
         # Return job once, then None
         mock_queue.dequeue.side_effect = [job, None]
 
         # Mock _process_job
-        process_spy = mocker.patch.object(worker, '_process_job')
+        process_spy = mocker.patch.object(worker, "_process_job")
 
         worker.start()
         time.sleep(0.1)  # Let it process
@@ -414,7 +416,7 @@ class TestWorkerRunLoop:
         """Should sleep when queue is empty"""
         mock_queue.dequeue.return_value = None
 
-        sleep_spy = mocker.patch('time.sleep')
+        sleep_spy = mocker.patch("time.sleep")
 
         worker.start()
         time.sleep(0.05)
@@ -428,7 +430,7 @@ class TestWorkerRunLoop:
         """Should handle and log dequeue errors"""
         mock_queue.dequeue.side_effect = Exception("Queue error")
 
-        sleep_spy = mocker.patch('time.sleep')
+        sleep_spy = mocker.patch("time.sleep")
 
         worker.start()
         time.sleep(0.1)
@@ -455,76 +457,67 @@ class TestWorkerProcessJob:
 
     def test_process_job_calls_execute_job(self, worker, mocker):
         """Should call _execute_job with context and hash"""
-        job = {
-            'job_id': 'job-1',
-            'context': 'weekly-cleanup',
-            'hash': 'abc123'
-        }
+        job = {"job_id": "job-1", "context": "weekly-cleanup", "hash": "abc123"}
 
         execute_spy = mocker.patch.object(
-            worker, '_execute_job',
-            return_value={'torrents_processed': 5}
+            worker, "_execute_job", return_value={"torrents_processed": 5}
         )
 
         worker._process_job(job)
 
-        execute_spy.assert_called_once_with('weekly-cleanup', 'abc123', False)
+        execute_spy.assert_called_once_with("weekly-cleanup", "abc123", False)
 
     def test_process_job_updates_status_on_success(self, worker, mock_queue, mocker):
         """Should update job status to COMPLETED on success"""
-        job = {
-            'job_id': 'job-1',
-            'context': 'test',
-            'hash': None
-        }
+        job = {"job_id": "job-1", "context": "test", "hash": None}
 
-        result = {'torrents_processed': 5, 'actions_executed': 2}
-        mocker.patch.object(worker, '_execute_job', return_value=result)
+        result = {"torrents_processed": 5, "actions_executed": 2}
+        mocker.patch.object(worker, "_execute_job", return_value=result)
 
         worker._process_job(job)
 
         mock_queue.update_status.assert_called_once()
         call_args = mock_queue.update_status.call_args
 
-        assert call_args[1]['job_id'] == 'job-1'
-        assert call_args[1]['status'] == JobStatus.COMPLETED
-        assert call_args[1]['result'] == result
+        assert call_args[1]["job_id"] == "job-1"
+        assert call_args[1]["status"] == JobStatus.COMPLETED
+        assert call_args[1]["result"] == result
 
     def test_process_job_sets_started_at(self, worker, mock_queue, mocker):
         """Should set started_at timestamp"""
-        job = {'job_id': 'job-1', 'context': None, 'hash': None}
+        job = {"job_id": "job-1", "context": None, "hash": None}
 
-        mocker.patch.object(worker, '_execute_job', return_value={})
+        mocker.patch.object(worker, "_execute_job", return_value={})
 
         before = datetime.now(timezone.utc)
         worker._process_job(job)
         after = datetime.now(timezone.utc)
 
         call_args = mock_queue.update_status.call_args[1]
-        started_at = call_args['started_at']
+        started_at = call_args["started_at"]
 
         assert before <= started_at <= after
 
     def test_process_job_sets_completed_at(self, worker, mock_queue, mocker):
         """Should set completed_at timestamp"""
-        job = {'job_id': 'job-1', 'context': None, 'hash': None}
+        job = {"job_id": "job-1", "context": None, "hash": None}
 
-        mocker.patch.object(worker, '_execute_job', return_value={})
+        mocker.patch.object(worker, "_execute_job", return_value={})
 
         before = datetime.now(timezone.utc)
         worker._process_job(job)
         after = datetime.now(timezone.utc)
 
         call_args = mock_queue.update_status.call_args[1]
-        completed_at = call_args['completed_at']
+        completed_at = call_args["completed_at"]
 
         assert before <= completed_at <= after
 
     def test_process_job_updates_last_job_completed(self, worker, mocker):
         """Should update last_job_completed timestamp"""
-        job = {'job_id': 'job-1', 'context': None, 'hash': None}
+        job = {"job_id": "job-1", "context": None, "hash": None}
 
-        mocker.patch.object(worker, '_execute_job', return_value={})
+        mocker.patch.object(worker, "_execute_job", return_value={})
 
         worker._process_job(job)
 
@@ -533,47 +526,38 @@ class TestWorkerProcessJob:
 
     def test_process_job_handles_execution_error(self, worker, mock_queue, mocker):
         """Should handle execution errors and mark job as FAILED"""
-        job = {'job_id': 'job-1', 'context': None, 'hash': None}
+        job = {"job_id": "job-1", "context": None, "hash": None}
 
-        mocker.patch.object(
-            worker, '_execute_job',
-            side_effect=Exception("Execution error")
-        )
+        mocker.patch.object(worker, "_execute_job", side_effect=Exception("Execution error"))
 
         worker._process_job(job)
 
         mock_queue.update_status.assert_called_once()
         call_args = mock_queue.update_status.call_args[1]
 
-        assert call_args['job_id'] == 'job-1'
-        assert call_args['status'] == JobStatus.FAILED
+        assert call_args["job_id"] == "job-1"
+        assert call_args["status"] == JobStatus.FAILED
 
     def test_process_job_sets_error_on_failure(self, worker, mock_queue, mocker):
         """Should set error traceback on failure"""
-        job = {'job_id': 'job-1', 'context': None, 'hash': None}
+        job = {"job_id": "job-1", "context": None, "hash": None}
 
-        mocker.patch.object(
-            worker, '_execute_job',
-            side_effect=ValueError("Test error")
-        )
+        mocker.patch.object(worker, "_execute_job", side_effect=ValueError("Test error"))
 
         worker._process_job(job)
 
         call_args = mock_queue.update_status.call_args[1]
-        error = call_args['error']
+        error = call_args["error"]
 
-        assert 'ValueError' in error
-        assert 'Test error' in error
-        assert 'Traceback' in error
+        assert "ValueError" in error
+        assert "Test error" in error
+        assert "Traceback" in error
 
     def test_process_job_does_not_update_last_job_on_failure(self, worker, mocker):
         """Should not update last_job_completed on failure"""
-        job = {'job_id': 'job-1', 'context': None, 'hash': None}
+        job = {"job_id": "job-1", "context": None, "hash": None}
 
-        mocker.patch.object(
-            worker, '_execute_job',
-            side_effect=Exception("Error")
-        )
+        mocker.patch.object(worker, "_execute_job", side_effect=Exception("Error"))
 
         worker._process_job(job)
 
@@ -585,10 +569,14 @@ class TestWorkerExecuteJob:
 
     def test_execute_job_creates_rules_engine(self, worker, mock_api, mock_config, mocker):
         """Should create RulesEngine instance"""
-        engine_spy = mocker.patch('qbt_rules.worker.RulesEngine')
+        engine_spy = mocker.patch("qbt_rules.worker.RulesEngine")
         engine_spy.return_value.stats = mocker.MagicMock(
-            total_torrents=0, processed=0, rules_matched=0,
-            actions_executed=0, actions_skipped=0, errors=0
+            total_torrents=0,
+            processed=0,
+            rules_matched=0,
+            actions_executed=0,
+            actions_skipped=0,
+            errors=0,
         )
 
         worker._execute_job(context=None, hash_filter=None)
@@ -598,66 +586,79 @@ class TestWorkerExecuteJob:
             config=mock_config,
             dry_run=False,
             notifications_config=None,
-            integrations_config=None
+            integrations_config=None,
         )
 
     def test_execute_job_uses_dry_run_from_config(self, worker, mocker):
         """Should get dry_run setting from config"""
         worker.config.is_dry_run.return_value = True
 
-        engine_spy = mocker.patch('qbt_rules.worker.RulesEngine')
+        engine_spy = mocker.patch("qbt_rules.worker.RulesEngine")
         engine_spy.return_value.stats = mocker.MagicMock(
-            total_torrents=0, processed=0, rules_matched=0,
-            actions_executed=0, actions_skipped=0, errors=0
+            total_torrents=0,
+            processed=0,
+            rules_matched=0,
+            actions_executed=0,
+            actions_skipped=0,
+            errors=0,
         )
 
         worker._execute_job(context=None, hash_filter=None)
 
         engine_spy.assert_called_once()
-        assert engine_spy.call_args[1]['dry_run'] is True
+        assert engine_spy.call_args[1]["dry_run"] is True
 
-    @pytest.mark.parametrize('config_dry_run, job_dry_run, expected', [
-        (False, False, False),
-        (False, True, True),    # the job asked for it
-        (True, False, True),    # a job can't turn the server's dry-run off
-        (True, True, True),
-    ])
-    def test_execute_job_combines_job_and_config_dry_run(self, worker, mocker,
-                                                         config_dry_run, job_dry_run, expected):
+    @pytest.mark.parametrize(
+        "config_dry_run, job_dry_run, expected",
+        [
+            (False, False, False),
+            (False, True, True),  # the job asked for it
+            (True, False, True),  # a job can't turn the server's dry-run off
+            (True, True, True),
+        ],
+    )
+    def test_execute_job_combines_job_and_config_dry_run(
+        self, worker, mocker, config_dry_run, job_dry_run, expected
+    ):
         worker.config.is_dry_run.return_value = config_dry_run
-        engine_spy = mocker.patch('qbt_rules.worker.RulesEngine')
+        engine_spy = mocker.patch("qbt_rules.worker.RulesEngine")
         engine_spy.return_value.stats = mocker.MagicMock(
-            total_torrents=0, processed=0, rules_matched=0,
-            actions_executed=0, actions_skipped=0, errors=0
+            total_torrents=0,
+            processed=0,
+            rules_matched=0,
+            actions_executed=0,
+            actions_skipped=0,
+            errors=0,
         )
 
         worker._execute_job(None, None, job_dry_run)
 
-        assert engine_spy.call_args[1]['dry_run'] is expected
+        assert engine_spy.call_args[1]["dry_run"] is expected
 
     def test_process_job_passes_job_dry_run(self, worker, mocker):
-        execute_spy = mocker.patch.object(worker, '_execute_job', return_value={})
+        execute_spy = mocker.patch.object(worker, "_execute_job", return_value={})
 
-        worker._process_job({'job_id': 'job-1', 'context': 'manual', 'hash': None, 'dry_run': True})
+        worker._process_job({"job_id": "job-1", "context": "manual", "hash": None, "dry_run": True})
 
-        execute_spy.assert_called_once_with('manual', None, True)
+        execute_spy.assert_called_once_with("manual", None, True)
 
     def test_execute_job_calls_engine_run(self, worker, mocker):
         """Should call engine.run with context and hash"""
         engine_mock = mocker.MagicMock()
         engine_mock.stats = mocker.MagicMock(
-            total_torrents=10, processed=8, rules_matched=5,
-            actions_executed=3, actions_skipped=2, errors=0
+            total_torrents=10,
+            processed=8,
+            rules_matched=5,
+            actions_executed=3,
+            actions_skipped=2,
+            errors=0,
         )
 
-        mocker.patch('qbt_rules.worker.RulesEngine', return_value=engine_mock)
+        mocker.patch("qbt_rules.worker.RulesEngine", return_value=engine_mock)
 
-        worker._execute_job(context='weekly-cleanup', hash_filter='abc123')
+        worker._execute_job(context="weekly-cleanup", hash_filter="abc123")
 
-        engine_mock.run.assert_called_once_with(
-            context='weekly-cleanup',
-            torrent_hash='abc123'
-        )
+        engine_mock.run.assert_called_once_with(context="weekly-cleanup", torrent_hash="abc123")
 
     def test_execute_job_returns_result_dict(self, worker, mocker):
         """Should return result dictionary with statistics"""
@@ -668,20 +669,20 @@ class TestWorkerExecuteJob:
             rules_matched=5,
             actions_executed=3,
             actions_skipped=2,
-            errors=0
+            errors=0,
         )
 
-        mocker.patch('qbt_rules.worker.RulesEngine', return_value=engine_mock)
+        mocker.patch("qbt_rules.worker.RulesEngine", return_value=engine_mock)
 
         result = worker._execute_job(context=None, hash_filter=None)
 
-        assert result['total_torrents'] == 10
-        assert result['torrents_processed'] == 8
-        assert result['rules_matched'] == 5
-        assert result['actions_executed'] == 3
-        assert result['actions_skipped'] == 2
-        assert result['errors'] == 0
-        assert result['dry_run'] is False
+        assert result["total_torrents"] == 10
+        assert result["torrents_processed"] == 8
+        assert result["rules_matched"] == 5
+        assert result["actions_executed"] == 3
+        assert result["actions_skipped"] == 2
+        assert result["errors"] == 0
+        assert result["dry_run"] is False
 
     def test_execute_job_includes_dry_run_in_result(self, worker, mocker):
         """Should include dry_run flag in result"""
@@ -689,22 +690,26 @@ class TestWorkerExecuteJob:
 
         engine_mock = mocker.MagicMock()
         engine_mock.stats = mocker.MagicMock(
-            total_torrents=0, processed=0, rules_matched=0,
-            actions_executed=0, actions_skipped=0, errors=0
+            total_torrents=0,
+            processed=0,
+            rules_matched=0,
+            actions_executed=0,
+            actions_skipped=0,
+            errors=0,
         )
 
-        mocker.patch('qbt_rules.worker.RulesEngine', return_value=engine_mock)
+        mocker.patch("qbt_rules.worker.RulesEngine", return_value=engine_mock)
 
         result = worker._execute_job(context=None, hash_filter=None)
 
-        assert result['dry_run'] is True
+        assert result["dry_run"] is True
 
     def test_execute_job_propagates_engine_errors(self, worker, mocker):
         """Should propagate exceptions from engine"""
         engine_mock = mocker.MagicMock()
         engine_mock.run.side_effect = ValueError("Engine error")
 
-        mocker.patch('qbt_rules.worker.RulesEngine', return_value=engine_mock)
+        mocker.patch("qbt_rules.worker.RulesEngine", return_value=engine_mock)
 
         with pytest.raises(ValueError, match="Engine error"):
             worker._execute_job(context=None, hash_filter=None)
@@ -717,9 +722,9 @@ class TestWorkerRepr:
         """Should show not running, not alive"""
         repr_str = repr(worker)
 
-        assert 'Worker' in repr_str
-        assert 'running=False' in repr_str
-        assert 'alive=False' in repr_str
+        assert "Worker" in repr_str
+        assert "running=False" in repr_str
+        assert "alive=False" in repr_str
 
     def test_repr_after_start(self, worker):
         """Should show running and alive"""
@@ -727,9 +732,9 @@ class TestWorkerRepr:
 
         repr_str = repr(worker)
 
-        assert 'Worker' in repr_str
-        assert 'running=True' in repr_str
-        assert 'alive=True' in repr_str
+        assert "Worker" in repr_str
+        assert "running=True" in repr_str
+        assert "alive=True" in repr_str
 
         # Cleanup
         worker.stop()
@@ -741,8 +746,8 @@ class TestWorkerRepr:
 
         repr_str = repr(worker)
 
-        assert 'running=False' in repr_str
-        assert 'alive=False' in repr_str
+        assert "running=False" in repr_str
+        assert "alive=False" in repr_str
 
 
 class TestWorkerIntegration:
@@ -750,18 +755,12 @@ class TestWorkerIntegration:
 
     def test_worker_processes_multiple_jobs(self, worker, mock_queue, mocker):
         """Should process multiple jobs sequentially"""
-        jobs = [
-            {'job_id': f'job-{i}', 'context': 'test', 'hash': None}
-            for i in range(3)
-        ]
+        jobs = [{"job_id": f"job-{i}", "context": "test", "hash": None} for i in range(3)]
 
         # Return jobs then None
         mock_queue.dequeue.side_effect = jobs + [None]
 
-        mocker.patch.object(
-            worker, '_execute_job',
-            return_value={'torrents_processed': 1}
-        )
+        mocker.patch.object(worker, "_execute_job", return_value={"torrents_processed": 1})
 
         worker.start()
         time.sleep(0.2)  # Let it process all jobs
@@ -773,8 +772,8 @@ class TestWorkerIntegration:
     def test_worker_continues_after_job_error(self, worker, mock_queue, mocker):
         """Should continue processing after job error"""
         jobs = [
-            {'job_id': 'job-1', 'context': None, 'hash': None},
-            {'job_id': 'job-2', 'context': None, 'hash': None}
+            {"job_id": "job-1", "context": None, "hash": None},
+            {"job_id": "job-2", "context": None, "hash": None},
         ]
 
         # Return jobs then None
@@ -782,8 +781,7 @@ class TestWorkerIntegration:
 
         # First job fails, second succeeds
         mocker.patch.object(
-            worker, '_execute_job',
-            side_effect=[Exception("Error"), {'torrents_processed': 1}]
+            worker, "_execute_job", side_effect=[Exception("Error"), {"torrents_processed": 1}]
         )
 
         worker.start()
@@ -795,15 +793,15 @@ class TestWorkerIntegration:
 
     def test_worker_graceful_shutdown_waits_for_job(self, worker, mock_queue, mocker):
         """Should wait for current job to complete before shutting down"""
-        job = {'job_id': 'job-1', 'context': None, 'hash': None}
+        job = {"job_id": "job-1", "context": None, "hash": None}
         mock_queue.dequeue.side_effect = [job, None]
 
         # Make job take a bit to process
         def slow_execute(*args, **kwargs):
             time.sleep(0.15)
-            return {'torrents_processed': 1}
+            return {"torrents_processed": 1}
 
-        mocker.patch.object(worker, '_execute_job', side_effect=slow_execute)
+        mocker.patch.object(worker, "_execute_job", side_effect=slow_execute)
 
         worker.start()
         time.sleep(0.1)  # Let it start processing
@@ -820,8 +818,9 @@ class TestWorkerJobCleanup:
     """Periodic queue.cleanup_after cleanup from the worker loop"""
 
     def _worker(self, mock_queue, mock_api, mock_config, **kwargs):
-        return Worker(queue=mock_queue, api=mock_api, config=mock_config,
-                      poll_interval=0.01, **kwargs)
+        return Worker(
+            queue=mock_queue, api=mock_api, config=mock_config, poll_interval=0.01, **kwargs
+        )
 
     def test_disabled_by_default(self, worker, mock_queue):
         worker._maybe_cleanup()
@@ -829,7 +828,7 @@ class TestWorkerJobCleanup:
 
     def test_runs_on_first_call_then_throttled(self, mock_queue, mock_api, mock_config, mocker):
         worker = self._worker(mock_queue, mock_api, mock_config, cleanup_after=604800)
-        clock = mocker.patch('qbt_rules.worker.time.monotonic', return_value=1000.0)
+        clock = mocker.patch("qbt_rules.worker.time.monotonic", return_value=1000.0)
 
         worker._maybe_cleanup()
         mock_queue.cleanup_old_jobs.assert_called_once_with(604800)
@@ -843,25 +842,27 @@ class TestWorkerJobCleanup:
         assert mock_queue.cleanup_old_jobs.call_count == 2
 
     def test_custom_interval(self, mock_queue, mock_api, mock_config, mocker):
-        worker = self._worker(mock_queue, mock_api, mock_config,
-                              cleanup_after=60, cleanup_interval=10)
-        clock = mocker.patch('qbt_rules.worker.time.monotonic', return_value=50.0)
+        worker = self._worker(
+            mock_queue, mock_api, mock_config, cleanup_after=60, cleanup_interval=10
+        )
+        clock = mocker.patch("qbt_rules.worker.time.monotonic", return_value=50.0)
         worker._maybe_cleanup()
         clock.return_value = 60.0
         worker._maybe_cleanup()
         assert mock_queue.cleanup_old_jobs.call_count == 2
 
-    def test_failure_is_logged_and_throttled(self, mock_queue, mock_api, mock_config,
-                                             mocker, caplog):
+    def test_failure_is_logged_and_throttled(
+        self, mock_queue, mock_api, mock_config, mocker, caplog
+    ):
         worker = self._worker(mock_queue, mock_api, mock_config, cleanup_after=604800)
-        mocker.patch('qbt_rules.worker.time.monotonic', return_value=1000.0)
-        mock_queue.cleanup_old_jobs.side_effect = RuntimeError('db locked')
+        mocker.patch("qbt_rules.worker.time.monotonic", return_value=1000.0)
+        mock_queue.cleanup_old_jobs.side_effect = RuntimeError("db locked")
 
         worker._maybe_cleanup()
         worker._maybe_cleanup()
 
         assert mock_queue.cleanup_old_jobs.call_count == 1
-        assert 'Job cleanup failed: db locked' in caplog.text
+        assert "Job cleanup failed: db locked" in caplog.text
 
     def test_loop_runs_cleanup_once_at_start(self, mock_queue, mock_api, mock_config):
         worker = self._worker(mock_queue, mock_api, mock_config, cleanup_after=604800)
@@ -883,7 +884,7 @@ class TestWorkerJobCleanup:
         queue.cancel_job(done)
         pending = queue.enqueue()
         old = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
-        queue._get_connection().execute('UPDATE jobs SET created_at = ?', (old,))
+        queue._get_connection().execute("UPDATE jobs SET created_at = ?", (old,))
 
         worker = Worker(queue=queue, api=mock_api, config=mock_config, cleanup_after=604800)
         worker._maybe_cleanup()

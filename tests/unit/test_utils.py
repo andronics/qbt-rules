@@ -22,12 +22,13 @@ from qbt_rules.utils import (
 # parse_tags()
 # ============================================================================
 
+
 class TestParseTags:
     """Test parse_tags() function."""
 
     def test_empty_tags(self):
         """Empty tags string returns empty list."""
-        assert parse_tags({'tags': ''}) == []
+        assert parse_tags({"tags": ""}) == []
 
     def test_missing_tags_key(self):
         """Missing tags key returns empty list."""
@@ -35,32 +36,33 @@ class TestParseTags:
 
     def test_single_tag(self):
         """Single tag is parsed correctly."""
-        assert parse_tags({'tags': 'movies'}) == ['movies']
+        assert parse_tags({"tags": "movies"}) == ["movies"]
 
     def test_multiple_tags(self):
         """Multiple comma-separated tags are parsed."""
-        assert parse_tags({'tags': 'movies,hd,new'}) == ['movies', 'hd', 'new']
+        assert parse_tags({"tags": "movies,hd,new"}) == ["movies", "hd", "new"]
 
     def test_tags_with_spaces(self):
         """Tags with extra spaces are stripped."""
-        assert parse_tags({'tags': 'movies , hd , new'}) == ['movies', 'hd', 'new']
+        assert parse_tags({"tags": "movies , hd , new"}) == ["movies", "hd", "new"]
 
     def test_tags_with_empty_values(self):
         """Empty values in tag list are filtered out."""
-        assert parse_tags({'tags': 'movies,,hd,,new'}) == ['movies', 'hd', 'new']
+        assert parse_tags({"tags": "movies,,hd,,new"}) == ["movies", "hd", "new"]
 
     def test_tags_only_commas(self):
         """String with only commas returns empty list."""
-        assert parse_tags({'tags': ',,,'}) == []
+        assert parse_tags({"tags": ",,,"}) == []
 
     def test_tags_with_whitespace_only(self):
         """Tags with only whitespace are filtered."""
-        assert parse_tags({'tags': '  ,  ,  '}) == []
+        assert parse_tags({"tags": "  ,  ,  "}) == []
 
 
 # ============================================================================
 # parse_duration()
 # ============================================================================
+
 
 class TestParseDuration:
     """Test parse_duration() function."""
@@ -129,6 +131,7 @@ class TestParseDuration:
 # ============================================================================
 # parse_size()
 # ============================================================================
+
 
 class TestParseSize:
     """Test parse_size() function."""
@@ -249,6 +252,7 @@ class TestParseSize:
 # is_larger_than()
 # ============================================================================
 
+
 class TestIsLargerThan:
     """Test is_larger_than() function."""
 
@@ -288,6 +292,7 @@ class TestIsLargerThan:
 # ============================================================================
 # is_smaller_than()
 # ============================================================================
+
 
 class TestIsSmallerThan:
     """Test is_smaller_than() function."""
@@ -329,6 +334,7 @@ class TestIsSmallerThan:
 # is_older_than()
 # ============================================================================
 
+
 class TestIsOlderThan:
     """Test is_older_than() function."""
 
@@ -344,7 +350,7 @@ class TestIsOlderThan:
         recent_timestamp = now - 86400  # 1 day ago
         assert is_older_than(recent_timestamp, "30 days") is False
 
-    @patch('qbt_rules.utils.time.time', return_value=1700000000)
+    @patch("qbt_rules.utils.time.time", return_value=1700000000)
     def test_exact_duration(self, mock_time):
         """Timestamp exactly at duration boundary."""
         now = 1700000000
@@ -382,6 +388,7 @@ class TestIsOlderThan:
 # ============================================================================
 # is_newer_than()
 # ============================================================================
+
 
 class TestIsNewerThan:
     """Test is_newer_than() function."""
@@ -437,6 +444,7 @@ class TestIsNewerThan:
 # format_bytes()
 # ============================================================================
 
+
 class TestFormatBytes:
     """Test format_bytes() function."""
 
@@ -477,6 +485,7 @@ class TestFormatBytes:
 # format_speed()
 # ============================================================================
 
+
 class TestFormatSpeed:
     """Test format_speed() function."""
 
@@ -500,6 +509,7 @@ class TestFormatSpeed:
 # ============================================================================
 # format_duration()
 # ============================================================================
+
 
 class TestFormatDuration:
     """Test format_duration() function."""
@@ -548,6 +558,7 @@ class TestFormatDuration:
 # ============================================================================
 # validate_field_name()
 # ============================================================================
+
 
 class TestValidateFieldName:
     """Test validate_field_name() function."""

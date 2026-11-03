@@ -18,274 +18,266 @@ class TestVariableEdgeCases:
 
     def test_variable_with_none_value(self):
         """Should handle None variable values"""
-        refs = {'vars': {'null_value': None}}
+        refs = {"vars": {"null_value": None}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [
-                {'field': 'info.category', 'operator': '==', 'value': '${vars.null_value}'}
+            "id": "test",
+            "conditions": [
+                {"field": "info.category", "operator": "==", "value": "${vars.null_value}"}
             ],
-            'actions': []
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0]['value'] is None
+        assert resolved["conditions"][0]["value"] is None
 
     def test_variable_with_empty_string(self):
         """Should handle empty string variable values"""
-        refs = {'vars': {'empty': ''}}
+        refs = {"vars": {"empty": ""}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [
-                {'field': 'info.category', 'operator': '==', 'value': '${vars.empty}'}
-            ],
-            'actions': []
+            "id": "test",
+            "conditions": [{"field": "info.category", "operator": "==", "value": "${vars.empty}"}],
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0]['value'] == ''
+        assert resolved["conditions"][0]["value"] == ""
 
     def test_variable_with_zero(self):
         """Should handle zero values (not falsy confusion)"""
-        refs = {'vars': {'zero': 0}}
+        refs = {"vars": {"zero": 0}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [
-                {'field': 'info.ratio', 'operator': '==', 'value': '${vars.zero}'}
-            ],
-            'actions': []
+            "id": "test",
+            "conditions": [{"field": "info.ratio", "operator": "==", "value": "${vars.zero}"}],
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0]['value'] == 0
-        assert type(resolved['conditions'][0]['value']) == int
+        assert resolved["conditions"][0]["value"] == 0
+        assert type(resolved["conditions"][0]["value"]) == int
 
     def test_variable_with_negative_number(self):
         """Should handle negative numbers"""
-        refs = {'vars': {'negative': -5.5}}
+        refs = {"vars": {"negative": -5.5}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [
-                {'field': 'info.ratio', 'operator': '>', 'value': '${vars.negative}'}
-            ],
-            'actions': []
+            "id": "test",
+            "conditions": [{"field": "info.ratio", "operator": ">", "value": "${vars.negative}"}],
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0]['value'] == -5.5
+        assert resolved["conditions"][0]["value"] == -5.5
 
     def test_variable_with_boolean_true(self):
         """Should handle boolean True"""
-        refs = {'vars': {'enabled': True}}
+        refs = {"vars": {"enabled": True}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [
-                {'field': 'info.enabled', 'operator': '==', 'value': '${vars.enabled}'}
-            ],
-            'actions': []
+            "id": "test",
+            "conditions": [{"field": "info.enabled", "operator": "==", "value": "${vars.enabled}"}],
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0]['value'] is True
-        assert type(resolved['conditions'][0]['value']) == bool
+        assert resolved["conditions"][0]["value"] is True
+        assert type(resolved["conditions"][0]["value"]) == bool
 
     def test_variable_with_boolean_false(self):
         """Should handle boolean False"""
-        refs = {'vars': {'disabled': False}}
+        refs = {"vars": {"disabled": False}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [
-                {'field': 'info.disabled', 'operator': '==', 'value': '${vars.disabled}'}
+            "id": "test",
+            "conditions": [
+                {"field": "info.disabled", "operator": "==", "value": "${vars.disabled}"}
             ],
-            'actions': []
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0]['value'] is False
+        assert resolved["conditions"][0]["value"] is False
 
     def test_variable_with_empty_list(self):
         """Should handle empty lists"""
-        refs = {'vars': {'empty_list': []}}
+        refs = {"vars": {"empty_list": []}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [
-                {'field': 'info.tags', 'operator': 'in', 'value': '${vars.empty_list}'}
-            ],
-            'actions': []
+            "id": "test",
+            "conditions": [{"field": "info.tags", "operator": "in", "value": "${vars.empty_list}"}],
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0]['value'] == []
+        assert resolved["conditions"][0]["value"] == []
 
     def test_variable_with_nested_list(self):
         """Should handle nested lists"""
-        refs = {'vars': {'nested': [['a', 'b'], ['c', 'd']]}}
+        refs = {"vars": {"nested": [["a", "b"], ["c", "d"]]}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [
-                {'field': 'info.data', 'operator': '==', 'value': '${vars.nested}'}
-            ],
-            'actions': []
+            "id": "test",
+            "conditions": [{"field": "info.data", "operator": "==", "value": "${vars.nested}"}],
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0]['value'] == [['a', 'b'], ['c', 'd']]
+        assert resolved["conditions"][0]["value"] == [["a", "b"], ["c", "d"]]
 
     def test_variable_with_dict(self):
         """Should handle dictionary values"""
-        refs = {'vars': {'config': {'key': 'value', 'nested': {'deep': 'data'}}}}
+        refs = {"vars": {"config": {"key": "value", "nested": {"deep": "data"}}}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [
-                {'field': 'info.metadata', 'operator': '==', 'value': '${vars.config}'}
-            ],
-            'actions': []
+            "id": "test",
+            "conditions": [{"field": "info.metadata", "operator": "==", "value": "${vars.config}"}],
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0]['value'] == {'key': 'value', 'nested': {'deep': 'data'}}
+        assert resolved["conditions"][0]["value"] == {"key": "value", "nested": {"deep": "data"}}
 
     def test_variable_with_special_characters_in_value(self):
         """Should handle special characters in string values"""
-        refs = {'vars': {'special': 'test@#$%^&*()[]{}|\\/<>?'}}
+        refs = {"vars": {"special": "test@#$%^&*()[]{}|\\/<>?"}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [
-                {'field': 'info.name', 'operator': '==', 'value': '${vars.special}'}
-            ],
-            'actions': []
+            "id": "test",
+            "conditions": [{"field": "info.name", "operator": "==", "value": "${vars.special}"}],
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0]['value'] == 'test@#$%^&*()[]{}|\\/<>?'
+        assert resolved["conditions"][0]["value"] == "test@#$%^&*()[]{}|\\/<>?"
 
     def test_variable_with_unicode(self):
         """Should handle Unicode characters"""
-        refs = {'vars': {'unicode': '日本語 🎌 émojis 中文'}}
+        refs = {"vars": {"unicode": "日本語 🎌 émojis 中文"}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [
-                {'field': 'info.name', 'operator': '==', 'value': '${vars.unicode}'}
-            ],
-            'actions': []
+            "id": "test",
+            "conditions": [{"field": "info.name", "operator": "==", "value": "${vars.unicode}"}],
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0]['value'] == '日本語 🎌 émojis 中文'
+        assert resolved["conditions"][0]["value"] == "日本語 🎌 émojis 中文"
 
     def test_variable_with_multiline_string(self):
         """Should handle multiline strings"""
-        refs = {'vars': {'multiline': 'line1\nline2\nline3'}}
+        refs = {"vars": {"multiline": "line1\nline2\nline3"}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [
-                {'field': 'info.description', 'operator': '==', 'value': '${vars.multiline}'}
+            "id": "test",
+            "conditions": [
+                {"field": "info.description", "operator": "==", "value": "${vars.multiline}"}
             ],
-            'actions': []
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0]['value'] == 'line1\nline2\nline3'
+        assert resolved["conditions"][0]["value"] == "line1\nline2\nline3"
 
     def test_variable_in_nested_structure(self):
         """Should substitute variables in deeply nested structures"""
-        refs = {'vars': {'ratio': 1.5}}
+        refs = {"vars": {"ratio": 1.5}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [
-                {'all': [
-                    {'any': [
-                        {'none': [
-                            {'field': 'info.ratio', 'operator': '>=', 'value': '${vars.ratio}'}
-                        ]}
-                    ]}
-                ]}
+            "id": "test",
+            "conditions": [
+                {
+                    "all": [
+                        {
+                            "any": [
+                                {
+                                    "none": [
+                                        {
+                                            "field": "info.ratio",
+                                            "operator": ">=",
+                                            "value": "${vars.ratio}",
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
             ],
-            'actions': []
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0]['all'][0]['any'][0]['none'][0]['value'] == 1.5
+        assert resolved["conditions"][0]["all"][0]["any"][0]["none"][0]["value"] == 1.5
 
     def test_multiple_variables_same_condition(self):
         """Should handle multiple variables in same condition"""
-        refs = {'vars': {'min': 1.0, 'max': 5.0}}
+        refs = {"vars": {"min": 1.0, "max": 5.0}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [
-                {'all': [
-                    {'field': 'info.ratio', 'operator': '>=', 'value': '${vars.min}'},
-                    {'field': 'info.ratio', 'operator': '<=', 'value': '${vars.max}'}
-                ]}
+            "id": "test",
+            "conditions": [
+                {
+                    "all": [
+                        {"field": "info.ratio", "operator": ">=", "value": "${vars.min}"},
+                        {"field": "info.ratio", "operator": "<=", "value": "${vars.max}"},
+                    ]
+                }
             ],
-            'actions': []
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0]['all'][0]['value'] == 1.0
-        assert resolved['conditions'][0]['all'][1]['value'] == 5.0
+        assert resolved["conditions"][0]["all"][0]["value"] == 1.0
+        assert resolved["conditions"][0]["all"][1]["value"] == 5.0
 
     def test_variable_in_action_params(self):
         """Should substitute variables in action parameters"""
-        refs = {'vars': {'tag_name': 'auto-tagged', 'category': 'movies'}}
+        refs = {"vars": {"tag_name": "auto-tagged", "category": "movies"}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [],
-            'actions': [
-                {'type': 'add_tag', 'params': {'tags': ['${vars.tag_name}']}},
-                {'type': 'set_category', 'params': {'category': '${vars.category}'}}
-            ]
+            "id": "test",
+            "conditions": [],
+            "actions": [
+                {"type": "add_tag", "params": {"tags": ["${vars.tag_name}"]}},
+                {"type": "set_category", "params": {"category": "${vars.category}"}},
+            ],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['actions'][0]['params']['tags'][0] == 'auto-tagged'
-        assert resolved['actions'][1]['params']['category'] == 'movies'
+        assert resolved["actions"][0]["params"]["tags"][0] == "auto-tagged"
+        assert resolved["actions"][1]["params"]["category"] == "movies"
 
     def test_partial_variable_substitution_in_string(self):
         """Should handle partial substitution when variable doesn't exist in middle of string"""
-        refs = {'vars': {'existing': 'value'}}
+        refs = {"vars": {"existing": "value"}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [],
-            'actions': [
-                {'type': 'add_tag', 'params': {'tags': ['prefix-${vars.missing}-suffix']}}
-            ]
+            "id": "test",
+            "conditions": [],
+            "actions": [{"type": "add_tag", "params": {"tags": ["prefix-${vars.missing}-suffix"]}}],
         }
 
         with pytest.raises(UnknownVariableError) as exc_info:
             resolver.resolve_rule(rule)
-        assert 'missing' in str(exc_info.value)
+        assert "missing" in str(exc_info.value)
 
 
 class TestReferenceEdgeCases:
@@ -293,234 +285,210 @@ class TestReferenceEdgeCases:
 
     def test_ref_with_empty_condition_block(self):
         """Should handle references to empty condition blocks"""
-        refs = {
-            'conditions': {
-                'empty': {}
-            }
-        }
+        refs = {"conditions": {"empty": {}}}
         resolver = RuleResolver(refs=refs)
 
-        rule = {
-            'id': 'test',
-            'conditions': [{'$ref': 'conditions.empty'}],
-            'actions': []
-        }
+        rule = {"id": "test", "conditions": [{"$ref": "conditions.empty"}], "actions": []}
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0] == {}
+        assert resolved["conditions"][0] == {}
 
     def test_ref_with_empty_action_list(self):
         """Should handle references to empty action lists (spliced -> contributes
         zero actions, not a nested empty-list placeholder that would crash the
         engine's executor when it tries to treat it as an action dict)"""
-        refs = {
-            'actions': {
-                'empty': []
-            }
-        }
+        refs = {"actions": {"empty": []}}
         resolver = RuleResolver(refs=refs)
 
-        rule = {
-            'id': 'test',
-            'conditions': [],
-            'actions': [{'$ref': 'actions.empty'}]
-        }
+        rule = {"id": "test", "conditions": [], "actions": [{"$ref": "actions.empty"}]}
 
         resolved = resolver.resolve_rule(rule)
-        assert resolved['actions'] == []
+        assert resolved["actions"] == []
 
     def test_ref_with_hyphenated_name(self):
         """Should handle references with hyphens in names"""
         refs = {
-            'conditions': {
-                'private-tracker-hd': {
-                    'all': [{'field': 'info.name', 'operator': 'matches', 'value': '1080p'}]
+            "conditions": {
+                "private-tracker-hd": {
+                    "all": [{"field": "info.name", "operator": "matches", "value": "1080p"}]
                 }
             }
         }
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [{'$ref': 'conditions.private-tracker-hd'}],
-            'actions': []
+            "id": "test",
+            "conditions": [{"$ref": "conditions.private-tracker-hd"}],
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert 'all' in resolved['conditions'][0]
+        assert "all" in resolved["conditions"][0]
 
     def test_ref_with_underscored_name(self):
         """Should handle references with underscores in names"""
         refs = {
-            'conditions': {
-                'private_tracker': {
-                    'all': [{'field': 'trackers.url', 'operator': 'contains', 'value': 'private'}]
+            "conditions": {
+                "private_tracker": {
+                    "all": [{"field": "trackers.url", "operator": "contains", "value": "private"}]
                 }
             }
         }
         resolver = RuleResolver(refs=refs)
 
-        rule = {
-            'id': 'test',
-            'conditions': [{'$ref': 'conditions.private_tracker'}],
-            'actions': []
-        }
+        rule = {"id": "test", "conditions": [{"$ref": "conditions.private_tracker"}], "actions": []}
 
         resolved = resolver.resolve_rule(rule)
-        assert 'all' in resolved['conditions'][0]
+        assert "all" in resolved["conditions"][0]
 
     def test_multiple_refs_same_rule(self):
         """Should handle multiple references in same rule"""
         refs = {
-            'conditions': {
-                'cond1': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]},
-                'cond2': {'all': [{'field': 'info.category', 'operator': '==', 'value': 'movies'}]},
-                'cond3': {'all': [{'field': 'info.state', 'operator': '==', 'value': 'uploading'}]}
+            "conditions": {
+                "cond1": {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]},
+                "cond2": {"all": [{"field": "info.category", "operator": "==", "value": "movies"}]},
+                "cond3": {"all": [{"field": "info.state", "operator": "==", "value": "uploading"}]},
             }
         }
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [
-                {'$ref': 'conditions.cond1'},
-                {'$ref': 'conditions.cond2'},
-                {'$ref': 'conditions.cond3'}
+            "id": "test",
+            "conditions": [
+                {"$ref": "conditions.cond1"},
+                {"$ref": "conditions.cond2"},
+                {"$ref": "conditions.cond3"},
             ],
-            'actions': []
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        assert len(resolved['conditions']) == 3
-        assert all('all' in cond for cond in resolved['conditions'])
+        assert len(resolved["conditions"]) == 3
+        assert all("all" in cond for cond in resolved["conditions"])
 
     def test_ref_mixed_with_inline_conditions(self):
         """Should handle mix of refs and inline conditions"""
         refs = {
-            'conditions': {
-                'private': {'all': [{'field': 'trackers.url', 'operator': 'contains', 'value': 'private'}]}
-            }
-        }
-        resolver = RuleResolver(refs=refs)
-
-        rule = {
-            'id': 'test',
-            'conditions': [
-                {'$ref': 'conditions.private'},
-                {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]},
-                {'$ref': 'conditions.private'}
-            ],
-            'actions': []
-        }
-
-        resolved = resolver.resolve_rule(rule)
-        assert len(resolved['conditions']) == 3
-        assert resolved['conditions'][0] == resolved['conditions'][2]
-
-    def test_deeply_nested_refs(self):
-        """Should handle refs within nested structures"""
-        refs = {
-            'conditions': {
-                'ratio-check': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]}
-            }
-        }
-        resolver = RuleResolver(refs=refs)
-
-        rule = {
-            'id': 'test',
-            'conditions': [
-                {'any': [
-                    {'all': [
-                        {'$ref': 'conditions.ratio-check'},
-                        {'none': [
-                            {'$ref': 'conditions.ratio-check'}
-                        ]}
-                    ]}
-                ]}
-            ],
-            'actions': []
-        }
-
-        resolved = resolver.resolve_rule(rule)
-        # Verify expansion happened at all levels
-        assert 'any' in resolved['conditions'][0]
-        assert 'all' in resolved['conditions'][0]['any'][0]
-        assert 'all' in resolved['conditions'][0]['any'][0]['all'][0]
-
-    def test_ref_to_condition_with_variables(self):
-        """Should expand ref and then substitute variables"""
-        refs = {
-            'vars': {'min_ratio': 2.0},
-            'conditions': {
-                'well-seeded': {
-                    'all': [{'field': 'info.ratio', 'operator': '>=', 'value': '${vars.min_ratio}'}]
+            "conditions": {
+                "private": {
+                    "all": [{"field": "trackers.url", "operator": "contains", "value": "private"}]
                 }
             }
         }
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [{'$ref': 'conditions.well-seeded'}],
-            'actions': []
+            "id": "test",
+            "conditions": [
+                {"$ref": "conditions.private"},
+                {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]},
+                {"$ref": "conditions.private"},
+            ],
+            "actions": [],
         }
 
         resolved = resolver.resolve_rule(rule)
-        # Ref expanded AND variable substituted
-        assert resolved['conditions'][0]['all'][0]['value'] == 2.0
+        assert len(resolved["conditions"]) == 3
+        assert resolved["conditions"][0] == resolved["conditions"][2]
 
-    def test_invalid_ref_format_no_dot(self):
-        """Should reject ref path without dot separator"""
-        refs = {'conditions': {'test': {}}}
-        resolver = RuleResolver(refs=refs)
-
-        rule = {
-            'id': 'test',
-            'conditions': [{'$ref': 'test'}],  # Missing 'conditions.'
-            'actions': []
-        }
-
-        with pytest.raises(InvalidRefError) as exc_info:
-            resolver.resolve_rule(rule)
-        assert 'group.name' in str(exc_info.value)
-
-    def test_invalid_ref_format_multiple_dots(self):
-        """Should handle ref names with dots (splits on first dot only)"""
+    def test_deeply_nested_refs(self):
+        """Should handle refs within nested structures"""
         refs = {
-            'conditions': {
-                'test.extra': {}  # Name can contain dots
+            "conditions": {
+                "ratio-check": {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
             }
         }
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [{'$ref': 'conditions.test.extra'}],
-            'actions': []
+            "id": "test",
+            "conditions": [
+                {
+                    "any": [
+                        {
+                            "all": [
+                                {"$ref": "conditions.ratio-check"},
+                                {"none": [{"$ref": "conditions.ratio-check"}]},
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "actions": [],
         }
+
+        resolved = resolver.resolve_rule(rule)
+        # Verify expansion happened at all levels
+        assert "any" in resolved["conditions"][0]
+        assert "all" in resolved["conditions"][0]["any"][0]
+        assert "all" in resolved["conditions"][0]["any"][0]["all"][0]
+
+    def test_ref_to_condition_with_variables(self):
+        """Should expand ref and then substitute variables"""
+        refs = {
+            "vars": {"min_ratio": 2.0},
+            "conditions": {
+                "well-seeded": {
+                    "all": [{"field": "info.ratio", "operator": ">=", "value": "${vars.min_ratio}"}]
+                }
+            },
+        }
+        resolver = RuleResolver(refs=refs)
+
+        rule = {"id": "test", "conditions": [{"$ref": "conditions.well-seeded"}], "actions": []}
+
+        resolved = resolver.resolve_rule(rule)
+        # Ref expanded AND variable substituted
+        assert resolved["conditions"][0]["all"][0]["value"] == 2.0
+
+    def test_invalid_ref_format_no_dot(self):
+        """Should reject ref path without dot separator"""
+        refs = {"conditions": {"test": {}}}
+        resolver = RuleResolver(refs=refs)
+
+        rule = {
+            "id": "test",
+            "conditions": [{"$ref": "test"}],  # Missing 'conditions.'
+            "actions": [],
+        }
+
+        with pytest.raises(InvalidRefError) as exc_info:
+            resolver.resolve_rule(rule)
+        assert "group.name" in str(exc_info.value)
+
+    def test_invalid_ref_format_multiple_dots(self):
+        """Should handle ref names with dots (splits on first dot only)"""
+        refs = {
+            "conditions": {
+                "test.extra": {}  # Name can contain dots
+            }
+        }
+        resolver = RuleResolver(refs=refs)
+
+        rule = {"id": "test", "conditions": [{"$ref": "conditions.test.extra"}], "actions": []}
 
         # Should work - 'test.extra' is a valid condition name
         resolved = resolver.resolve_rule(rule)
-        assert resolved['conditions'][0] == {}
+        assert resolved["conditions"][0] == {}
 
         # But if the name doesn't exist, should raise UnknownRefError
         with pytest.raises(UnknownRefError):
             rule2 = {
-                'id': 'test2',
-                'conditions': [{'$ref': 'conditions.nonexistent.name'}],
-                'actions': []
+                "id": "test2",
+                "conditions": [{"$ref": "conditions.nonexistent.name"}],
+                "actions": [],
             }
             resolver.resolve_rule(rule2)
 
     def test_ref_with_non_string_value(self):
         """Should reject non-string ref values"""
-        refs = {'conditions': {'test': {}}}
+        refs = {"conditions": {"test": {}}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test',
-            'conditions': [{'$ref': 123}],  # Number instead of string
-            'actions': []
+            "id": "test",
+            "conditions": [{"$ref": 123}],  # Number instead of string
+            "actions": [],
         }
 
         with pytest.raises(InvalidRefError):
@@ -533,47 +501,31 @@ class TestCircularReferenceDetection:
     def test_circular_ref_through_nested_structure(self):
         """Should detect circular ref through complex nesting"""
         refs = {
-            'conditions': {
-                'loop1': {
-                    'all': [
-                        {'$ref': 'conditions.loop2'}
-                    ]
-                },
-                'loop2': {
-                    'any': [
-                        {'$ref': 'conditions.loop1'}
-                    ]
-                }
+            "conditions": {
+                "loop1": {"all": [{"$ref": "conditions.loop2"}]},
+                "loop2": {"any": [{"$ref": "conditions.loop1"}]},
             }
         }
         resolver = RuleResolver(refs=refs)
 
-        rule = {
-            'id': 'test',
-            'conditions': [{'$ref': 'conditions.loop1'}],
-            'actions': []
-        }
+        rule = {"id": "test", "conditions": [{"$ref": "conditions.loop1"}], "actions": []}
 
         with pytest.raises(CircularRefError) as exc_info:
             resolver.resolve_rule(rule)
-        assert 'loop' in str(exc_info.value).lower()
+        assert "loop" in str(exc_info.value).lower()
 
     def test_three_way_circular_ref(self):
         """Should detect circular ref through 3+ references"""
         refs = {
-            'conditions': {
-                'a': {'all': [{'$ref': 'conditions.b'}]},
-                'b': {'all': [{'$ref': 'conditions.c'}]},
-                'c': {'all': [{'$ref': 'conditions.a'}]}
+            "conditions": {
+                "a": {"all": [{"$ref": "conditions.b"}]},
+                "b": {"all": [{"$ref": "conditions.c"}]},
+                "c": {"all": [{"$ref": "conditions.a"}]},
             }
         }
         resolver = RuleResolver(refs=refs)
 
-        rule = {
-            'id': 'test',
-            'conditions': [{'$ref': 'conditions.a'}],
-            'actions': []
-        }
+        rule = {"id": "test", "conditions": [{"$ref": "conditions.a"}], "actions": []}
 
         with pytest.raises(CircularRefError):
             resolver.resolve_rule(rule)
@@ -585,19 +537,17 @@ class TestRefTypeValidation:
     def test_action_ref_in_conditions_raises_error(self):
         """Should reject actions.* ref used in conditions block"""
         refs = {
-            'conditions': {
-                'good-condition': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]}
+            "conditions": {
+                "good-condition": {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
             },
-            'actions': {
-                'my-action': [{'type': 'stop'}]
-            }
+            "actions": {"my-action": [{"type": "stop"}]},
         }
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test-rule',
-            'conditions': [{'$ref': 'actions.my-action'}],  # WRONG: action ref in conditions
-            'actions': []
+            "id": "test-rule",
+            "conditions": [{"$ref": "actions.my-action"}],  # WRONG: action ref in conditions
+            "actions": [],
         }
 
         with pytest.raises(RefTypeMismatchError) as exc_info:
@@ -605,176 +555,156 @@ class TestRefTypeValidation:
 
         error = exc_info.value
         # Verify error message contains key information
-        assert 'actions.my-action' in str(error)
-        assert 'conditions' in str(error).lower()
+        assert "actions.my-action" in str(error)
+        assert "conditions" in str(error).lower()
         assert "rules['test-rule'].conditions" in str(error)
 
     def test_condition_ref_in_actions_raises_error(self):
         """Should reject conditions.* ref used in actions block"""
         refs = {
-            'conditions': {
-                'my-condition': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]}
+            "conditions": {
+                "my-condition": {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
             },
-            'actions': {
-                'good-action': [{'type': 'stop'}]
-            }
+            "actions": {"good-action": [{"type": "stop"}]},
         }
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test-rule',
-            'conditions': [],
-            'actions': [{'$ref': 'conditions.my-condition'}]  # WRONG: condition ref in actions
+            "id": "test-rule",
+            "conditions": [],
+            "actions": [{"$ref": "conditions.my-condition"}],  # WRONG: condition ref in actions
         }
 
         with pytest.raises(RefTypeMismatchError) as exc_info:
             resolver.resolve_rule(rule)
 
         error = exc_info.value
-        assert 'conditions.my-condition' in str(error)
-        assert 'actions' in str(error).lower()
+        assert "conditions.my-condition" in str(error)
+        assert "actions" in str(error).lower()
         assert "rules['test-rule'].actions" in str(error)
 
     def test_correct_condition_ref_in_conditions_works(self):
         """Should allow conditions.* ref in conditions block"""
         refs = {
-            'conditions': {
-                'my-condition': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]}
+            "conditions": {
+                "my-condition": {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
             }
         }
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test-rule',
-            'conditions': [{'$ref': 'conditions.my-condition'}],
-            'actions': []
+            "id": "test-rule",
+            "conditions": [{"$ref": "conditions.my-condition"}],
+            "actions": [],
         }
 
         # Should not raise
         resolved = resolver.resolve_rule(rule)
-        assert 'all' in resolved['conditions'][0]
-        assert resolved['conditions'][0]['all'][0]['value'] == 1.0
+        assert "all" in resolved["conditions"][0]
+        assert resolved["conditions"][0]["all"][0]["value"] == 1.0
 
     def test_correct_action_ref_in_actions_works(self):
         """Should allow actions.* ref in actions block"""
-        refs = {
-            'actions': {
-                'my-action': [{'type': 'stop'}, {'type': 'pause'}]
-            }
-        }
+        refs = {"actions": {"my-action": [{"type": "stop"}, {"type": "pause"}]}}
         resolver = RuleResolver(refs=refs)
 
-        rule = {
-            'id': 'test-rule',
-            'conditions': [],
-            'actions': [{'$ref': 'actions.my-action'}]
-        }
+        rule = {"id": "test-rule", "conditions": [], "actions": [{"$ref": "actions.my-action"}]}
 
         # Should not raise, and should splice the 2-item action sequence into
         # the parent list rather than nesting it as a single list element
         resolved = resolver.resolve_rule(rule)
-        assert resolved['actions'] == [{'type': 'stop'}, {'type': 'pause'}]
-        assert len(resolved['actions']) == 2
+        assert resolved["actions"] == [{"type": "stop"}, {"type": "pause"}]
+        assert len(resolved["actions"]) == 2
 
     def test_nested_wrong_ref_caught(self):
         """Should catch wrong ref type even when nested in logical operators"""
-        refs = {
-            'actions': {
-                'my-action': [{'type': 'stop'}]
-            }
-        }
+        refs = {"actions": {"my-action": [{"type": "stop"}]}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test-rule',
-            'conditions': [
-                {'all': [
-                    {'any': [
-                        {'$ref': 'actions.my-action'}  # Nested wrong ref
-                    ]}
-                ]}
+            "id": "test-rule",
+            "conditions": [
+                {
+                    "all": [
+                        {
+                            "any": [
+                                {"$ref": "actions.my-action"}  # Nested wrong ref
+                            ]
+                        }
+                    ]
+                }
             ],
-            'actions': []
+            "actions": [],
         }
 
         with pytest.raises(RefTypeMismatchError) as exc_info:
             resolver.resolve_rule(rule)
 
         error = exc_info.value
-        assert 'actions.my-action' in str(error)
+        assert "actions.my-action" in str(error)
 
     def test_deeply_nested_wrong_ref_caught(self):
         """Should catch wrong ref type at any nesting depth"""
         refs = {
-            'conditions': {
-                'my-condition': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]}
+            "conditions": {
+                "my-condition": {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
             }
         }
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test-rule',
-            'conditions': [],
-            'actions': [
-                {'type': 'add_tag', 'params': {'tags': ['test']}},
+            "id": "test-rule",
+            "conditions": [],
+            "actions": [
+                {"type": "add_tag", "params": {"tags": ["test"]}},
                 [
-                    {'type': 'stop'},
+                    {"type": "stop"},
                     [
-                        {'$ref': 'conditions.my-condition'}  # Deeply nested wrong ref
-                    ]
-                ]
-            ]
+                        {"$ref": "conditions.my-condition"}  # Deeply nested wrong ref
+                    ],
+                ],
+            ],
         }
 
         with pytest.raises(RefTypeMismatchError) as exc_info:
             resolver.resolve_rule(rule)
 
         error = exc_info.value
-        assert 'conditions.my-condition' in str(error)
+        assert "conditions.my-condition" in str(error)
 
     def test_error_shows_available_refs_of_correct_type(self):
         """Error message should list available refs of the correct type"""
         refs = {
-            'conditions': {
-                'ratio-check': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]},
-                'category-check': {'all': [{'field': 'info.category', 'operator': '==', 'value': 'movies'}]},
-                'tracker-check': {'all': [{'field': 'trackers.url', 'operator': 'contains', 'value': 'private'}]}
+            "conditions": {
+                "ratio-check": {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]},
+                "category-check": {
+                    "all": [{"field": "info.category", "operator": "==", "value": "movies"}]
+                },
+                "tracker-check": {
+                    "all": [{"field": "trackers.url", "operator": "contains", "value": "private"}]
+                },
             },
-            'actions': {
-                'wrong-action': [{'type': 'stop'}]
-            }
+            "actions": {"wrong-action": [{"type": "stop"}]},
         }
         resolver = RuleResolver(refs=refs)
 
-        rule = {
-            'id': 'test-rule',
-            'conditions': [{'$ref': 'actions.wrong-action'}],
-            'actions': []
-        }
+        rule = {"id": "test-rule", "conditions": [{"$ref": "actions.wrong-action"}], "actions": []}
 
         with pytest.raises(RefTypeMismatchError) as exc_info:
             resolver.resolve_rule(rule)
 
         error_msg = str(exc_info.value)
         # Should show available conditions
-        assert 'ratio-check' in error_msg
-        assert 'category-check' in error_msg
-        assert 'tracker-check' in error_msg
+        assert "ratio-check" in error_msg
+        assert "category-check" in error_msg
+        assert "tracker-check" in error_msg
 
     def test_error_shows_correct_location_path(self):
         """Error message should show precise location of the invalid ref"""
-        refs = {
-            'actions': {
-                'my-action': [{'type': 'stop'}]
-            }
-        }
+        refs = {"actions": {"my-action": [{"type": "stop"}]}}
         resolver = RuleResolver(refs=refs)
 
-        rule = {
-            'id': 'my-test-rule',
-            'conditions': [{'$ref': 'actions.my-action'}],
-            'actions': []
-        }
+        rule = {"id": "my-test-rule", "conditions": [{"$ref": "actions.my-action"}], "actions": []}
 
         with pytest.raises(RefTypeMismatchError) as exc_info:
             resolver.resolve_rule(rule)
@@ -786,16 +716,16 @@ class TestRefTypeValidation:
     def test_error_shows_expected_vs_actual_groups(self):
         """Error message should clearly show expected vs actual ref groups"""
         refs = {
-            'conditions': {
-                'my-condition': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]}
+            "conditions": {
+                "my-condition": {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
             }
         }
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test-rule',
-            'conditions': [],
-            'actions': [{'$ref': 'conditions.my-condition'}]
+            "id": "test-rule",
+            "conditions": [],
+            "actions": [{"$ref": "conditions.my-condition"}],
         }
 
         with pytest.raises(RefTypeMismatchError) as exc_info:
@@ -803,65 +733,60 @@ class TestRefTypeValidation:
 
         error_msg = str(exc_info.value)
         # Should show both expected and actual
-        assert 'actions.*' in error_msg.lower() or 'actions' in error_msg.lower()
-        assert 'conditions.*' in error_msg.lower() or 'conditions' in error_msg.lower()
+        assert "actions.*" in error_msg.lower() or "actions" in error_msg.lower()
+        assert "conditions.*" in error_msg.lower() or "conditions" in error_msg.lower()
 
     def test_multiple_wrong_refs_first_one_caught(self):
         """When multiple wrong refs exist, should catch the first one encountered"""
-        refs = {
-            'actions': {
-                'action1': [{'type': 'stop'}],
-                'action2': [{'type': 'pause'}]
-            }
-        }
+        refs = {"actions": {"action1": [{"type": "stop"}], "action2": [{"type": "pause"}]}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test-rule',
-            'conditions': [
-                {'$ref': 'actions.action1'},  # First wrong ref
-                {'$ref': 'actions.action2'}   # Second wrong ref
+            "id": "test-rule",
+            "conditions": [
+                {"$ref": "actions.action1"},  # First wrong ref
+                {"$ref": "actions.action2"},  # Second wrong ref
             ],
-            'actions': []
+            "actions": [],
         }
 
         with pytest.raises(RefTypeMismatchError) as exc_info:
             resolver.resolve_rule(rule)
 
         # Should mention the first wrong ref
-        assert 'actions.action1' in str(exc_info.value)
+        assert "actions.action1" in str(exc_info.value)
 
     def test_mixed_correct_and_wrong_refs(self):
         """Should allow correct refs but reject wrong ones"""
         refs = {
-            'conditions': {
-                'good-condition': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]}
+            "conditions": {
+                "good-condition": {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
             },
-            'actions': {
-                'wrong-in-conditions': [{'type': 'stop'}],
-                'good-action': [{'type': 'pause'}]
-            }
+            "actions": {
+                "wrong-in-conditions": [{"type": "stop"}],
+                "good-action": [{"type": "pause"}],
+            },
         }
         resolver = RuleResolver(refs=refs)
 
         # First verify correct usage works
         good_rule = {
-            'id': 'good-rule',
-            'conditions': [{'$ref': 'conditions.good-condition'}],
-            'actions': [{'$ref': 'actions.good-action'}]
+            "id": "good-rule",
+            "conditions": [{"$ref": "conditions.good-condition"}],
+            "actions": [{"$ref": "actions.good-action"}],
         }
         resolved = resolver.resolve_rule(good_rule)
-        assert 'all' in resolved['conditions'][0]
-        assert resolved['actions'] == [{'type': 'pause'}]
+        assert "all" in resolved["conditions"][0]
+        assert resolved["actions"] == [{"type": "pause"}]
 
         # Now verify wrong ref is caught
         bad_rule = {
-            'id': 'bad-rule',
-            'conditions': [
-                {'$ref': 'conditions.good-condition'},  # OK
-                {'$ref': 'actions.wrong-in-conditions'}  # ERROR
+            "id": "bad-rule",
+            "conditions": [
+                {"$ref": "conditions.good-condition"},  # OK
+                {"$ref": "actions.wrong-in-conditions"},  # ERROR
             ],
-            'actions': []
+            "actions": [],
         }
 
         with pytest.raises(RefTypeMismatchError):
@@ -870,103 +795,95 @@ class TestRefTypeValidation:
     def test_ref_in_other_fields_no_validation(self):
         """Refs in non-conditions/actions fields should not be type-validated"""
         refs = {
-            'conditions': {
-                'my-condition': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]}
+            "conditions": {
+                "my-condition": {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
             },
-            'actions': {
-                'my-action': [{'type': 'stop'}]
-            }
+            "actions": {"my-action": [{"type": "stop"}]},
         }
         resolver = RuleResolver(refs=refs)
 
         # Custom field with any ref type should work
         rule = {
-            'id': 'test-rule',
-            'conditions': [],
-            'actions': [],
-            'custom_metadata': {
-                'condition_ref': {'$ref': 'conditions.my-condition'},
-                'action_ref': {'$ref': 'actions.my-action'}
-            }
+            "id": "test-rule",
+            "conditions": [],
+            "actions": [],
+            "custom_metadata": {
+                "condition_ref": {"$ref": "conditions.my-condition"},
+                "action_ref": {"$ref": "actions.my-action"},
+            },
         }
 
         # Should not raise - custom fields don't have type restrictions
         resolved = resolver.resolve_rule(rule)
-        assert 'all' in resolved['custom_metadata']['condition_ref']
-        assert isinstance(resolved['custom_metadata']['action_ref'], list)
+        assert "all" in resolved["custom_metadata"]["condition_ref"]
+        assert isinstance(resolved["custom_metadata"]["action_ref"], list)
 
     def test_transitive_wrong_ref_caught(self):
         """Should catch wrong ref type even when it comes through another ref"""
         refs = {
-            'conditions': {
-                'has-wrong-ref': {
-                    'all': [
-                        {'$ref': 'actions.my-action'}  # Wrong ref inside condition definition
+            "conditions": {
+                "has-wrong-ref": {
+                    "all": [
+                        {"$ref": "actions.my-action"}  # Wrong ref inside condition definition
                     ]
                 }
             },
-            'actions': {
-                'my-action': [{'type': 'stop'}]
-            }
+            "actions": {"my-action": [{"type": "stop"}]},
         }
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test-rule',
-            'conditions': [{'$ref': 'conditions.has-wrong-ref'}],
-            'actions': []
+            "id": "test-rule",
+            "conditions": [{"$ref": "conditions.has-wrong-ref"}],
+            "actions": [],
         }
 
         # Should catch the nested wrong ref
         with pytest.raises(RefTypeMismatchError) as exc_info:
             resolver.resolve_rule(rule)
 
-        assert 'actions.my-action' in str(exc_info.value)
+        assert "actions.my-action" in str(exc_info.value)
 
     def test_no_available_refs_message(self):
         """Error message should handle case when no refs of correct type are defined"""
         refs = {
-            'actions': {
-                'my-action': [{'type': 'stop'}]
-            }
+            "actions": {"my-action": [{"type": "stop"}]}
             # No conditions defined
         }
         resolver = RuleResolver(refs=refs)
 
-        rule = {
-            'id': 'test-rule',
-            'conditions': [{'$ref': 'actions.my-action'}],
-            'actions': []
-        }
+        rule = {"id": "test-rule", "conditions": [{"$ref": "actions.my-action"}], "actions": []}
 
         with pytest.raises(RefTypeMismatchError) as exc_info:
             resolver.resolve_rule(rule)
 
         error_msg = str(exc_info.value)
         # Should indicate no conditions are available
-        assert 'none defined' in error_msg.lower() or '(none' in error_msg.lower()
+        assert "none defined" in error_msg.lower() or "(none" in error_msg.lower()
 
     def test_path_tracking_through_nested_structures(self):
         """Path tracking should be accurate through complex nested structures"""
-        refs = {
-            'actions': {
-                'my-action': [{'type': 'stop'}]
-            }
-        }
+        refs = {"actions": {"my-action": [{"type": "stop"}]}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'complex-rule',
-            'conditions': [
-                {'all': [
-                    {'any': [
-                        {'none': [
-                            {'$ref': 'actions.my-action'}  # Deep in nesting
-                        ]}
-                    ]}
-                ]}
+            "id": "complex-rule",
+            "conditions": [
+                {
+                    "all": [
+                        {
+                            "any": [
+                                {
+                                    "none": [
+                                        {"$ref": "actions.my-action"}  # Deep in nesting
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
             ],
-            'actions': []
+            "actions": [],
         }
 
         with pytest.raises(RefTypeMismatchError) as exc_info:
@@ -979,29 +896,29 @@ class TestRefTypeValidation:
     def test_wrong_ref_with_variables_in_same_rule(self):
         """Should catch type errors even when variables are also being resolved"""
         refs = {
-            'vars': {'min_ratio': 1.0},
-            'conditions': {
-                'my-condition': {
-                    'all': [{'field': 'info.ratio', 'operator': '>=', 'value': '${vars.min_ratio}'}]
+            "vars": {"min_ratio": 1.0},
+            "conditions": {
+                "my-condition": {
+                    "all": [{"field": "info.ratio", "operator": ">=", "value": "${vars.min_ratio}"}]
                 }
-            }
+            },
         }
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'test-rule',
-            'conditions': [],
-            'actions': [
-                {'type': 'add_tag', 'params': {'tags': ['test']}},
-                {'$ref': 'conditions.my-condition'}  # Wrong type
-            ]
+            "id": "test-rule",
+            "conditions": [],
+            "actions": [
+                {"type": "add_tag", "params": {"tags": ["test"]}},
+                {"$ref": "conditions.my-condition"},  # Wrong type
+            ],
         }
 
         # Should catch the type error before variable substitution
         with pytest.raises(RefTypeMismatchError) as exc_info:
             resolver.resolve_rule(rule)
 
-        assert 'conditions.my-condition' in str(exc_info.value)
+        assert "conditions.my-condition" in str(exc_info.value)
 
 
 class TestComplexScenarios:
@@ -1010,92 +927,89 @@ class TestComplexScenarios:
     def test_massive_rule_with_many_refs_and_vars(self):
         """Should handle rule with many references and variables"""
         refs = {
-            'vars': {
-                'min_ratio': 1.0,
-                'max_ratio': 5.0,
-                'age': '30 days',
-                'categories': ['movies', 'tv', 'music'],
-                'tags': ['hd', '4k', 'remux']
+            "vars": {
+                "min_ratio": 1.0,
+                "max_ratio": 5.0,
+                "age": "30 days",
+                "categories": ["movies", "tv", "music"],
+                "tags": ["hd", "4k", "remux"],
             },
-            'conditions': {
-                'ratio-range': {
-                    'all': [
-                        {'field': 'info.ratio', 'operator': '>=', 'value': '${vars.min_ratio}'},
-                        {'field': 'info.ratio', 'operator': '<=', 'value': '${vars.max_ratio}'}
+            "conditions": {
+                "ratio-range": {
+                    "all": [
+                        {"field": "info.ratio", "operator": ">=", "value": "${vars.min_ratio}"},
+                        {"field": "info.ratio", "operator": "<=", "value": "${vars.max_ratio}"},
                     ]
                 },
-                'category-check': {
-                    'any': [
-                        {'field': 'info.category', 'operator': 'in', 'value': '${vars.categories}'}
+                "category-check": {
+                    "any": [
+                        {"field": "info.category", "operator": "in", "value": "${vars.categories}"}
                     ]
                 },
-                'tag-check': {
-                    'any': [
-                        {'field': 'info.tags', 'operator': 'in', 'value': '${vars.tags}'}
-                    ]
-                }
+                "tag-check": {
+                    "any": [{"field": "info.tags", "operator": "in", "value": "${vars.tags}"}]
+                },
             },
-            'actions': {
-                'cleanup': [
-                    {'type': 'add_tag', 'params': {'tags': ['pending-delete']}},
-                    {'type': 'stop'},
-                    {'type': 'set_category', 'params': {'category': 'cleanup'}}
+            "actions": {
+                "cleanup": [
+                    {"type": "add_tag", "params": {"tags": ["pending-delete"]}},
+                    {"type": "stop"},
+                    {"type": "set_category", "params": {"category": "cleanup"}},
                 ]
-            }
+            },
         }
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'complex',
-            'enabled': True,
-            'conditions': [
-                {'$ref': 'conditions.ratio-range'},
-                {'$ref': 'conditions.category-check'},
-                {'none': [{'$ref': 'conditions.tag-check'}]}
+            "id": "complex",
+            "enabled": True,
+            "conditions": [
+                {"$ref": "conditions.ratio-range"},
+                {"$ref": "conditions.category-check"},
+                {"none": [{"$ref": "conditions.tag-check"}]},
             ],
-            'actions': [
-                {'$ref': 'actions.cleanup'}
-            ]
+            "actions": [{"$ref": "actions.cleanup"}],
         }
 
         resolved = resolver.resolve_rule(rule)
 
         # Verify all refs expanded
-        assert 'all' in resolved['conditions'][0]
-        assert 'any' in resolved['conditions'][1]
-        assert 'none' in resolved['conditions'][2]
+        assert "all" in resolved["conditions"][0]
+        assert "any" in resolved["conditions"][1]
+        assert "none" in resolved["conditions"][2]
         # actions.cleanup is a 3-item action sequence -- spliced into the
         # parent list rather than nested as a single list element
-        assert resolved['actions'] == refs['actions']['cleanup']
-        assert all(isinstance(a, dict) for a in resolved['actions'])
+        assert resolved["actions"] == refs["actions"]["cleanup"]
+        assert all(isinstance(a, dict) for a in resolved["actions"])
 
         # Verify all vars substituted
-        assert resolved['conditions'][0]['all'][0]['value'] == 1.0
-        assert resolved['conditions'][0]['all'][1]['value'] == 5.0
-        assert resolved['conditions'][1]['any'][0]['value'] == ['movies', 'tv', 'music']
+        assert resolved["conditions"][0]["all"][0]["value"] == 1.0
+        assert resolved["conditions"][0]["all"][1]["value"] == 5.0
+        assert resolved["conditions"][1]["any"][0]["value"] == ["movies", "tv", "music"]
 
     def test_rule_with_no_refs_or_vars(self):
         """Should pass through rules without any refs or vars unchanged"""
         resolver = RuleResolver(refs={})
 
         rule = {
-            'id': 'plain',
-            'enabled': True,
-            'priority': 50,
-            'context': 'manual',
-            'conditions': [
-                {'all': [
-                    {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},
-                    {'field': 'info.state', 'operator': '==', 'value': 'uploading'}
-                ]},
-                {'none': [
-                    {'field': 'info.category', 'operator': 'in', 'value': ['keep', 'archive']}
-                ]}
+            "id": "plain",
+            "enabled": True,
+            "priority": 50,
+            "context": "manual",
+            "conditions": [
+                {
+                    "all": [
+                        {"field": "info.ratio", "operator": ">=", "value": 1.0},
+                        {"field": "info.state", "operator": "==", "value": "uploading"},
+                    ]
+                },
+                {
+                    "none": [
+                        {"field": "info.category", "operator": "in", "value": ["keep", "archive"]}
+                    ]
+                },
             ],
-            'actions': [
-                {'type': 'add_tag', 'params': {'tags': ['auto']}},
-                {'type': 'stop'}
-            ]
+            "actions": [{"type": "add_tag", "params": {"tags": ["auto"]}}, {"type": "stop"}],
         }
 
         resolved = resolver.resolve_rule(rule)
@@ -1105,39 +1019,35 @@ class TestComplexScenarios:
 
     def test_rule_with_all_field_types(self):
         """Should handle all possible rule fields"""
-        refs = {'vars': {'priority': 75}}
+        refs = {"vars": {"priority": 75}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
-            'id': 'complete',
-            'enabled': True,
-            'priority': '${vars.priority}',
-            'context': 'weekly-cleanup',
-            'stop_on_match': True,
-            'description': 'Test rule with all fields',
-            'conditions': [
-                {'field': 'info.ratio', 'operator': '>=', 'value': 1.0}
-            ],
-            'actions': [
-                {'type': 'stop'}
-            ]
+            "id": "complete",
+            "enabled": True,
+            "priority": "${vars.priority}",
+            "context": "weekly-cleanup",
+            "stop_on_match": True,
+            "description": "Test rule with all fields",
+            "conditions": [{"field": "info.ratio", "operator": ">=", "value": 1.0}],
+            "actions": [{"type": "stop"}],
         }
 
         resolved = resolver.resolve_rule(rule)
 
         # Verify variable substitution in non-standard location
-        assert resolved['priority'] == 75
-        assert resolved['enabled'] is True
-        assert resolved['stop_on_match'] is True
+        assert resolved["priority"] == 75
+        assert resolved["enabled"] is True
+        assert resolved["stop_on_match"] is True
 
     def test_empty_refs_block(self):
         """Should handle completely empty refs block"""
         resolver = RuleResolver(refs={})
 
         rule = {
-            'id': 'test',
-            'conditions': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}],
-            'actions': [{'type': 'stop'}]
+            "id": "test",
+            "conditions": [{"field": "info.ratio", "operator": ">=", "value": 1.0}],
+            "actions": [{"type": "stop"}],
         }
 
         resolved = resolver.resolve_rule(rule)
@@ -1146,10 +1056,12 @@ class TestComplexScenarios:
     def test_performance_with_100_rules(self):
         """Should handle large number of rules efficiently"""
         refs = {
-            'vars': {'ratio': 1.0},
-            'conditions': {
-                'test': {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': '${vars.ratio}'}]}
-            }
+            "vars": {"ratio": 1.0},
+            "conditions": {
+                "test": {
+                    "all": [{"field": "info.ratio", "operator": ">=", "value": "${vars.ratio}"}]
+                }
+            },
         }
         resolver = RuleResolver(refs=refs)
 
@@ -1157,9 +1069,9 @@ class TestComplexScenarios:
         rules = []
         for i in range(100):
             rule = {
-                'id': f'rule-{i}',
-                'conditions': [{'$ref': 'conditions.test'}],
-                'actions': [{'type': 'add_tag', 'params': {'tags': [f'tag-{i}']}}]
+                "id": f"rule-{i}",
+                "conditions": [{"$ref": "conditions.test"}],
+                "actions": [{"type": "add_tag", "params": {"tags": [f"tag-{i}"]}}],
             }
             rules.append(rule)
 
@@ -1168,4 +1080,4 @@ class TestComplexScenarios:
 
         # Verify all resolved correctly
         assert len(resolved_rules) == 100
-        assert all(r['conditions'][0]['all'][0]['value'] == 1.0 for r in resolved_rules)
+        assert all(r["conditions"][0]["all"][0]["value"] == 1.0 for r in resolved_rules)

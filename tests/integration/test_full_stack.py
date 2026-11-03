@@ -41,7 +41,7 @@ def mock_config(mocker):
     """Create mock config"""
     config = mocker.MagicMock()
     config.is_dry_run.return_value = False
-    config.qbittorrent.host = 'localhost'
+    config.qbittorrent.host = "localhost"
     config.qbittorrent.port = 8080
     return config
 
@@ -67,14 +67,14 @@ def mock_engine(mocker):
     return engine
 
 
-@pytest.fixture(params=['sqlite'])  # Can add 'redis' when Redis available
+@pytest.fixture(params=["sqlite"])  # Can add 'redis' when Redis available
 def queue_backend(request, temp_db_path):
     """Create queue backend (parametrized for SQLite/Redis)"""
-    if request.param == 'sqlite':
-        queue = create_queue('sqlite', db_path=temp_db_path)
-    elif request.param == 'redis':
+    if request.param == "sqlite":
+        queue = create_queue("sqlite", db_path=temp_db_path)
+    elif request.param == "redis":
         # Only if Redis available
-        queue = create_queue('redis', redis_url='redis://localhost:6379/15')
+        queue = create_queue("redis", redis_url="redis://localhost:6379/15")
 
     yield queue
 
@@ -86,13 +86,13 @@ def queue_backend(request, temp_db_path):
 def worker_instance(queue_backend, mock_api, mock_config, mock_engine, mocker):
     """Create worker instance with mocked engine"""
     # Mock RulesEngine to avoid actual qBittorrent calls
-    mocker.patch('qbt_rules.worker.RulesEngine', return_value=mock_engine)
+    mocker.patch("qbt_rules.worker.RulesEngine", return_value=mock_engine)
 
     worker = Worker(
         queue=queue_backend,
         api=mock_api,
         config=mock_config,
-        poll_interval=0.01  # Fast polling for tests
+        poll_interval=0.01,  # Fast polling for tests
     )
 
     yield worker
@@ -105,9 +105,9 @@ def worker_instance(queue_backend, mock_api, mock_config, mock_engine, mocker):
 @pytest.fixture
 def app(queue_backend, worker_instance):
     """Create Flask app with real queue and worker"""
-    api_key = 'test-integration-key-12345'
+    api_key = "test-integration-key-12345"
     app = create_app(queue_backend, worker_instance, api_key)
-    app.config['TESTING'] = True
+    app.config["TESTING"] = True
     return app
 
 
@@ -120,7 +120,7 @@ def client(app):
 @pytest.fixture
 def auth_headers():
     """Authentication headers"""
-    return {'X-API-Key': 'test-integration-key-12345'}
+    return {"X-API-Key": "test-integration-key-12345"}
 
 
 class TestFullJobLifecycle:
@@ -132,22 +132,22 @@ class TestFullJobLifecycle:
         worker_instance.start()
 
         # Enqueue job via API
-        response = client.post('/api/execute?context=weekly-cleanup', headers=auth_headers)
+        response = client.post("/api/execute?context=weekly-cleanup", headers=auth_headers)
 
         assert response.status_code == 202
         data = response.json
-        job_id = data['job_id']
+        job_id = data["job_id"]
 
         # Wait for job to be processed
         time.sleep(0.5)
 
         # Check job status via API
-        response = client.get(f'/api/jobs/{job_id}', headers=auth_headers)
+        response = client.get(f"/api/jobs/{job_id}", headers=auth_headers)
         assert response.status_code == 200
 
         job = response.json
-        assert job['status'] == JobStatus.COMPLETED
-        assert job['result'] is not None
+        assert job["status"] == JobStatus.COMPLETED
+        assert job["result"] is not None
 
         # Cleanup
         worker_instance.stop()
@@ -157,20 +157,20 @@ class TestFullJobLifecycle:
         worker_instance.start()
 
         # Enqueue with hash
-        response = client.post('/api/execute?hash=abc123', headers=auth_headers)
+        response = client.post("/api/execute?hash=abc123", headers=auth_headers)
         assert response.status_code == 202
 
-        job_id = response.json['job_id']
+        job_id = response.json["job_id"]
 
         # Wait for processing
         time.sleep(0.5)
 
         # Verify job completed
-        response = client.get(f'/api/jobs/{job_id}', headers=auth_headers)
+        response = client.get(f"/api/jobs/{job_id}", headers=auth_headers)
         job = response.json
 
-        assert job['status'] == JobStatus.COMPLETED
-        assert job['hash'] == 'abc123'
+        assert job["status"] == JobStatus.COMPLETED
+        assert job["hash"] == "abc123"
 
         worker_instance.stop()
 
@@ -181,18 +181,18 @@ class TestFullJobLifecycle:
         # Enqueue multiple jobs
         job_ids = []
         for i in range(3):
-            response = client.post(f'/api/execute?context=test-{i}', headers=auth_headers)
+            response = client.post(f"/api/execute?context=test-{i}", headers=auth_headers)
             assert response.status_code == 202
-            job_ids.append(response.json['job_id'])
+            job_ids.append(response.json["job_id"])
 
         # Wait for all to complete
         time.sleep(1.0)
 
         # Verify all completed
         for job_id in job_ids:
-            response = client.get(f'/api/jobs/{job_id}', headers=auth_headers)
+            response = client.get(f"/api/jobs/{job_id}", headers=auth_headers)
             job = response.json
-            assert job['status'] == JobStatus.COMPLETED
+            assert job["status"] == JobStatus.COMPLETED
 
         worker_instance.stop()
 
@@ -200,19 +200,19 @@ class TestFullJobLifecycle:
         """Should include execution statistics in result"""
         worker_instance.start()
 
-        response = client.post('/api/execute', headers=auth_headers)
-        job_id = response.json['job_id']
+        response = client.post("/api/execute", headers=auth_headers)
+        job_id = response.json["job_id"]
 
         time.sleep(0.5)
 
-        response = client.get(f'/api/jobs/{job_id}', headers=auth_headers)
+        response = client.get(f"/api/jobs/{job_id}", headers=auth_headers)
         job = response.json
 
-        assert 'result' in job
-        result = job['result']
-        assert 'torrents_processed' in result
-        assert 'rules_matched' in result
-        assert 'actions_executed' in result
+        assert "result" in job
+        result = job["result"]
+        assert "torrents_processed" in result
+        assert "rules_matched" in result
+        assert "actions_executed" in result
 
         worker_instance.stop()
 
@@ -227,21 +227,23 @@ class TestJobFailureHandling:
 
         worker_instance.start()
 
-        response = client.post('/api/execute', headers=auth_headers)
-        job_id = response.json['job_id']
+        response = client.post("/api/execute", headers=auth_headers)
+        job_id = response.json["job_id"]
 
         time.sleep(0.5)
 
-        response = client.get(f'/api/jobs/{job_id}', headers=auth_headers)
+        response = client.get(f"/api/jobs/{job_id}", headers=auth_headers)
         job = response.json
 
-        assert job['status'] == JobStatus.FAILED
-        assert 'error' in job
-        assert 'ValueError' in job['error']
+        assert job["status"] == JobStatus.FAILED
+        assert "error" in job
+        assert "ValueError" in job["error"]
 
         worker_instance.stop()
 
-    def test_worker_continues_after_job_failure(self, client, auth_headers, worker_instance, mock_engine):
+    def test_worker_continues_after_job_failure(
+        self, client, auth_headers, worker_instance, mock_engine
+    ):
         """Should continue processing after job failure"""
         # First job fails, second succeeds
         mock_engine.run.side_effect = [ValueError("Error"), None]
@@ -249,21 +251,21 @@ class TestJobFailureHandling:
         worker_instance.start()
 
         # Enqueue two jobs
-        response1 = client.post('/api/execute', headers=auth_headers)
-        job1_id = response1.json['job_id']
+        response1 = client.post("/api/execute", headers=auth_headers)
+        job1_id = response1.json["job_id"]
 
-        response2 = client.post('/api/execute', headers=auth_headers)
-        job2_id = response2.json['job_id']
+        response2 = client.post("/api/execute", headers=auth_headers)
+        job2_id = response2.json["job_id"]
 
         time.sleep(0.8)
 
         # First job failed
-        job1 = client.get(f'/api/jobs/{job1_id}', headers=auth_headers).json
-        assert job1['status'] == JobStatus.FAILED
+        job1 = client.get(f"/api/jobs/{job1_id}", headers=auth_headers).json
+        assert job1["status"] == JobStatus.FAILED
 
         # Second job completed
-        job2 = client.get(f'/api/jobs/{job2_id}', headers=auth_headers).json
-        assert job2['status'] == JobStatus.COMPLETED
+        job2 = client.get(f"/api/jobs/{job2_id}", headers=auth_headers).json
+        assert job2["status"] == JobStatus.COMPLETED
 
         worker_instance.stop()
 
@@ -274,38 +276,38 @@ class TestJobCancellation:
     def test_cancel_pending_job(self, client, auth_headers, queue_backend):
         """Should cancel job before it's processed"""
         # Enqueue job (worker not started)
-        response = client.post('/api/execute', headers=auth_headers)
-        job_id = response.json['job_id']
+        response = client.post("/api/execute", headers=auth_headers)
+        job_id = response.json["job_id"]
 
         # Job should be pending
-        job = client.get(f'/api/jobs/{job_id}', headers=auth_headers).json
-        assert job['status'] == JobStatus.PENDING
+        job = client.get(f"/api/jobs/{job_id}", headers=auth_headers).json
+        assert job["status"] == JobStatus.PENDING
 
         # Cancel it
-        response = client.delete(f'/api/jobs/{job_id}', headers=auth_headers)
+        response = client.delete(f"/api/jobs/{job_id}", headers=auth_headers)
         assert response.status_code == 200
 
         # Verify cancelled
-        job = client.get(f'/api/jobs/{job_id}', headers=auth_headers).json
-        assert job['status'] == JobStatus.CANCELLED
+        job = client.get(f"/api/jobs/{job_id}", headers=auth_headers).json
+        assert job["status"] == JobStatus.CANCELLED
 
     def test_cannot_cancel_processing_job(self, client, auth_headers, worker_instance):
         """Should not cancel job that is already processing"""
         worker_instance.start()
 
         # Enqueue job
-        response = client.post('/api/execute', headers=auth_headers)
-        job_id = response.json['job_id']
+        response = client.post("/api/execute", headers=auth_headers)
+        job_id = response.json["job_id"]
 
         # Wait a bit for it to start processing
         time.sleep(0.1)
 
         # Try to cancel (might be processing)
-        response = client.delete(f'/api/jobs/{job_id}', headers=auth_headers)
+        response = client.delete(f"/api/jobs/{job_id}", headers=auth_headers)
 
         # If it's processing, should get 400
         if response.status_code == 400:
-            assert 'Cannot cancel' in response.json['message']
+            assert "Cannot cancel" in response.json["message"]
 
         worker_instance.stop()
 
@@ -319,17 +321,17 @@ class TestListAndFilterJobs:
 
         # Create multiple jobs
         for i in range(3):
-            client.post(f'/api/execute?context=test-{i}', headers=auth_headers)
+            client.post(f"/api/execute?context=test-{i}", headers=auth_headers)
 
         time.sleep(0.8)
 
         # List all jobs
-        response = client.get('/api/jobs', headers=auth_headers)
+        response = client.get("/api/jobs", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json
-        assert data['total'] >= 3
-        assert len(data['jobs']) >= 3
+        assert data["total"] >= 3
+        assert len(data["jobs"]) >= 3
 
         worker_instance.stop()
 
@@ -338,18 +340,18 @@ class TestListAndFilterJobs:
         worker_instance.start()
 
         # Create jobs
-        client.post('/api/execute', headers=auth_headers)
-        client.post('/api/execute', headers=auth_headers)
+        client.post("/api/execute", headers=auth_headers)
+        client.post("/api/execute", headers=auth_headers)
 
         time.sleep(0.8)
 
         # Filter by completed
-        response = client.get('/api/jobs?status=completed', headers=auth_headers)
+        response = client.get("/api/jobs?status=completed", headers=auth_headers)
         data = response.json
 
-        assert data['total'] >= 2
-        for job in data['jobs']:
-            assert job['status'] == JobStatus.COMPLETED
+        assert data["total"] >= 2
+        for job in data["jobs"]:
+            assert job["status"] == JobStatus.COMPLETED
 
         worker_instance.stop()
 
@@ -358,18 +360,18 @@ class TestListAndFilterJobs:
         worker_instance.start()
 
         # Create jobs with different contexts
-        client.post('/api/execute?context=weekly-cleanup', headers=auth_headers)
-        client.post('/api/execute?context=torrent-imported', headers=auth_headers)
+        client.post("/api/execute?context=weekly-cleanup", headers=auth_headers)
+        client.post("/api/execute?context=torrent-imported", headers=auth_headers)
 
         time.sleep(0.8)
 
         # Filter by context
-        response = client.get('/api/jobs?context=weekly-cleanup', headers=auth_headers)
+        response = client.get("/api/jobs?context=weekly-cleanup", headers=auth_headers)
         data = response.json
 
-        assert data['total'] >= 1
-        for job in data['jobs']:
-            assert job['context'] == 'weekly-cleanup'
+        assert data["total"] >= 1
+        for job in data["jobs"]:
+            assert job["context"] == "weekly-cleanup"
 
         worker_instance.stop()
 
@@ -379,25 +381,25 @@ class TestListAndFilterJobs:
 
         # Create multiple jobs
         for i in range(5):
-            client.post('/api/execute', headers=auth_headers)
+            client.post("/api/execute", headers=auth_headers)
 
         time.sleep(1.0)
 
         # Get first page
-        response = client.get('/api/jobs?limit=2&offset=0', headers=auth_headers)
+        response = client.get("/api/jobs?limit=2&offset=0", headers=auth_headers)
         page1 = response.json
 
-        assert len(page1['jobs']) == 2
+        assert len(page1["jobs"]) == 2
 
         # Get second page
-        response = client.get('/api/jobs?limit=2&offset=2', headers=auth_headers)
+        response = client.get("/api/jobs?limit=2&offset=2", headers=auth_headers)
         page2 = response.json
 
-        assert len(page2['jobs']) == 2
+        assert len(page2["jobs"]) == 2
 
         # Should be different jobs
-        page1_ids = [j['job_id'] for j in page1['jobs']]
-        page2_ids = [j['job_id'] for j in page2['jobs']]
+        page1_ids = [j["job_id"] for j in page1["jobs"]]
+        page2_ids = [j["job_id"] for j in page2["jobs"]]
         assert set(page1_ids).isdisjoint(set(page2_ids))
 
         worker_instance.stop()
@@ -410,14 +412,14 @@ class TestHealthChecks:
         """Should report healthy when all components working"""
         worker_instance.start()
 
-        response = client.get('/api/health')
+        response = client.get("/api/health")
         assert response.status_code == 200
 
         data = response.json
-        assert data['status'] == 'healthy'
-        assert data['version'] == __version__
-        assert 'queue' in data
-        assert 'worker' in data
+        assert data["status"] == "healthy"
+        assert data["version"] == __version__
+        assert "queue" in data
+        assert "worker" in data
 
         worker_instance.stop()
 
@@ -425,12 +427,12 @@ class TestHealthChecks:
         """Should report unhealthy when worker is dead"""
         # Don't start worker
 
-        response = client.get('/api/health')
+        response = client.get("/api/health")
         assert response.status_code == 503
 
         data = response.json
-        assert data['status'] == 'unhealthy'
-        assert any('Worker thread not running' in err for err in data['errors'])
+        assert data["status"] == "unhealthy"
+        assert any("Worker thread not running" in err for err in data["errors"])
 
     def test_health_includes_queue_depth(self, client, worker_instance, auth_headers):
         """Should include current queue depth"""
@@ -439,15 +441,15 @@ class TestHealthChecks:
 
         # Enqueue some jobs
         for i in range(3):
-            client.post('/api/execute', headers=auth_headers)
+            client.post("/api/execute", headers=auth_headers)
 
-        response = client.get('/api/health')
+        response = client.get("/api/health")
         data = response.json
 
         # Should be healthy and include queue info
         assert response.status_code == 200
-        assert 'queue' in data
-        assert data['queue']['pending_jobs'] >= 0  # Jobs may have been processed
+        assert "queue" in data
+        assert data["queue"]["pending_jobs"] >= 0  # Jobs may have been processed
 
         worker_instance.stop()
 
@@ -460,21 +462,21 @@ class TestStatistics:
         worker_instance.start()
 
         # Create some jobs
-        client.post('/api/execute', headers=auth_headers)
-        client.post('/api/execute', headers=auth_headers)
+        client.post("/api/execute", headers=auth_headers)
+        client.post("/api/execute", headers=auth_headers)
 
         time.sleep(0.8)
 
-        response = client.get('/api/stats', headers=auth_headers)
+        response = client.get("/api/stats", headers=auth_headers)
         assert response.status_code == 200
 
         data = response.json
-        assert 'jobs' in data
-        assert 'performance' in data
-        assert 'queue' in data
-        assert 'worker' in data
+        assert "jobs" in data
+        assert "performance" in data
+        assert "queue" in data
+        assert "worker" in data
 
-        assert data['jobs']['completed'] >= 2
+        assert data["jobs"]["completed"] >= 2
 
         worker_instance.stop()
 
@@ -483,15 +485,15 @@ class TestStatistics:
         worker_instance.start()
 
         # Process jobs
-        client.post('/api/execute', headers=auth_headers)
+        client.post("/api/execute", headers=auth_headers)
         time.sleep(0.5)
 
-        response = client.get('/api/stats', headers=auth_headers)
+        response = client.get("/api/stats", headers=auth_headers)
         data = response.json
 
         # Should have performance metrics
-        assert 'performance' in data
-        assert 'average_execution_time' in data['performance']
+        assert "performance" in data
+        assert "average_execution_time" in data["performance"]
 
         worker_instance.stop()
 
@@ -501,13 +503,13 @@ class TestVersionEndpoint:
 
     def test_version_endpoint(self, client):
         """Should return version information"""
-        response = client.get('/api/version')
+        response = client.get("/api/version")
         assert response.status_code == 200
 
         data = response.json
-        assert data['version'] == __version__
-        assert data['api_version'] == '1.0'
-        assert 'python_version' in data
+        assert data["version"] == __version__
+        assert data["api_version"] == "1.0"
+        assert "python_version" in data
 
 
 class TestWorkerGracefulShutdown:
@@ -523,8 +525,11 @@ class TestWorkerGracefulShutdown:
         assert not worker_instance.is_alive()
         assert worker_instance.running is False
 
-    def test_worker_completes_current_job_before_stopping(self, worker_instance, queue_backend, mock_engine, mocker):
+    def test_worker_completes_current_job_before_stopping(
+        self, worker_instance, queue_backend, mock_engine, mocker
+    ):
         """Should complete current job before stopping"""
+
         # Make job take some time
         def slow_run(*args, **kwargs):
             time.sleep(0.2)
@@ -532,7 +537,7 @@ class TestWorkerGracefulShutdown:
         mock_engine.run.side_effect = slow_run
 
         # Enqueue job and start worker
-        job_id = queue_backend.enqueue(context='test')
+        job_id = queue_backend.enqueue(context="test")
         worker_instance.start()
 
         # Wait for job to start
@@ -543,7 +548,7 @@ class TestWorkerGracefulShutdown:
 
         # Job should be completed
         job = queue_backend.get_job(job_id)
-        assert job['status'] == JobStatus.COMPLETED
+        assert job["status"] == JobStatus.COMPLETED
 
 
 class TestConcurrentOperations:
@@ -558,7 +563,7 @@ class TestConcurrentOperations:
         responses = []
 
         def submit_job():
-            response = client.post('/api/execute', headers=auth_headers)
+            response = client.post("/api/execute", headers=auth_headers)
             responses.append(response)
 
         # Submit 5 jobs concurrently
@@ -574,7 +579,7 @@ class TestConcurrentOperations:
             assert response.status_code == 202
 
         # All should have unique job IDs
-        job_ids = [r.json['job_id'] for r in responses]
+        job_ids = [r.json["job_id"] for r in responses]
         assert len(set(job_ids)) == 5
 
         worker_instance.stop()
@@ -586,15 +591,15 @@ class TestConcurrentOperations:
         worker_instance.start()
 
         # Create a job
-        response = client.post('/api/execute', headers=auth_headers)
-        job_id = response.json['job_id']
+        response = client.post("/api/execute", headers=auth_headers)
+        job_id = response.json["job_id"]
 
         time.sleep(0.5)  # Let it complete
 
         responses = []
 
         def query_job():
-            response = client.get(f'/api/jobs/{job_id}', headers=auth_headers)
+            response = client.get(f"/api/jobs/{job_id}", headers=auth_headers)
             responses.append(response)
 
         # Query concurrently
@@ -615,27 +620,29 @@ class TestConcurrentOperations:
 class TestQueueBackendSwitching:
     """Test that system works with different queue backends"""
 
-    def test_sqlite_backend_integration(self, temp_db_path, mock_api, mock_config, mock_engine, mocker):
+    def test_sqlite_backend_integration(
+        self, temp_db_path, mock_api, mock_config, mock_engine, mocker
+    ):
         """Should work correctly with SQLite backend"""
-        mocker.patch('qbt_rules.worker.RulesEngine', return_value=mock_engine)
+        mocker.patch("qbt_rules.worker.RulesEngine", return_value=mock_engine)
 
         # Create SQLite queue
-        queue = create_queue('sqlite', db_path=temp_db_path)
+        queue = create_queue("sqlite", db_path=temp_db_path)
         worker = Worker(queue, mock_api, mock_config, poll_interval=0.01)
-        app = create_app(queue, worker, 'test-key')
+        app = create_app(queue, worker, "test-key")
         client = app.test_client()
 
         worker.start()
 
         # Test basic operation
-        response = client.post('/api/execute', headers={'X-API-Key': 'test-key'})
+        response = client.post("/api/execute", headers={"X-API-Key": "test-key"})
         assert response.status_code == 202
 
         time.sleep(0.5)
 
-        job_id = response.json['job_id']
-        job = client.get(f'/api/jobs/{job_id}', headers={'X-API-Key': 'test-key'}).json
-        assert job['status'] == JobStatus.COMPLETED
+        job_id = response.json["job_id"]
+        job = client.get(f"/api/jobs/{job_id}", headers={"X-API-Key": "test-key"}).json
+        assert job["status"] == JobStatus.COMPLETED
 
         worker.stop()
         queue.close()
@@ -646,20 +653,20 @@ class TestErrorHandling:
 
     def test_invalid_job_id(self, client, auth_headers):
         """Should return 404 for invalid job ID"""
-        response = client.get('/api/jobs/invalid-id', headers=auth_headers)
+        response = client.get("/api/jobs/invalid-id", headers=auth_headers)
         assert response.status_code == 404
 
     def test_invalid_status_filter(self, client, auth_headers):
         """Should return 400 for invalid status"""
-        response = client.get('/api/jobs?status=invalid', headers=auth_headers)
+        response = client.get("/api/jobs?status=invalid", headers=auth_headers)
         assert response.status_code == 400
 
     def test_missing_authentication(self, client):
         """Should return 401 without API key"""
-        response = client.post('/api/execute')
+        response = client.post("/api/execute")
         assert response.status_code == 401
 
     def test_invalid_api_key(self, client):
         """Should return 401 with wrong API key"""
-        response = client.post('/api/execute', headers={'X-API-Key': 'wrong-key'})
+        response = client.post("/api/execute", headers={"X-API-Key": "wrong-key"})
         assert response.status_code == 401

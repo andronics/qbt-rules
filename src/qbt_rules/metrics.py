@@ -39,6 +39,7 @@ def is_available() -> bool:
     """Check whether the prometheus_client package is installed, without importing it at module scope."""
     try:
         import prometheus_client  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -71,7 +72,13 @@ def init(enabled: bool) -> None:
             mirroring queue_manager.py's create_queue() ValueError for a
             missing 'redis' package.
     """
-    global _enabled, _actions_executed, _job_duration, _scheduler_fires, _http_requests, _http_duration
+    global \
+        _enabled, \
+        _actions_executed, \
+        _job_duration, \
+        _scheduler_fires, \
+        _http_requests, \
+        _http_duration
 
     if not enabled:
         _enabled = False
@@ -94,32 +101,32 @@ def init(enabled: bool) -> None:
     # safely callable more than once in the same process, which the
     # default registry's duplicate-timeseries check would otherwise forbid.
     _actions_executed = Counter(
-        'qbt_rules_actions_executed_total',
-        'Total actions executed by the rules engine (excludes dry-run and idempotent skips)',
-        ['action_type', 'result'],
+        "qbt_rules_actions_executed_total",
+        "Total actions executed by the rules engine (excludes dry-run and idempotent skips)",
+        ["action_type", "result"],
         registry=None,
     )
     _job_duration = Histogram(
-        'qbt_rules_job_duration_seconds',
-        'Job execution duration in seconds',
+        "qbt_rules_job_duration_seconds",
+        "Job execution duration in seconds",
         registry=None,
     )
     _scheduler_fires = Counter(
-        'qbt_rules_scheduler_fires_total',
-        'Total internal cron scheduler fires',
-        ['result'],
+        "qbt_rules_scheduler_fires_total",
+        "Total internal cron scheduler fires",
+        ["result"],
         registry=None,
     )
     _http_requests = Counter(
-        'qbt_rules_http_requests_total',
-        'Total HTTP requests',
-        ['method', 'endpoint', 'status'],
+        "qbt_rules_http_requests_total",
+        "Total HTTP requests",
+        ["method", "endpoint", "status"],
         registry=None,
     )
     _http_duration = Histogram(
-        'qbt_rules_http_request_duration_seconds',
-        'HTTP request duration in seconds',
-        ['method', 'endpoint'],
+        "qbt_rules_http_request_duration_seconds",
+        "HTTP request duration in seconds",
+        ["method", "endpoint"],
         registry=None,
     )
 
@@ -130,7 +137,9 @@ def record_action_executed(action_type: str, success: bool) -> None:
     """Record one action execution. No-op unless init(enabled=True) has run."""
     if not _enabled:
         return
-    _actions_executed.labels(action_type=action_type, result='success' if success else 'failure').inc()
+    _actions_executed.labels(
+        action_type=action_type, result="success" if success else "failure"
+    ).inc()
 
 
 def record_job_duration(seconds: float) -> None:
@@ -144,7 +153,7 @@ def record_scheduler_fire(success: bool) -> None:
     """Record one scheduler fire attempt. No-op unless init(enabled=True) has run."""
     if not _enabled:
         return
-    _scheduler_fires.labels(result='success' if success else 'failure').inc()
+    _scheduler_fires.labels(result="success" if success else "failure").inc()
 
 
 def record_http_request(method: str, endpoint: str, status: int, duration: float) -> None:
@@ -188,20 +197,20 @@ def _build_state_collector(
     class _StateCollector(Collector):
         def collect(self):
             depth = GaugeMetricFamily(
-                'qbt_rules_queue_depth', 'Current pending queue depth', labels=['backend']
+                "qbt_rules_queue_depth", "Current pending queue depth", labels=["backend"]
             )
             depth.add_metric([queue_backend], queue_depth)
             yield depth
 
             jobs = GaugeMetricFamily(
-                'qbt_rules_jobs_total', 'Total jobs by status', labels=['status']
+                "qbt_rules_jobs_total", "Total jobs by status", labels=["status"]
             )
-            for status in ('pending', 'processing', 'completed', 'failed', 'cancelled'):
+            for status in ("pending", "processing", "completed", "failed", "cancelled"):
                 jobs.add_metric([status], job_counts.get(status, 0))
             yield jobs
 
             running = GaugeMetricFamily(
-                'qbt_rules_worker_running', 'Worker thread running (1) or not (0)'
+                "qbt_rules_worker_running", "Worker thread running (1) or not (0)"
             )
             running.add_metric([], 1 if worker_running else 0)
             yield running
@@ -209,14 +218,14 @@ def _build_state_collector(
             last_completed = _iso_to_unix_timestamp(worker_last_job_completed)
             if last_completed is not None:
                 last_completed_family = GaugeMetricFamily(
-                    'qbt_rules_worker_last_job_completed_timestamp_seconds',
-                    'Unix timestamp of the last job the worker completed',
+                    "qbt_rules_worker_last_job_completed_timestamp_seconds",
+                    "Unix timestamp of the last job the worker completed",
                 )
                 last_completed_family.add_metric([], last_completed)
                 yield last_completed_family
 
             entries = GaugeMetricFamily(
-                'qbt_rules_scheduler_entries', 'Number of configured schedule entries'
+                "qbt_rules_scheduler_entries", "Number of configured schedule entries"
             )
             entries.add_metric([], schedule_entry_count)
             yield entries
@@ -245,14 +254,21 @@ def generate_metrics_output(
 
     registry = CollectorRegistry()
     multiprocess.MultiProcessCollector(registry)
-    registry.register(_build_state_collector(
-        queue_backend, queue_depth, job_counts, worker_running,
-        worker_last_job_completed, schedule_entry_count,
-    ))
+    registry.register(
+        _build_state_collector(
+            queue_backend,
+            queue_depth,
+            job_counts,
+            worker_running,
+            worker_last_job_completed,
+            schedule_entry_count,
+        )
+    )
     return generate_latest(registry)
 
 
 def content_type() -> str:
     """Prometheus exposition format Content-Type header value."""
     from prometheus_client import CONTENT_TYPE_LATEST
+
     return CONTENT_TYPE_LATEST
