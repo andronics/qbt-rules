@@ -80,6 +80,10 @@ RUN mkdir -p /etc/qbt-rules /var/lib/qbt-rules \
     && chown qbt-rules:qbt-rules /var/lib/qbt-rules
 COPY contrib/qbt-rules.example.yaml /usr/share/qbt-rules/config.example.yaml
 
+# Relative paths resolve in the state directory, never in / (where an old
+# volume such as /config could be read by mistake): template-python decision 0009
+WORKDIR /var/lib/qbt-rules
+
 # Bind every interface whatever the app's default: in a container, the
 # published ports decide what is reachable, and loopback would be unreachable
 ENV QBT_RULES_LISTEN_HOST=0.0.0.0
@@ -92,7 +96,7 @@ RUN chmod 0755 /opt/qbt-rules/bin/qbt-rules
 ENV PATH="/opt/qbt-rules/bin:$PATH"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen(f\"http://127.0.0.1:{os.environ.get('QBT_RULES_LISTEN_PORT', '5000')}/api/health\", timeout=4)"]
+    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen(f\"http://127.0.0.1:{os.environ.get('QBT_RULES_LISTEN_PORT', '5000')}/healthz\", timeout=4)"]
 
 EXPOSE 5000
 VOLUME ["/var/lib/qbt-rules"]
