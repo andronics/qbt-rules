@@ -623,15 +623,13 @@ class _Linter:
         if "field" in node:
             self.field(node["field"], (*path, "field"))
         operator = node.get("operator")
-        if "operator" in node:
-            if operator not in schema.OPERATORS:
-                self.add(
-                    ERROR,
-                    f"Unknown operator '{operator}' (expected one of: "
-                    f"{', '.join(schema.OPERATORS)})",
-                    (*path, "operator"),
-                )
-                operator = None
+        if "operator" in node and operator not in schema.OPERATORS:
+            self.add(
+                ERROR,
+                f"Unknown operator '{operator}' (expected one of: {', '.join(schema.OPERATORS)})",
+                (*path, "operator"),
+            )
+            operator = None
         if operator and "value" in node:
             self.value(operator, node["value"], (*path, "value"))
 
@@ -682,7 +680,8 @@ class _Linter:
             if not m or (m.group(2) and m.group(2) not in _SIZE_UNITS):
                 self.add(
                     ERROR,
-                    f"{value!r} is not a size qbt-rules understands -- write it like '10 GB' or '500 MiB'",
+                    f"{value!r} is not a size qbt-rules understands -- write it like '10 GB' or "
+                    "'500 MiB'",
                     path,
                 )
             elif m.group(2) and m.group(2).endswith("b"):
@@ -697,7 +696,8 @@ class _Linter:
         elif kind == "string" and not isinstance(value, (str, list)):
             self.add(
                 ERROR,
-                f"'{operator}' needs text (or a list of text), so a {type(value).__name__} never matches",
+                f"'{operator}' needs text (or a list of text), so a {type(value).__name__} never "
+                "matches",
                 path,
             )
 

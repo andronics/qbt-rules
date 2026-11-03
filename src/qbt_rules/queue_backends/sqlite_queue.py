@@ -8,6 +8,7 @@ File-based queue implementation using SQLite with:
 - Automatic schema migration
 """
 
+import contextlib
 import json
 import logging
 import sqlite3
@@ -366,7 +367,8 @@ class SQLiteQueue(QueueManager):
 
         params.append(job_id)
 
-        query = f"UPDATE jobs SET {', '.join(updates)} WHERE id = ?"
+        # Only fixed "column = ?" fragments are joined in; values stay bound parameters
+        query = f"UPDATE jobs SET {', '.join(updates)} WHERE id = ?"  # noqa: S608
         cursor = conn.execute(query, params)
 
         return cursor.rowcount > 0
@@ -488,10 +490,9 @@ class SQLiteQueue(QueueManager):
         # Close all tracked connections
         with self._conn_lock:
             for conn in self._connections:
-                try:
+                # Connection might already be closed
+                with contextlib.suppress(Exception):
                     conn.close()
-                except Exception:
-                    pass  # Connection might already be closed
             self._connections.clear()
 
         # Also close thread-local connection if exists

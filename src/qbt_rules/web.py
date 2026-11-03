@@ -252,7 +252,9 @@ def require_api_key_or_session(f):
             return jsonify(
                 {
                     "error": "Forbidden",
-                    "message": "Missing or invalid X-CSRF-Token header -- reload the page and try again",
+                    "message": (
+                        "Missing or invalid X-CSRF-Token header -- reload the page and try again"
+                    ),
                 }
             ), 403
 
@@ -769,7 +771,9 @@ def register_editor_routes(app: Flask):
             return jsonify(
                 {
                     "error": "Unprocessable Entity",
-                    "message": f"rules.yml has {validation['counts']['error']} error(s) -- not saved",
+                    "message": (
+                        f"rules.yml has {validation['counts']['error']} error(s) -- not saved"
+                    ),
                     "validation": validation,
                 }
             ), 422
@@ -1110,7 +1114,7 @@ def _register_http_metrics_hooks(app: Flask):
 
 def run_server(
     app: Flask,
-    host: str = "0.0.0.0",
+    host: str = "0.0.0.0",  # noqa: S104  container default; callers pass server.host
     port: int = 5000,
     workers: int = 1,
     log_http_access: bool = False,

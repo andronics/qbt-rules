@@ -87,8 +87,8 @@ def setup_logging(logging_config: dict[str, Any]):
         _file_settings = settings
     except (PermissionError, OSError) as e:
         # Fall back to console-only logging
-        print(f"Cannot setup file logging: {e}", file=sys.stderr)
-        print("Continuing with console-only logging", file=sys.stderr)
+        print(f"Cannot setup file logging: {e}", file=sys.stderr)  # noqa: T201  logging not set up yet
+        print("Continuing with console-only logging", file=sys.stderr)  # noqa: T201  logging not set up yet
 
     # Console handler (always works) -- stderr, not stdout, so diagnostic
     # logging never contaminates stdout data output (tables/JSON) from the

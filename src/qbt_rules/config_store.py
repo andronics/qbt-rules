@@ -26,6 +26,7 @@ redacted_config_view() is the read-only counterpart for config.yml, which
 holds credentials and is only read at startup -- see its docstring.
 """
 
+import contextlib
 import errno
 import hashlib
 import logging
@@ -121,7 +122,8 @@ class EditableFile:
                 mode = stat.S_IMODE(self.path.stat().st_mode)
                 return (
                     False,
-                    f"{self.path.name} is read-only on disk (mode {mode:04o}) -- make it writable to edit here",
+                    f"{self.path.name} is read-only on disk (mode {mode:04o}) -- make it writable "
+                    "to edit here",
                 )
             except OSError as e:
                 return False, f"{self.path.name} cannot be read: {e.strerror}"
@@ -192,16 +194,12 @@ class EditableFile:
             # mkstemp creates 0600 files owned by whoever we run as -- keep
             # the original's mode, and its owner where we're allowed to
             os.chmod(tmp, stat.S_IMODE(st.st_mode))
-            try:
+            with contextlib.suppress(PermissionError, AttributeError):
                 os.chown(tmp, st.st_uid, st.st_gid)
-            except (PermissionError, AttributeError):
-                pass
             os.replace(tmp, self.path)
         except OSError as e:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            except OSError:
-                pass
             if e.errno not in (errno.EBUSY, errno.EXDEV):
                 raise
             # Single-file bind mount: rewrite in place instead
@@ -228,10 +226,8 @@ class EditableFile:
         version_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
         (self.history_dir / f"{self.path.name}.{version_id}").write_bytes(data)
         for old in self._versions()[self.keep :]:
-            try:
+            with contextlib.suppress(OSError):
                 old[1].unlink()
-            except OSError:
-                pass
 
     def _versions(self) -> list[tuple[str, Path]]:
         """(id, path) newest first"""
@@ -351,7 +347,9 @@ def redacted_config_view(text: str, environ: dict[str, str] | None = None) -> di
                     issues.append(
                         {
                             "severity": "info",
-                            "message": "Replaced by the QBT_RULES_SCHEDULE_<N>_CRON environment variables",
+                            "message": (
+                                "Replaced by the QBT_RULES_SCHEDULE_<N>_CRON environment variables"
+                            ),
                             "path": dotted,
                             "line": key_node.start_mark.line + 1,
                             "column": key_node.start_mark.column + 1,

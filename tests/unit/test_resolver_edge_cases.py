@@ -58,7 +58,7 @@ class TestVariableEdgeCases:
 
         resolved = resolver.resolve_rule(rule)
         assert resolved["conditions"][0]["value"] == 0
-        assert type(resolved["conditions"][0]["value"]) == int
+        assert type(resolved["conditions"][0]["value"]) is int
 
     def test_variable_with_negative_number(self):
         """Should handle negative numbers"""
@@ -87,7 +87,7 @@ class TestVariableEdgeCases:
 
         resolved = resolver.resolve_rule(rule)
         assert resolved["conditions"][0]["value"] is True
-        assert type(resolved["conditions"][0]["value"]) == bool
+        assert type(resolved["conditions"][0]["value"]) is bool
 
     def test_variable_with_boolean_false(self):
         """Should handle boolean False"""

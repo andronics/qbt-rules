@@ -198,7 +198,6 @@ class TestSetupLogging:
         root_logger = logging.getLogger()
         dummy_handler = logging.StreamHandler()
         root_logger.addHandler(dummy_handler)
-        len(root_logger.handlers)
 
         setup_logging(_logging_config(level="INFO", file=log_file))
 

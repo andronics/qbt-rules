@@ -23,10 +23,12 @@ class TestQBittorrentAPIv4Init:
 
         assert api.host == "http://localhost:8080"
         assert api.username == "admin"
-        assert api.password == "password"
+        assert api.password == "password"  # noqa: S105  test fixture value
         assert api._connected is False
         mock_client_class.assert_called_once_with(
-            host="http://localhost:8080", username="admin", password="password"
+            host="http://localhost:8080",
+            username="admin",
+            password="password",  # noqa: S106  test fixture value
         )
 
     @patch("qbt_rules.qbittorrent.qbittorrentapi.Client")

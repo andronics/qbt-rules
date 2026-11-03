@@ -42,12 +42,12 @@ class TestResolveSectionConfig:
             config_obj,
             "server",
             {
-                "host": "0.0.0.0",
+                "host": "0.0.0.0",  # noqa: S104  test fixture value
                 "port": 5000,
             },
         )
 
-        assert result == {"host": "0.0.0.0", "port": 5000}
+        assert result == {"host": "0.0.0.0", "port": 5000}  # noqa: S104  test fixture value
 
     def test_cli_arg_name_auto_derives_from_section_and_field(self):
         """section='server', field='port' -> getattr(args, 'server_port')."""
@@ -382,14 +382,14 @@ class TestGetQbittorrentConfig:
 
         assert config["host"] == "http://qbittorrent:8080"
         assert config["username"] == "myuser"
-        assert config["password"] == "mypass"
+        assert config["password"] == "mypass"  # noqa: S105  test fixture value
 
     def test_uses_args_values(self):
         """Should use CLI argument values when provided"""
         args = Namespace(
             qbittorrent_host="http://cli-host:8080",
             qbittorrent_username="cliuser",
-            qbittorrent_password="clipass",
+            qbittorrent_password="clipass",  # noqa: S106  test fixture value
         )
         config_obj = Mock(config={})
 
@@ -397,7 +397,7 @@ class TestGetQbittorrentConfig:
 
         assert config["host"] == "http://cli-host:8080"
         assert config["username"] == "cliuser"
-        assert config["password"] == "clipass"
+        assert config["password"] == "clipass"  # noqa: S105  test fixture value
 
     def test_uses_env_vars(self):
         """The bug this replaces: QBT_RULES_QBITTORRENT_* env vars used to
@@ -416,7 +416,7 @@ class TestGetQbittorrentConfig:
 
         assert config["host"] == "http://env-host:8080"
         assert config["username"] == "envuser"
-        assert config["password"] == "envpass"
+        assert config["password"] == "envpass"  # noqa: S105  test fixture value
 
     def test_uses_file_env_var_for_password(self, tmp_path):
         """QBT_RULES_QBITTORRENT_PASSWORD_FILE, the documented
@@ -430,7 +430,7 @@ class TestGetQbittorrentConfig:
         with patch.dict(os.environ, {"QBT_RULES_QBITTORRENT_PASSWORD_FILE": str(secret_file)}):
             config = get_qbittorrent_config(args, config_obj)
 
-        assert config["password"] == "file-secret-pass"
+        assert config["password"] == "file-secret-pass"  # noqa: S105  test fixture value
 
     def test_legacy_user_pass_keys_no_longer_work(self):
         """The undocumented 'user'/'pass' config.yml key aliases are gone
@@ -462,7 +462,7 @@ class TestGetServerConfig:
 
         config = get_server_config(args, config_obj)
 
-        assert config["host"] == "0.0.0.0"
+        assert config["host"] == "0.0.0.0"  # noqa: S104  test fixture value
         assert config["port"] == 5000
         assert config["api_key"] is None
         assert config["workers"] == 1
@@ -653,7 +653,7 @@ class TestGetQueueConfig:
         """Should use CLI argument values when provided"""
         args = Namespace(
             queue_backend="redis",
-            queue_sqlite_path="/tmp/test.db",
+            queue_sqlite_path="/tmp/test.db",  # noqa: S108  test fixture value
             queue_redis_url="redis://redis:6379/1",
         )
         config_obj = Mock(config={})
@@ -661,7 +661,7 @@ class TestGetQueueConfig:
         config = get_queue_config(args, config_obj)
 
         assert config["backend"] == "redis"
-        assert config["sqlite_path"] == "/tmp/test.db"
+        assert config["sqlite_path"] == "/tmp/test.db"  # noqa: S108  test fixture value
         assert config["redis_url"] == "redis://redis:6379/1"
 
 
@@ -705,12 +705,12 @@ class TestRunServerMode:
 
         args = Namespace(
             serve=True,
-            server_host="0.0.0.0",
+            server_host="0.0.0.0",  # noqa: S104  test fixture value
             server_port=5000,
             server_api_key="test-key",
             server_workers=1,
             queue_backend="sqlite",
-            queue_sqlite_path="/tmp/test.db",
+            queue_sqlite_path="/tmp/test.db",  # noqa: S108  test fixture value
             queue_redis_url=None,
         )
         config_obj = Mock(
@@ -730,13 +730,16 @@ class TestRunServerMode:
         # Verify queue creation
         mock_create_queue.assert_called_once_with(
             backend="sqlite",
-            db_path="/tmp/test.db",
+            db_path="/tmp/test.db",  # noqa: S108  test fixture value
             redis_url="redis://localhost:6379/0",  # Default value
         )
 
         # Verify API initialization
         mock_api_class.assert_called_once_with(
-            host="http://localhost:8080", username="admin", password="password", connect_now=False
+            host="http://localhost:8080",
+            username="admin",
+            password="password",  # noqa: S106  test fixture value
+            connect_now=False,
         )
 
         # Verify worker initialization
@@ -764,14 +767,14 @@ class TestRunServerMode:
             worker_instance=mock_worker,
             api_key="test-key",
             config=config_obj,
-            metrics_config={"enabled": False, "multiproc_dir": "/tmp/qbt-rules-metrics"},
+            metrics_config={"enabled": False, "multiproc_dir": "/tmp/qbt-rules-metrics"},  # noqa: S108  test fixture value
             editor=True,
         )
 
         # Verify server run
         mock_run_server.assert_called_once_with(
             app=mock_app,
-            host="0.0.0.0",
+            host="0.0.0.0",  # noqa: S104  test fixture value
             port=5000,
             workers=1,
             log_http_access=False,
@@ -786,7 +789,7 @@ class TestRunServerMode:
         mock_exit.side_effect = SystemExit(1)
 
         args = Namespace(
-            server_host="0.0.0.0",
+            server_host="0.0.0.0",  # noqa: S104  test fixture value
             server_port=5000,
             server_api_key=None,  # No API key
             server_workers=1,
@@ -838,12 +841,12 @@ class TestRunServerMode:
         mock_run_server.side_effect = KeyboardInterrupt()
 
         args = Namespace(
-            server_host="0.0.0.0",
+            server_host="0.0.0.0",  # noqa: S104  test fixture value
             server_port=5000,
             server_api_key="test-key",
             server_workers=1,
             queue_backend="sqlite",
-            queue_sqlite_path="/tmp/test.db",
+            queue_sqlite_path="/tmp/test.db",  # noqa: S108  test fixture value
             queue_redis_url=None,
         )
         config_obj = Mock(config={}, schedule=[], config_dir=Path("/config"))

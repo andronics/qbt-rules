@@ -337,8 +337,6 @@ class TestSchedulerFiring:
 
         # Make advancing the cron iterator explode after it fires once,
         # simulating an unexpected error outside of _fire()'s own try/except
-        s._entries[0]["iter"].get_next
-
         def failing_get_next(*args, **kwargs):
             raise RuntimeError("boom")
 

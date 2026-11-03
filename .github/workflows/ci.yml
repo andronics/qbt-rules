@@ -49,9 +49,7 @@ jobs:
           echo "✓ All tests passed"
 
       - name: Lint with ruff
-        continue-on-error: true
-        run: |
-          ruff check src/ || echo "Linting issues found (non-blocking)"
+        run: ruff check
 
       - name: Check code formatting
         run: ruff format --check

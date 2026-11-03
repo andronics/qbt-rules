@@ -294,10 +294,10 @@ def create_queue(backend: str = "sqlite", **kwargs) -> QueueManager:
     elif backend == "redis":
         try:
             from qbt_rules.queue_backends.redis_queue import RedisQueue
-        except ImportError:
+        except ImportError as e:
             raise ValueError(
                 "Redis backend requires 'redis' package. Install with: pip install qbt-rules[redis]"
-            )
+            ) from e
         redis_url = kwargs.get("redis_url", "redis://localhost:6379/0")
         return RedisQueue(redis_url=redis_url)
 

@@ -48,7 +48,10 @@ class AuthenticationError(QBittorrentError):
             code="AUTH-001",
             message="Cannot connect to qBittorrent",
             details=details,
-            fix="Check QBITTORRENT_HOST, QBITTORRENT_USER, and QBITTORRENT_PASS environment variables",
+            fix=(
+                "Check QBITTORRENT_HOST, QBITTORRENT_USER, and QBITTORRENT_PASS environment "
+                "variables"
+            ),
         )
 
 
@@ -104,7 +107,11 @@ class LoggingSetupError(QBittorrentError):
             code="LOG-001",
             message="Cannot setup file logging",
             details=details,
-            fix="Set LOG_FILE environment variable to a writable path (e.g., LOG_FILE=./logs/qbittorrent.log), or ensure CONFIG_DIR points to a writable location",
+            fix=(
+                "Set LOG_FILE environment variable to a writable path (e.g., "
+                "LOG_FILE=./logs/qbittorrent.log), or ensure CONFIG_DIR points to a writable "
+                "location"
+            ),
         )
 
 
@@ -139,7 +146,10 @@ class OperatorError(QBittorrentError):
     """Unknown operator in condition"""
 
     def __init__(self, operator: str, field: str):
-        valid_operators = "==, !=, >, <, >=, <=, contains, not_contains, matches, in, not_in, older_than, newer_than"
+        valid_operators = (
+            "==, !=, >, <, >=, <=, contains, not_contains, matches, in, not_in, older_than, "
+            "newer_than"
+        )
         super().__init__(
             code="OP-001",
             message="Unknown operator",
@@ -181,7 +191,10 @@ class InvalidRefError(ResolverError):
             code="REF-001",
             message=f"Invalid reference path: {ref_path}",
             details={"Problem": reason},
-            fix="Use format 'group.name' (e.g., 'conditions.private-tracker', 'actions.safe-delete')",
+            fix=(
+                "Use format 'group.name' (e.g., 'conditions.private-tracker', "
+                "'actions.safe-delete')"
+            ),
         )
 
 
@@ -240,7 +253,10 @@ class InvalidRuleFieldError(ResolverError):
             code="RULEFIELD-001",
             message=f"Invalid rule field path: {field_path}",
             details={"Problem": reason},
-            fix="Use format 'rule.id' (e.g., '${rule.id}', '${rule.context}', '${rule.meta.description}')",
+            fix=(
+                "Use format 'rule.id' (e.g., '${rule.id}', '${rule.context}', "
+                "'${rule.meta.description}')"
+            ),
         )
 
 
@@ -314,7 +330,10 @@ class RefTypeMismatchError(ResolverError):
             code="REF-004",
             message=f"Reference type mismatch: cannot use '{ref_path}' in this context",
             details=details,
-            fix=f"Use a {expected} reference instead, or move this reference to the appropriate block",
+            fix=(
+                f"Use a {expected} reference instead, or move this reference to the appropriate "
+                "block"
+            ),
         )
 
 

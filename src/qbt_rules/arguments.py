@@ -67,7 +67,10 @@ def create_parser() -> argparse.ArgumentParser:
         "--config-dir",
         type=Path,
         default=None,
-        help=f"Path to configuration directory (default: {smart_config_default()} or CONFIG_DIR env var)",
+        help=(
+            f"Path to configuration directory (default: {smart_config_default()} or CONFIG_DIR "
+            "env var)"
+        ),
         metavar="DIR",
     )
 
@@ -286,7 +289,7 @@ def validate_torrent_hash(torrent_hash: str | None) -> str:
     try:
         int(torrent_hash, 16)
     except ValueError:
-        raise ValueError("Invalid torrent hash format: must be hexadecimal")
+        raise ValueError("Invalid torrent hash format: must be hexadecimal") from None
 
     return torrent_hash.lower()
 

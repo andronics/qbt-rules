@@ -198,7 +198,7 @@ def get_server_config(args, config_obj) -> dict:
         config_obj,
         "server",
         {
-            "host": "0.0.0.0",
+            "host": "0.0.0.0",  # noqa: S104  container default; set server.host to narrow
             "port": 5000,
             "api_key": None,
             "workers": 1,
@@ -353,7 +353,7 @@ def get_metrics_config(args, config_obj) -> dict:
         "metrics",
         {
             "enabled": False,
-            "multiproc_dir": "/tmp/qbt-rules-metrics",
+            "multiproc_dir": "/tmp/qbt-rules-metrics",  # noqa: S108  default, configurable
         },
         parsers={"enabled": parse_bool},
     )

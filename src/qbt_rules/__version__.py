@@ -2,4 +2,7 @@
 
 __version__ = "0.10.2"
 __author__ = "qbt-rules"
-__description__ = "A powerful Python-based rules engine for qBittorrent automation with client-server architecture"
+__description__ = (
+    "A powerful Python-based rules engine for qBittorrent automation with client-server "
+    "architecture"
+)

@@ -15,10 +15,10 @@ from typing import Any
 
 try:
     import redis
-except ImportError:
+except ImportError as e:
     raise ImportError(
         "Redis backend requires 'redis' package. Install with: pip install qbt-rules[redis]"
-    )
+    ) from e
 
 from qbt_rules.queue_manager import JobStatus, QueueManager
 
@@ -72,9 +72,9 @@ class RedisQueue(QueueManager):
             logger.info(f"Redis queue initialized: {redis_url}")
 
         except redis.ConnectionError as e:
-            raise ConnectionError(f"Cannot connect to Redis at {redis_url}: {e}")
+            raise ConnectionError(f"Cannot connect to Redis at {redis_url}: {e}") from e
         except Exception as e:
-            raise RuntimeError(f"Redis initialization failed: {e}")
+            raise RuntimeError(f"Redis initialization failed: {e}") from e
 
     def _key(self, *parts: str) -> str:
         """Build Redis key with prefix"""

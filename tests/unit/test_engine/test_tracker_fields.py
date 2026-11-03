@@ -254,7 +254,7 @@ class TestFailSafe:
 
 class TestConfiguration:
     def test_not_configured_is_a_field_error(self, mock_api):
-        with pytest.raises(FieldError, match="integrations.trackie.url"):
+        with pytest.raises(FieldError, match=r"integrations\.trackie\.url"):
             ConditionEvaluator(mock_api).get_field_value(torrent(HASH_REQUIRED), "tracker.status")
 
     @pytest.mark.parametrize(

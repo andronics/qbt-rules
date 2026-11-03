@@ -81,7 +81,9 @@ FIELD_NAMESPACES: dict[str, dict[str, Any]] = {
         ],
     },
     "files": {
-        "description": "File list; a list per torrent. Rules skip torrents whose file list is not loaded yet",
+        "description": (
+            "File list; a list per torrent. Rules skip torrents whose file list is not loaded yet"
+        ),
         "hints": [
             "index",
             "name",

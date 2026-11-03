@@ -75,11 +75,11 @@ def copy_default_if_missing(target_path: Path, default_filename: str) -> bool:
 
         # Copy default to target location
         shutil.copy2(default_path, target_path)
-        print(f"INFO: Created {target_path} from {default_path}", file=sys.stderr)
+        print(f"INFO: Created {target_path} from {default_path}", file=sys.stderr)  # noqa: T201  logging not set up yet
 
         return True
     except Exception as e:
-        print(f"WARNING: Failed to copy default config to {target_path}: {e}", file=sys.stderr)
+        print(f"WARNING: Failed to copy default config to {target_path}: {e}", file=sys.stderr)  # noqa: T201  logging not set up yet
         return False
 
 
@@ -411,11 +411,11 @@ def load_yaml_file(file_path: Path) -> dict[str, Any]:
     except ConfigurationError:
         raise
     except yaml.YAMLError as e:
-        raise ConfigurationError(str(file_path), f"Invalid YAML syntax: {e!s}")
-    except PermissionError:
-        raise ConfigurationError(str(file_path), "Permission denied - cannot read file")
+        raise ConfigurationError(str(file_path), f"Invalid YAML syntax: {e!s}") from e
+    except PermissionError as e:
+        raise ConfigurationError(str(file_path), "Permission denied - cannot read file") from e
     except Exception as e:
-        raise ConfigurationError(str(file_path), f"Cannot read file: {e!s}")
+        raise ConfigurationError(str(file_path), f"Cannot read file: {e!s}") from e
 
 
 class Config:
@@ -538,7 +538,8 @@ class Config:
             if context is None:
                 raise ConfigurationError(
                     str(self.config_file),
-                    f"QBT_RULES_SCHEDULE_{i}_CRON is set but QBT_RULES_SCHEDULE_{i}_CONTEXT is missing",
+                    f"QBT_RULES_SCHEDULE_{i}_CRON is set but QBT_RULES_SCHEDULE_{i}_CONTEXT is "
+                    "missing",
                 )
 
             entries.append({"cron": cron, "context": context})

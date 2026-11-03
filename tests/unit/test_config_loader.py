@@ -311,16 +311,18 @@ class TestResolveConfig:
         secret_file = tmp_path / "secret.txt"
 
         # Mock open to raise a generic exception
-        with patch.dict(os.environ, {"ENV_VAR_FILE": str(secret_file)}):
-            with patch("builtins.open", side_effect=OSError("Generic error")):
-                result = resolve_config(
-                    cli_value=None,
-                    env_var="ENV_VAR",
-                    config={"key": "config_value"},
-                    config_key="key",
-                    default="default_value",
-                )
-                assert result == "config_value"
+        with (
+            patch.dict(os.environ, {"ENV_VAR_FILE": str(secret_file)}),
+            patch("builtins.open", side_effect=OSError("Generic error")),
+        ):
+            result = resolve_config(
+                cli_value=None,
+                env_var="ENV_VAR",
+                config={"key": "config_value"},
+                config_key="key",
+                default="default_value",
+            )
+            assert result == "config_value"
 
     def test_direct_env_var_third_priority(self):
         """Direct environment variable has third priority."""
@@ -741,7 +743,7 @@ class TestConfig:
         assert "must be a list" in str(exc_info.value)
 
     def test_rule_missing_id_raises_error(self, tmp_path):
-        """A rule with no 'id' fails to load -- 'id' is required (v0.7+), 'name' is not read at all."""
+        """A rule with no 'id' fails to load: 'id' is required (v0.7+), 'name' is not read."""
         config_dir = tmp_path / "config"
         config_dir.mkdir()
 
@@ -958,9 +960,11 @@ rules:
 
     def test_schedule_env_var_cron_without_context_raises(self, tmp_config_dir):
         """QBT_RULES_SCHEDULE_0_CRON set without the matching _0_CONTEXT is a config error."""
-        with patch.dict(os.environ, {"QBT_RULES_SCHEDULE_0_CRON": "*/30 * * * *"}):
-            with pytest.raises(ConfigurationError) as exc_info:
-                Config(tmp_config_dir)
+        with (
+            patch.dict(os.environ, {"QBT_RULES_SCHEDULE_0_CRON": "*/30 * * * *"}),
+            pytest.raises(ConfigurationError) as exc_info,
+        ):
+            Config(tmp_config_dir)
         assert (
             "QBT_RULES_SCHEDULE_0_CRON is set but QBT_RULES_SCHEDULE_0_CONTEXT is missing"
             in str(exc_info.value)

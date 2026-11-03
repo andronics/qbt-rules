@@ -36,7 +36,7 @@ _http_duration: Any | None = None
 
 
 def is_available() -> bool:
-    """Check whether the prometheus_client package is installed, without importing it at module scope."""
+    """Check whether prometheus_client is installed, without importing it at module scope."""
     try:
         import prometheus_client  # noqa: F401
 

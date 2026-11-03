@@ -162,7 +162,8 @@ class Scheduler:
         try:
             job_id = self.queue.enqueue(context=entry["context"])
             logger.info(
-                f"Scheduled job enqueued: {job_id} (context={entry['context']}, cron={entry['cron']})"
+                f"Scheduled job enqueued: {job_id} (context={entry['context']}, "
+                f"cron={entry['cron']})"
             )
             self.last_fire = {"context": entry["context"], "job_id": job_id, "at": time.time()}
             metrics.record_scheduler_fire(True)

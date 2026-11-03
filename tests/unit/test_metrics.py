@@ -37,7 +37,7 @@ from qbt_rules import metrics
 
 
 class TestAvailability:
-    """is_available() reflects whether prometheus_client is importable -- always True in this test env."""
+    """is_available() reflects whether prometheus_client is importable (always True here)."""
 
     def test_is_available_true_when_installed(self):
         assert metrics.is_available() is True
@@ -99,7 +99,7 @@ class TestRecordFunctionsDisabled:
 
 
 class TestRecordFunctionsEnabled:
-    """record_*() actually increment/observe once enabled -- verified via generate_metrics_output()'s output."""
+    """record_*() increment/observe once enabled, as generate_metrics_output() shows."""
 
     def test_record_action_executed_success_and_failure(self):
         metrics.init(enabled=True)

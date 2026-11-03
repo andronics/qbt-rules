@@ -10,9 +10,11 @@ Test coverage for:
 - Gunicorn integration
 """
 
+import contextlib
 import json
 import os
 from datetime import UTC, datetime
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -821,7 +823,7 @@ class TestGunicornIntegration:
 
         sig = inspect.signature(run_server)
 
-        assert sig.parameters["host"].default == "0.0.0.0"
+        assert sig.parameters["host"].default == "0.0.0.0"  # noqa: S104  test fixture value
         assert sig.parameters["port"].default == 5000
         assert sig.parameters["workers"].default == 1
 
@@ -888,13 +890,12 @@ class TestGunicornIntegration:
         mock_gunicorn_base = MagicMock()
         mock_gunicorn_base.BaseApplication = mock_base_class
 
-        with patch.dict("sys.modules", {"gunicorn.app.base": mock_gunicorn_base}):
-            # Call run_server - this will execute lines 401-452
-            try:
-                run_server(mock_app, host="127.0.0.1", port=8080, workers=4)
-            except Exception:
-                # May error due to mocking, but lines should be covered
-                pass
+        # Call run_server: may error due to mocking, but the lines are covered
+        with (
+            patch.dict("sys.modules", {"gunicorn.app.base": mock_gunicorn_base}),
+            contextlib.suppress(Exception),
+        ):
+            run_server(mock_app, host="127.0.0.1", port=8080, workers=4)
 
             # Test passes if no exception during import/execution
 
@@ -906,21 +907,8 @@ class TestMissingLineCoverage:
         """Directly test the 500 error handler function (lines 379-380)"""
         mock_logger = mocker.patch("qbt_rules.web.logger")
 
-        # Get the internal_error function from the app
-        # It's registered as an error handler, but we can call it directly
-        from werkzeug.exceptions import InternalServerError
-
         with app.app_context():
-            # Create an error
-            InternalServerError("Test error")
-
-            # Import and call the internal_error function directly
-
-            # We need to extract the error handler function
-            # Flask stores it in the app's error_handler_spec
-            # Let's just recreate the function here to test it
-
-            # Actually, let's just set TESTING to False and PROPAGATE_EXCEPTIONS to False
+            # Set TESTING to False and PROPAGATE_EXCEPTIONS to False
             # to allow error handlers to work
             app.config["TESTING"] = False
             app.config["PROPAGATE_EXCEPTIONS"] = False
@@ -949,7 +937,7 @@ class TestStandaloneApplicationMethods:
     """Test Gunicorn StandaloneApplication class methods by actually executing run_server"""
 
     def test_run_server_executes_standalone_app_methods(self, mocker):
-        """Should execute StandaloneApplication methods and post_fork hook (lines 410-412, 415, 424-435)"""
+        """Should execute StandaloneApplication methods and the post_fork hook"""
         from qbt_rules.web import run_server
 
         mock_app = mocker.MagicMock()
@@ -965,7 +953,7 @@ class TestStandaloneApplicationMethods:
         load_called_list = []
 
         class MockCfg:
-            settings = {
+            settings: ClassVar[dict[str, None]] = {
                 "bind": None,
                 "workers": None,
                 "worker_class": None,
@@ -1003,16 +991,16 @@ class TestStandaloneApplicationMethods:
                     post_fork_func(mock_server, mock_worker_process)
 
         # Patch Gunicorn's BaseApplication and the global worker
-        with patch("gunicorn.app.base.BaseApplication", MockBaseApplication):
-            with patch("qbt_rules.web.worker", mock_worker):
-                try:
-                    # Actually call the real run_server from web.py
-                    # This will create the real StandaloneApplication class inside run_server
-                    # and call app_instance.run() which will trigger load_config, load, and post_fork
-                    run_server(mock_app, host="127.0.0.1", port=8080, workers=2)
-                except (AttributeError, TypeError):
-                    # Expected - our mock doesn't fully implement Gunicorn
-                    pass
+        with (
+            patch("gunicorn.app.base.BaseApplication", MockBaseApplication),
+            patch("qbt_rules.web.worker", mock_worker),
+            # Expected - our mock doesn't fully implement Gunicorn
+            contextlib.suppress(AttributeError, TypeError),
+        ):
+            # Actually call the real run_server from web.py. This creates the real
+            # StandaloneApplication class inside run_server and calls app_instance.run(),
+            # which triggers load_config, load, and post_fork
+            run_server(mock_app, host="127.0.0.1", port=8080, workers=2)
 
         # Verify load_config was executed (lines 410-412)
         assert len(config_set_called) >= 5, (
@@ -1132,7 +1120,6 @@ class TestPostForkHook:
             # This is the actual logic from the post_fork function
 
             # Create mock Gunicorn objects
-            mocker.MagicMock()
             mock_worker_process = mocker.MagicMock()
             mock_worker_process.pid = 54321
 

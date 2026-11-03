@@ -441,7 +441,8 @@ class RuleResolver:
 
     def _resolve_token(self, token_path: str, rule: dict[str, Any]) -> Any:
         """Dispatch a vars.x or rule.x token path to the matching resolver"""
-        if token_path == "rule" or token_path.startswith("rule."):
+        # "token" here is a ${...} template token, not a credential
+        if token_path == "rule" or token_path.startswith("rule."):  # noqa: S105
             return self._resolve_rule_field(token_path, rule)
         return self._resolve_var(token_path)
 
@@ -469,7 +470,10 @@ class RuleResolver:
         if len(parts) < 2 or parts[0] != "rule":
             raise InvalidRuleFieldError(
                 field_path=field_path,
-                reason="Expected format 'rule.id' (e.g., 'rule.id', 'rule.context', 'rule.meta.description')",
+                reason=(
+                    "Expected format 'rule.id' (e.g., 'rule.id', 'rule.context', "
+                    "'rule.meta.description')"
+                ),
             )
 
         value: Any = rule

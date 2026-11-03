@@ -221,7 +221,7 @@ class TestSQLiteQueueInitialization:
         queue.close()
 
     def test_v1_database_migrates_to_v2_keeping_jobs(self, tmp_path):
-        """A v1 database (before per-job dry-run) gains jobs.dry_run, existing jobs default to False"""
+        """A v1 database (before per-job dry-run) gains jobs.dry_run; existing jobs default False"""
         db_path = tmp_path / "test.db"
         conn = sqlite3.connect(str(db_path))
         conn.execute(
@@ -1107,7 +1107,7 @@ class TestSQLiteQueueCancelJob:
 # ============================================================================
 
 
-class TestSQLiteQueueCleanup:
+class TestSQLiteQueueCleanupByStatus:
     """Test cleanup_old_jobs() method"""
 
     def test_cleanup_old_completed_jobs(self, tmp_path):
@@ -1512,7 +1512,7 @@ class TestSQLiteQueueTransactions:
 
         job_id = queue.generate_job_id()
 
-        with pytest.raises(Exception), queue._transaction() as conn:
+        with pytest.raises(Exception, match="Simulated error"), queue._transaction() as conn:
             conn.execute(
                 "INSERT INTO jobs (id, context, hash, status, created_at) VALUES (?, ?, ?, ?, ?)",
                 (

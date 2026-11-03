@@ -83,8 +83,8 @@ class TestCreateParser:
     def test_parser_has_config_dir_argument(self):
         """Parser includes --config-dir argument."""
         parser = create_parser()
-        args = parser.parse_args(["--config-dir", "/tmp/config"])
-        assert args.config_dir == Path("/tmp/config")
+        args = parser.parse_args(["--config-dir", "/tmp/config"])  # noqa: S108  test fixture value
+        assert args.config_dir == Path("/tmp/config")  # noqa: S108  test fixture value
 
     def test_parser_has_dry_run_argument(self):
         """Parser includes --dry-run argument."""

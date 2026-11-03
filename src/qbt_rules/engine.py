@@ -6,7 +6,8 @@ Core logic for evaluating conditions and executing actions
 import re
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from operator import ge, gt, le, lt
+from typing import TYPE_CHECKING, Any, Optional
 
 import requests
 
@@ -32,10 +33,15 @@ from qbt_rules.utils import (
     parse_tags,
 )
 
+if TYPE_CHECKING:
+    from qbt_rules.config_loader import Config
+
 logger = get_logger(__name__)
 
 # set_file_priority's accepted priorities -- qBittorrent's own values, plus
 # names for readability in rules
+NUMERIC_COMPARISONS = {">": gt, "<": lt, ">=": ge, "<=": le}
+
 FILE_PRIORITIES = {"skip": 0, "normal": 1, "high": 6, "maximum": 7}
 
 # Pattern for runtime action-param templating: ${info.name}, ${trackers.url},
@@ -143,9 +149,11 @@ class ConditionEvaluator:
             torrent: Torrent dictionary from qBittorrent API
             conditions: Conditions from rule. Either a dict with 'all'/'any'/'none' keys,
                         or a bare list of condition entries (treated as an implicit 'all')
-            current_context: Current runtime context (torrent-imported, download-finished, weekly-cleanup, adhoc-run, custom, or None)
+            current_context: Current runtime context (torrent-imported, download-finished,
+                             weekly-cleanup, adhoc-run, custom, or None)
             required_context: Context requirement from rule level (string or list of strings)
-                            When None, rule has no context requirement and executes regardless of runtime context
+                            When None, rule has no context requirement and executes
+                            regardless of runtime context
             trace: Optional list to append per-leaf-condition evaluation records to
                    ({'field', 'operator', 'value', 'actual', 'passed'}), for a future
                    "preview this rule against the live fleet" feature. Every existing
@@ -167,9 +175,10 @@ class ConditionEvaluator:
         """
         try:
             # Check context requirement first (from rule level, not inside conditions)
-            if required_context is not None:
-                if not self._evaluate_context(current_context, required_context):
-                    return False
+            if required_context is not None and not self._evaluate_context(
+                current_context, required_context
+            ):
+                return False
             # If required_context is None, rule has no context requirement → continue to conditions
 
             # A bare list of conditions is shorthand for {'all': conditions}
@@ -177,26 +186,23 @@ class ConditionEvaluator:
                 return self._evaluate_all(torrent, conditions, trace)
 
             # Evaluate logical groups
-            if "all" in conditions:
-                if not self._evaluate_all(torrent, conditions["all"], trace):
-                    return False
+            if "all" in conditions and not self._evaluate_all(torrent, conditions["all"], trace):
+                return False
 
-            if "any" in conditions:
-                if not self._evaluate_any(torrent, conditions["any"], trace):
-                    return False
+            if "any" in conditions and not self._evaluate_any(torrent, conditions["any"], trace):
+                return False
 
-            if "none" in conditions:
-                if not self._evaluate_none(torrent, conditions["none"], trace):
-                    return False
-
-            return True
+            return "none" not in conditions or self._evaluate_none(
+                torrent, conditions["none"], trace
+            )
 
         except DataNotReadyError as e:
             # Expected/benign -- e.g. the files list right after an OnTorrentAdded
             # webhook, before qBittorrent has indexed the torrent. Not a real error,
             # so keep it out of the ERROR-level log noise every other rule failure uses.
             logger.debug(
-                f"Skipping rule for {torrent.get('name', 'unknown')}: {e.message} ({e.details.get('Field')})"
+                f"Skipping rule for {torrent.get('name', 'unknown')}: {e.message} "
+                f"({e.details.get('Field')})"
             )
             return False
 
@@ -209,8 +215,8 @@ class ConditionEvaluator:
         Evaluate if current runtime context matches the rule's context requirement
 
         Args:
-            current_context: Current runtime context (torrent-imported, weekly-cleanup, adhoc-run, etc.)
-                           Can be None if running without a specific context
+            current_context: Current runtime context (torrent-imported, weekly-cleanup,
+                           adhoc-run, etc.) Can be None if running without a specific context
             required_context: Rule's context requirement (string or list of strings)
                             This is always non-None when this method is called
 
@@ -218,8 +224,10 @@ class ConditionEvaluator:
             True if runtime context matches the requirement, False otherwise
 
         Notes:
-            - This method is only called when a rule HAS a context requirement (required_context is not None)
-            - If current_context is None, the rule cannot match (no runtime context to match against)
+            - This method is only called when a rule HAS a context requirement
+              (required_context is not None)
+            - If current_context is None, the rule cannot match (no runtime context to
+              match against)
             - If required_context is a list, checks if current_context is in that list
             - If required_context is a string, checks for exact match
         """
@@ -423,7 +431,7 @@ class ConditionEvaluator:
         """This run's trackie snapshot, fetched on first use"""
         if not self._trackie_loaded:
             self._trackie_loaded = True
-            assert self.trackie is not None
+            assert self.trackie is not None  # noqa: S101  only called once trackie is configured
             self._trackie_snapshot, self._trackie_error = self.trackie.fetch()
             if self._trackie_error:
                 # Once per run, not once per torrent: every tracker.* lookup
@@ -572,19 +580,9 @@ class ConditionEvaluator:
             return actual != expected
 
         # Numeric operators
-        elif operator in [">", "<", ">=", "<="]:
+        elif operator in NUMERIC_COMPARISONS:
             try:
-                actual_num = float(actual)
-                expected_num = float(expected)
-
-                if operator == ">":
-                    return actual_num > expected_num
-                elif operator == "<":
-                    return actual_num < expected_num
-                elif operator == ">=":
-                    return actual_num >= expected_num
-                elif operator == "<=":
-                    return actual_num <= expected_num
+                return NUMERIC_COMPARISONS[operator](float(actual), float(expected))
             except (ValueError, TypeError):
                 logger.warning(f"Cannot compare non-numeric values for field {field}")
                 return False
@@ -734,7 +732,8 @@ class ActionExecutor:
             if targets is not None:
                 priority = self._parse_file_priority(params.get("priority"))
                 logger.info(
-                    f"  Would set priority {priority} on {len(targets)} file(s) of {torrent['name']}"
+                    f"  Would set priority {priority} on {len(targets)} file(s) of "
+                    f"{torrent['name']}"
                 )
         else:
             logger.info(f"  Would {action_type} {torrent['name']} (params={params})")
@@ -1400,7 +1399,8 @@ class RulesEngine:
                                         if updated:
                                             torrent.update(updated)
                                             logger.debug(
-                                                f"Updated cache for {torrent.get('name', 'unknown')} after action"
+                                                "Updated cache for "
+                                                f"{torrent.get('name', 'unknown')} after action"
                                             )
 
                                             post_state = torrent.get("state")
@@ -1416,7 +1416,8 @@ class RulesEngine:
                                         else:
                                             # Torrent was deleted
                                             logger.debug(
-                                                f"Torrent {torrent['hash']} no longer exists (likely deleted)"
+                                                f"Torrent {torrent['hash']} no longer exists "
+                                                "(likely deleted)"
                                             )
                                             torrent["_deleted"] = True
 
