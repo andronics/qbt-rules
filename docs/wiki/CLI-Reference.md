@@ -171,6 +171,8 @@ qbt-rules rules list
 qbt-rules config
 ```
 
+`config` never prints a secret's value: `******** (set)` means you set it (in the file, the variable or its `_FILE`), and `(unset)` means you didn't, even when a default applies (`queue.redis_url = (unset)  (default)` uses `redis://localhost:6379/0`).
+
 `validate` prints each problem as `FILE:LINE:COLUMN: SEVERITY: MESSAGE (PATH)`, the same checks the dashboard's rules editor runs:
 
 ```text

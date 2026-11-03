@@ -2,7 +2,7 @@
 
 ## Diagnostics
 
-- **Configuration check:** `docker exec qbt-rules qbt-rules validate` checks the settings and `rules.yml` without running anything, with the line and column of every problem; `qbt-rules config` prints each setting's effective value and where it came from (a secret shows only `******** (set)` or `(unset)`, never its value).
+- **Configuration check:** `docker exec qbt-rules qbt-rules validate` checks the settings and `rules.yml` without running anything, with the line and column of every problem; `qbt-rules config` prints each setting's effective value and where it came from (a secret shows only `******** (set)` when you set it, or `(unset)` when you didn't, default included, never its value).
 - **What the container resolved:** `docker exec qbt-rules env | grep QBT_RULES_`, and the files in the state directory (`/var/lib/qbt-rules`).
 - **More logging:** `QBT_RULES_LOGGING_LEVEL=DEBUG` and `QBT_RULES_LOGGING_TRACE_MODE=true` on the server (the rules run in its worker, so the CLI's own output never shows them).
 - **Health:** `curl http://127.0.0.1:5000/api/health`: `200` and `"status": "healthy"`, or `503` with an `errors` array naming what's wrong.
