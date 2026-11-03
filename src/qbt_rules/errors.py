@@ -71,6 +71,21 @@ class ConnectionError(QBittorrentError):
         )
 
 
+class RequestTimeoutError(QBittorrentError):
+    """qBittorrent accepted the connection, or didn't, but didn't answer in time"""
+
+    def __init__(self, host: str, connect_timeout: float, read_timeout: float):
+        super().__init__(
+            code="CONN-002",
+            message="qBittorrent did not answer in time",
+            details={
+                "Host": host,
+                "Timeout": f"{connect_timeout:g} s to connect, {read_timeout:g} s to answer",
+            },
+            fix="Check that qBittorrent is responsive (its Web UI loads) and not overloaded",
+        )
+
+
 class APIError(QBittorrentError):
     """qBittorrent API call failed"""
 

@@ -5,17 +5,53 @@ Wraps qbittorrent-api package for multi-version support (v4.1+ through v5.1.4+)
 Maintains backward compatibility with existing qbt-rules interface
 """
 
+import functools
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
 import qbittorrentapi
+import requests
 
-from qbt_rules.errors import AuthenticationError, ConnectionError
+from qbt_rules.errors import AuthenticationError, ConnectionError, RequestTimeoutError
 from qbt_rules.log_setup import get_logger
 
 if TYPE_CHECKING:
     from qbittorrentapi.torrents import TorrentStatusesT
 
 logger = get_logger(__name__)
+
+# (connect, read) seconds for every request to qBittorrent, instead of qbittorrent-api's
+# own 15.1 s for both: connecting fails sooner, and the read timeout is generous because
+# torrents/info on a large library can take a while on a busy server. qbittorrent-api
+# retries (urllib3's retry, its own second attempt, and the HTTP/HTTPS detection before
+# each), so a qBittorrent that accepts connections but never answers fails a call after
+# several waits: measured against a socket that accepts and never answers, 6 read timeouts
+# (HTTP probes and login) and 4 connect timeouts (the HTTPS probes' TLS handshakes), so
+# 6 x 30 + 4 x 10 = 220 s, about 3.7 minutes.
+REQUEST_TIMEOUT = (10.0, 30.0)
+
+
+def _is_timeout(e: qbittorrentapi.APIConnectionError) -> bool:
+    """qbittorrent-api raises APIConnectionError inside its ``except``, so the cause is
+    the exception's context"""
+    return isinstance(e.__context__, requests.exceptions.Timeout)
+
+
+def _clear_timeouts[**P, R](method: Callable[P, R]) -> Callable[P, R]:
+    """A timed-out request raises RequestTimeoutError, not qbittorrent-api's
+    "Failed to connect to qBittorrent. Timeout Error: ..." """
+
+    @functools.wraps(method)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return method(*args, **kwargs)
+        except qbittorrentapi.APIConnectionError as e:
+            if not _is_timeout(e):
+                raise
+            api = cast("QBittorrentAPI", args[0])
+            raise RequestTimeoutError(api.host, *REQUEST_TIMEOUT) from e
+
+    return wrapper
 
 
 class QBittorrentAPI:
@@ -42,6 +78,7 @@ class QBittorrentAPI:
         Raises:
             AuthenticationError: If login fails (only when connect_now=True)
             ConnectionError: If cannot reach server (only when connect_now=True)
+            RequestTimeoutError: If the server didn't answer in time (only when connect_now=True)
         """
         self.host = host.rstrip("/")
         self.username = username
@@ -50,7 +87,10 @@ class QBittorrentAPI:
 
         # Initialize qbittorrent-api client (does not connect yet)
         self.client = qbittorrentapi.Client(
-            host=self.host, username=self.username, password=self.password
+            host=self.host,
+            username=self.username,
+            password=self.password,
+            REQUESTS_ARGS={"timeout": REQUEST_TIMEOUT},
         )
 
         if connect_now:
@@ -63,6 +103,7 @@ class QBittorrentAPI:
         Raises:
             AuthenticationError: If login fails
             ConnectionError: If cannot reach server
+            RequestTimeoutError: If the server didn't answer in time (REQUEST_TIMEOUT)
         """
         if self._connected:
             return
@@ -79,6 +120,8 @@ class QBittorrentAPI:
         except qbittorrentapi.LoginFailed as e:
             raise AuthenticationError(self.host, str(e)) from e
         except qbittorrentapi.APIConnectionError as e:
+            if _is_timeout(e):
+                raise RequestTimeoutError(self.host, *REQUEST_TIMEOUT) from e
             raise ConnectionError(self.host, str(e)) from e
         except Exception as e:
             raise ConnectionError(self.host, str(e)) from e
@@ -334,3 +377,10 @@ class QBittorrentAPI:
         """Set minimum priority"""
         self.client.torrents_bottom_priority(torrent_hashes=hashes)
         return True
+
+
+# Every public method talks to qBittorrent (after _ensure_connected, which reports its own
+# timeouts), so each one reports a timeout the same way
+for _name, _method in list(vars(QBittorrentAPI).items()):
+    if not _name.startswith("_") and callable(_method):
+        setattr(QBittorrentAPI, _name, _clear_timeouts(_method))

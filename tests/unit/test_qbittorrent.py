@@ -29,6 +29,7 @@ class TestQBittorrentAPIv4Init:
             host="http://localhost:8080",
             username="admin",
             password="password",  # noqa: S106  test fixture value
+            REQUESTS_ARGS={"timeout": (10.0, 30.0)},
         )
 
     @patch("qbt_rules.qbittorrent.qbittorrentapi.Client")
@@ -496,3 +497,86 @@ class TestQBittorrentAPIv4Priority:
         result = api.set_bottom_priority(["abc123"])
 
         assert result is True
+
+
+class TestRequestTimeout:
+    """Every request has a timeout, and a timeout is one clear error (#34)"""
+
+    @staticmethod
+    def _hung_server():
+        """A server that accepts connections and never answers"""
+        import socket
+
+        server = socket.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen(64)
+        return server, f"http://127.0.0.1:{server.getsockname()[1]}"
+
+    def test_a_hung_qbittorrent_times_out_with_a_clear_error(self, monkeypatch):
+        import time
+
+        from qbt_rules import qbittorrent
+        from qbt_rules.errors import RequestTimeoutError
+        from qbt_rules.worker import job_error
+
+        monkeypatch.setattr(qbittorrent, "REQUEST_TIMEOUT", (0.5, 0.2))
+        server, url = self._hung_server()
+        try:
+            api = QBittorrentAPIv4(url, "admin", "password", connect_now=False)
+            started = time.monotonic()
+            with pytest.raises(RequestTimeoutError) as excinfo:
+                api.get_torrents()
+            elapsed = time.monotonic() - started
+        finally:
+            server.close()
+        # qbittorrent-api's retries take a few timeouts' worth (about 4 s here), not forever
+        assert elapsed < 20
+        assert job_error(excinfo.value) == (
+            "RequestTimeoutError: qBittorrent did not answer in time "
+            f"(Host: {url}; Timeout: 0.5 s to connect, 0.2 s to answer; "
+            "Fix: Check that qBittorrent is responsive (its Web UI loads) and not overloaded)"
+        )
+
+    @patch("qbt_rules.qbittorrent.qbittorrentapi.Client")
+    def test_a_timeout_after_login_is_reported_the_same_way(self, mock_client_class):
+        import qbittorrentapi
+        import requests
+
+        from qbt_rules.errors import RequestTimeoutError
+
+        def timed_out(**kwargs):
+            try:
+                raise requests.exceptions.ReadTimeout("read timed out")
+            except Exception:
+                raise qbittorrentapi.APIConnectionError("Failed to connect") from None
+
+        mock_client = Mock()
+        mock_client.torrents_add_tags.side_effect = timed_out
+        mock_client_class.return_value = mock_client
+        api = QBittorrentAPIv4("http://localhost:8080", "admin", "password", connect_now=True)
+
+        with pytest.raises(RequestTimeoutError, match="did not answer in time"):
+            api.add_tags(["abc"], ["hd"])
+
+    @patch("qbt_rules.qbittorrent.qbittorrentapi.Client")
+    def test_other_connection_errors_are_unchanged(self, mock_client_class):
+        import qbittorrentapi
+
+        mock_client = Mock()
+        mock_client.torrents_info.side_effect = qbittorrentapi.APIConnectionError("refused")
+        mock_client_class.return_value = mock_client
+        api = QBittorrentAPIv4("http://localhost:8080", "admin", "password", connect_now=True)
+
+        with pytest.raises(qbittorrentapi.APIConnectionError, match="refused"):
+            api.get_torrents()
+
+    @patch("qbt_rules.qbittorrent.qbittorrentapi.Client")
+    def test_login_refused_is_still_a_connection_error(self, mock_client_class):
+        import qbittorrentapi
+
+        mock_client = Mock()
+        mock_client.auth_log_in.side_effect = qbittorrentapi.APIConnectionError("refused")
+        mock_client_class.return_value = mock_client
+
+        with pytest.raises(ConnectionError, match="Cannot reach qBittorrent"):
+            QBittorrentAPIv4("http://localhost:8080", "admin", "password", connect_now=True)
