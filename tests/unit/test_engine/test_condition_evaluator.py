@@ -11,6 +11,7 @@ from qbt_rules.errors import DataNotReadyError, FieldError, OperatorError
 # Initialization and Cache Management
 # ============================================================================
 
+
 class TestConditionEvaluatorInit:
     """Test initialization and cache management."""
 
@@ -34,9 +35,9 @@ class TestConditionEvaluatorInit:
         evaluator = ConditionEvaluator(mock_api)
 
         # Populate caches
-        evaluator.trackers_cache['hash1'] = [{'url': 'test'}]
-        evaluator.files_cache['hash2'] = [{'name': 'test'}]
-        evaluator.transfer_info = {'speed': 1000}
+        evaluator.trackers_cache["hash1"] = [{"url": "test"}]
+        evaluator.files_cache["hash2"] = [{"name": "test"}]
+        evaluator.transfer_info = {"speed": 1000}
 
         # Clear
         evaluator.clear_caches()
@@ -50,77 +51,89 @@ class TestConditionEvaluatorInit:
 # Context Evaluation
 # ============================================================================
 
+
 class TestContextEvaluation:
     """Test _evaluate_context() method."""
 
     def test_context_matches_string(self, mock_api):
         """String context matches exactly."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._evaluate_context('adhoc-run', 'adhoc-run') is True
-        assert evaluator._evaluate_context('weekly-cleanup', 'adhoc-run') is False
+        assert evaluator._evaluate_context("adhoc-run", "adhoc-run") is True
+        assert evaluator._evaluate_context("weekly-cleanup", "adhoc-run") is False
 
     def test_context_matches_list(self, mock_api):
         """Context matches if in list."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._evaluate_context('adhoc-run', ['adhoc-run', 'weekly-cleanup']) is True
-        assert evaluator._evaluate_context('torrent-imported', ['adhoc-run', 'weekly-cleanup']) is False
+        assert evaluator._evaluate_context("adhoc-run", ["adhoc-run", "weekly-cleanup"]) is True
+        assert (
+            evaluator._evaluate_context("torrent-imported", ["adhoc-run", "weekly-cleanup"])
+            is False
+        )
 
     def test_context_agnostic_mode_returns_false(self, mock_api):
         """Context-agnostic mode (None) returns False."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._evaluate_context(None, 'adhoc-run') is False
-        assert evaluator._evaluate_context(None, ['adhoc-run', 'weekly-cleanup']) is False
+        assert evaluator._evaluate_context(None, "adhoc-run") is False
+        assert evaluator._evaluate_context(None, ["adhoc-run", "weekly-cleanup"]) is False
 
     def test_evaluate_with_matching_trigger(self, mock_api, sample_torrent):
         """evaluate() succeeds with matching context."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {
-            'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]
-        }
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run', required_context='adhoc-run')
+        conditions = {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
+        result = evaluator.evaluate(
+            sample_torrent, conditions, current_context="adhoc-run", required_context="adhoc-run"
+        )
         assert result is True
 
     def test_evaluate_with_non_matching_trigger(self, mock_api, sample_torrent):
         """evaluate() fails with non-matching context."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {
-            'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]
-        }
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run', required_context='weekly-cleanup')
+        conditions = {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
+        result = evaluator.evaluate(
+            sample_torrent,
+            conditions,
+            current_context="adhoc-run",
+            required_context="weekly-cleanup",
+        )
         assert result is False
 
-    def test_evaluate_context_agnostic_mode_skips_rules_with_context(self, mock_api, sample_torrent):
+    def test_evaluate_context_agnostic_mode_skips_rules_with_context(
+        self, mock_api, sample_torrent
+    ):
         """Context-agnostic mode skips rules WITH context conditions."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {
-            'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]
-        }
-        result = evaluator.evaluate(sample_torrent, conditions, current_context=None, required_context='adhoc-run')
+        conditions = {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
+        result = evaluator.evaluate(
+            sample_torrent, conditions, current_context=None, required_context="adhoc-run"
+        )
         assert result is False
 
-    def test_evaluate_context_agnostic_mode_allows_rules_without_trigger(self, mock_api, sample_torrent):
+    def test_evaluate_context_agnostic_mode_allows_rules_without_trigger(
+        self, mock_api, sample_torrent
+    ):
         """Context-agnostic mode allows rules WITHOUT context requirements."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {
-            'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]
-        }
+        conditions = {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
         # Rules without context requirements execute regardless of runtime context
-        result = evaluator.evaluate(sample_torrent, conditions, current_context=None, required_context=None)
+        result = evaluator.evaluate(
+            sample_torrent, conditions, current_context=None, required_context=None
+        )
         assert result is True  # Rule without context executes even when runtime context is None
 
     def test_evaluate_no_context_condition_with_context_set(self, mock_api, sample_torrent):
         """Rules without context condition match when context is set."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {
-            'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]
-        }
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run', required_context=None)
+        conditions = {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
+        result = evaluator.evaluate(
+            sample_torrent, conditions, current_context="adhoc-run", required_context=None
+        )
         assert result is True
 
 
 # ============================================================================
 # Logical Groups - all/any/none
 # ============================================================================
+
 
 class TestLogicalGroups:
     """Test logical condition groups."""
@@ -129,103 +142,119 @@ class TestLogicalGroups:
     def test_all_with_all_conditions_true(self, mock_api, sample_torrent):
         """all: all conditions true returns True."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'all': [
-            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},
-            {'field': 'info.state', 'operator': '==', 'value': 'uploading'},
-        ]}
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        conditions = {
+            "all": [
+                {"field": "info.ratio", "operator": ">=", "value": 1.0},
+                {"field": "info.state", "operator": "==", "value": "uploading"},
+            ]
+        }
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
     def test_all_with_one_condition_false(self, mock_api, sample_torrent):
         """all: one false condition returns False."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'all': [
-            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},
-            {'field': 'info.state', 'operator': '==', 'value': 'downloading'},  # False
-        ]}
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        conditions = {
+            "all": [
+                {"field": "info.ratio", "operator": ">=", "value": 1.0},
+                {"field": "info.state", "operator": "==", "value": "downloading"},  # False
+            ]
+        }
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is False
 
     def test_all_empty_list(self, mock_api, sample_torrent):
         """all: empty list returns True (vacuous truth)."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'all': []}
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        conditions = {"all": []}
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
     def test_all_single_condition(self, mock_api, sample_torrent):
         """all: single condition works."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'all': [
-            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},
-        ]}
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        conditions = {
+            "all": [
+                {"field": "info.ratio", "operator": ">=", "value": 1.0},
+            ]
+        }
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
     # _evaluate_any() - OR logic
     def test_any_with_one_condition_true(self, mock_api, sample_torrent):
         """any: one true condition returns True."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'any': [
-            {'field': 'info.ratio', 'operator': '>=', 'value': 10.0},  # False
-            {'field': 'info.state', 'operator': '==', 'value': 'uploading'},  # True
-        ]}
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        conditions = {
+            "any": [
+                {"field": "info.ratio", "operator": ">=", "value": 10.0},  # False
+                {"field": "info.state", "operator": "==", "value": "uploading"},  # True
+            ]
+        }
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
     def test_any_with_all_conditions_false(self, mock_api, sample_torrent):
         """any: all false returns False."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'any': [
-            {'field': 'info.ratio', 'operator': '>=', 'value': 10.0},  # False
-            {'field': 'info.state', 'operator': '==', 'value': 'downloading'},  # False
-        ]}
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        conditions = {
+            "any": [
+                {"field": "info.ratio", "operator": ">=", "value": 10.0},  # False
+                {"field": "info.state", "operator": "==", "value": "downloading"},  # False
+            ]
+        }
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is False
 
     def test_any_empty_list(self, mock_api, sample_torrent):
         """any: empty list returns False."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'any': []}
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        conditions = {"any": []}
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is False
 
     def test_any_all_conditions_true(self, mock_api, sample_torrent):
         """any: all true returns True."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'any': [
-            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},
-            {'field': 'info.state', 'operator': '==', 'value': 'uploading'},
-        ]}
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        conditions = {
+            "any": [
+                {"field": "info.ratio", "operator": ">=", "value": 1.0},
+                {"field": "info.state", "operator": "==", "value": "uploading"},
+            ]
+        }
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
     # _evaluate_none() - NOT logic
     def test_none_with_all_conditions_false(self, mock_api, sample_torrent):
         """none: all false returns True."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'none': [
-            {'field': 'info.ratio', 'operator': '>=', 'value': 10.0},  # False
-            {'field': 'info.state', 'operator': '==', 'value': 'downloading'},  # False
-        ]}
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        conditions = {
+            "none": [
+                {"field": "info.ratio", "operator": ">=", "value": 10.0},  # False
+                {"field": "info.state", "operator": "==", "value": "downloading"},  # False
+            ]
+        }
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
     def test_none_with_one_condition_true(self, mock_api, sample_torrent):
         """none: one true returns False."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'none': [
-            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},  # True
-            {'field': 'info.state', 'operator': '==', 'value': 'downloading'},  # False
-        ]}
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        conditions = {
+            "none": [
+                {"field": "info.ratio", "operator": ">=", "value": 1.0},  # True
+                {"field": "info.state", "operator": "==", "value": "downloading"},  # False
+            ]
+        }
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is False
 
     def test_none_empty_list(self, mock_api, sample_torrent):
         """none: empty list returns True."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'none': []}
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        conditions = {"none": []}
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
     # Bare list conditions (no 'all'/'any'/'none' wrapper) - implicit AND
@@ -240,104 +269,119 @@ class TestLogicalGroups:
         """Bare list: all entries true returns True."""
         evaluator = ConditionEvaluator(mock_api)
         conditions = [
-            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},
-            {'field': 'info.state', 'operator': '==', 'value': 'uploading'},
+            {"field": "info.ratio", "operator": ">=", "value": 1.0},
+            {"field": "info.state", "operator": "==", "value": "uploading"},
         ]
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
     def test_bare_list_one_condition_false(self, mock_api, sample_torrent):
         """Bare list: one false entry returns False (must behave as AND, not vacuous True)."""
         evaluator = ConditionEvaluator(mock_api)
         conditions = [
-            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},  # True
-            {'field': 'info.ratio', 'operator': '>=', 'value': 999.0},  # False
+            {"field": "info.ratio", "operator": ">=", "value": 1.0},  # True
+            {"field": "info.ratio", "operator": ">=", "value": 999.0},  # False
         ]
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is False
 
     def test_bare_list_with_nested_logical_group(self, mock_api, sample_torrent):
         """Bare list entries can themselves be nested all/any/none groups."""
         evaluator = ConditionEvaluator(mock_api)
         conditions = [
-            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},  # True
-            {'none': [
-                {'field': 'info.state', 'operator': '==', 'value': 'downloading'},  # False
-            ]},
+            {"field": "info.ratio", "operator": ">=", "value": 1.0},  # True
+            {
+                "none": [
+                    {"field": "info.state", "operator": "==", "value": "downloading"},  # False
+                ]
+            },
         ]
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
     def test_bare_list_empty(self, mock_api, sample_torrent):
         """Bare list: empty list returns True (vacuous truth, matches 'all': [])."""
         evaluator = ConditionEvaluator(mock_api)
-        result = evaluator.evaluate(sample_torrent, [], current_context='adhoc-run')
+        result = evaluator.evaluate(sample_torrent, [], current_context="adhoc-run")
         assert result is True
 
     def test_combined_logical_groups(self, mock_api, sample_torrent):
         """Combined all/any/none groups."""
         evaluator = ConditionEvaluator(mock_api)
         conditions = {
-            'all': [
-                {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},  # True
+            "all": [
+                {"field": "info.ratio", "operator": ">=", "value": 1.0},  # True
             ],
-            'any': [
-                {'field': 'info.state', 'operator': '==', 'value': 'uploading'},  # True
-                {'field': 'info.state', 'operator': '==', 'value': 'downloading'},  # False
+            "any": [
+                {"field": "info.state", "operator": "==", "value": "uploading"},  # True
+                {"field": "info.state", "operator": "==", "value": "downloading"},  # False
             ],
-            'none': [
-                {'field': 'info.ratio', 'operator': '<', 'value': 0.5},  # False
-            ]
+            "none": [
+                {"field": "info.ratio", "operator": "<", "value": 0.5},  # False
+            ],
         }
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
     def test_nested_all_operator(self, mock_api, sample_torrent):
         """Nested 'all' operator inside a condition (covers line 153)."""
         evaluator = ConditionEvaluator(mock_api)
         # Top-level 'any' containing a nested 'all'
-        conditions = {'any': [
-            {'all': [  # Nested all operator
-                {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},  # True
-                {'field': 'info.state', 'operator': '==', 'value': 'uploading'},  # True
-            ]},
-            {'field': 'info.ratio', 'operator': '<', 'value': 0.1},  # False
-        ]}
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        conditions = {
+            "any": [
+                {
+                    "all": [  # Nested all operator
+                        {"field": "info.ratio", "operator": ">=", "value": 1.0},  # True
+                        {"field": "info.state", "operator": "==", "value": "uploading"},  # True
+                    ]
+                },
+                {"field": "info.ratio", "operator": "<", "value": 0.1},  # False
+            ]
+        }
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
     def test_nested_any_operator(self, mock_api, sample_torrent):
         """Nested 'any' operator inside a condition (covers line 155)."""
         evaluator = ConditionEvaluator(mock_api)
         # Top-level 'all' containing a nested 'any'
-        conditions = {'all': [
-            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},  # True
-            {'any': [  # Nested any operator
-                {'field': 'info.state', 'operator': '==', 'value': 'uploading'},  # True
-                {'field': 'info.state', 'operator': '==', 'value': 'downloading'},  # False
-            ]}
-        ]}
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        conditions = {
+            "all": [
+                {"field": "info.ratio", "operator": ">=", "value": 1.0},  # True
+                {
+                    "any": [  # Nested any operator
+                        {"field": "info.state", "operator": "==", "value": "uploading"},  # True
+                        {"field": "info.state", "operator": "==", "value": "downloading"},  # False
+                    ]
+                },
+            ]
+        }
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
     def test_nested_none_operator(self, mock_api, sample_torrent):
         """Nested 'none' operator inside a condition (covers line 157)."""
         evaluator = ConditionEvaluator(mock_api)
         # Top-level 'all' containing a nested 'none'
-        conditions = {'all': [
-            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},  # True
-            {'none': [  # Nested none operator
-                {'field': 'info.state', 'operator': '==', 'value': 'downloading'},  # False
-                {'field': 'info.ratio', 'operator': '<', 'value': 0.5},  # False
-            ]}
-        ]}
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        conditions = {
+            "all": [
+                {"field": "info.ratio", "operator": ">=", "value": 1.0},  # True
+                {
+                    "none": [  # Nested none operator
+                        {"field": "info.state", "operator": "==", "value": "downloading"},  # False
+                        {"field": "info.ratio", "operator": "<", "value": 0.5},  # False
+                    ]
+                },
+            ]
+        }
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
 
 # ============================================================================
 # Opt-in condition evaluation trace
 # ============================================================================
+
 
 class TestConditionTrace:
     """Test the optional `trace` param on evaluate()/_evaluate_*() -- a
@@ -348,76 +392,101 @@ class TestConditionTrace:
     def test_no_trace_param_leaves_behavior_unchanged(self, mock_api, sample_torrent):
         """Omitting trace (as every current caller does) behaves exactly as before."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]}
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        conditions = {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
     def test_trace_records_passing_leaf_condition(self, mock_api, sample_torrent):
         """A single passing condition appends one record with the actual value."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'all': [{'field': 'info.ratio', 'operator': '>=', 'value': 1.0}]}
+        conditions = {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
         trace = []
 
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run', trace=trace)
+        result = evaluator.evaluate(
+            sample_torrent, conditions, current_context="adhoc-run", trace=trace
+        )
 
         assert result is True
-        assert trace == [{
-            'field': 'info.ratio', 'operator': '>=', 'value': 1.0,
-            'actual': 2.0, 'passed': True,
-        }]
+        assert trace == [
+            {
+                "field": "info.ratio",
+                "operator": ">=",
+                "value": 1.0,
+                "actual": 2.0,
+                "passed": True,
+            }
+        ]
 
     def test_trace_records_failing_leaf_condition(self, mock_api, sample_torrent):
         """A failing condition is recorded with passed: False and its real actual value."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'all': [{'field': 'info.state', 'operator': '==', 'value': 'downloading'}]}
+        conditions = {"all": [{"field": "info.state", "operator": "==", "value": "downloading"}]}
         trace = []
 
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run', trace=trace)
+        result = evaluator.evaluate(
+            sample_torrent, conditions, current_context="adhoc-run", trace=trace
+        )
 
         assert result is False
-        assert trace == [{
-            'field': 'info.state', 'operator': '==', 'value': 'downloading',
-            'actual': 'uploading', 'passed': False,
-        }]
+        assert trace == [
+            {
+                "field": "info.state",
+                "operator": "==",
+                "value": "downloading",
+                "actual": "uploading",
+                "passed": False,
+            }
+        ]
 
     def test_trace_short_circuits_same_as_without_trace(self, mock_api, sample_torrent):
         """`all` still stops at the first failing condition when tracing --
         tracing doesn't change evaluation order/short-circuiting, and
         therefore doesn't add extra field lookups (API calls) either."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'all': [
-            {'field': 'info.state', 'operator': '==', 'value': 'downloading'},  # fails first
-            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},  # never reached
-        ]}
+        conditions = {
+            "all": [
+                {"field": "info.state", "operator": "==", "value": "downloading"},  # fails first
+                {"field": "info.ratio", "operator": ">=", "value": 1.0},  # never reached
+            ]
+        }
         trace = []
 
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run', trace=trace)
+        result = evaluator.evaluate(
+            sample_torrent, conditions, current_context="adhoc-run", trace=trace
+        )
 
         assert result is False
         assert len(trace) == 1
-        assert trace[0]['field'] == 'info.state'
+        assert trace[0]["field"] == "info.state"
 
     def test_trace_covers_nested_groups(self, mock_api, sample_torrent):
         """Leaf conditions inside a nested any/none are still recorded."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {'all': [
-            {'field': 'info.ratio', 'operator': '>=', 'value': 1.0},
-            {'any': [
-                {'field': 'info.state', 'operator': '==', 'value': 'uploading'},
-            ]},
-        ]}
+        conditions = {
+            "all": [
+                {"field": "info.ratio", "operator": ">=", "value": 1.0},
+                {
+                    "any": [
+                        {"field": "info.state", "operator": "==", "value": "uploading"},
+                    ]
+                },
+            ]
+        }
         trace = []
 
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run', trace=trace)
+        result = evaluator.evaluate(
+            sample_torrent, conditions, current_context="adhoc-run", trace=trace
+        )
 
         assert result is True
-        fields_seen = [t['field'] for t in trace]
-        assert fields_seen == ['info.ratio', 'info.state']
+        fields_seen = [t["field"] for t in trace]
+        assert fields_seen == ["info.ratio", "info.state"]
 
 
 # ============================================================================
 # Field Access - info.*
 # ============================================================================
+
 
 class TestFieldAccessInfo:
     """Test info.* field access."""
@@ -425,69 +494,70 @@ class TestFieldAccessInfo:
     def test_info_name(self, mock_api, sample_torrent):
         """Access info.name field."""
         evaluator = ConditionEvaluator(mock_api)
-        value = evaluator._get_field_value(sample_torrent, 'info.name')
-        assert value == sample_torrent['name']
+        value = evaluator._get_field_value(sample_torrent, "info.name")
+        assert value == sample_torrent["name"]
 
     def test_info_size(self, mock_api, sample_torrent):
         """Access info.size field."""
         evaluator = ConditionEvaluator(mock_api)
-        value = evaluator._get_field_value(sample_torrent, 'info.size')
-        assert value == sample_torrent['size']
+        value = evaluator._get_field_value(sample_torrent, "info.size")
+        assert value == sample_torrent["size"]
 
     def test_info_ratio(self, mock_api, sample_torrent):
         """Access info.ratio field."""
         evaluator = ConditionEvaluator(mock_api)
-        value = evaluator._get_field_value(sample_torrent, 'info.ratio')
+        value = evaluator._get_field_value(sample_torrent, "info.ratio")
         assert value == 2.0
 
     def test_info_state(self, mock_api, sample_torrent):
         """Access info.state field."""
         evaluator = ConditionEvaluator(mock_api)
-        value = evaluator._get_field_value(sample_torrent, 'info.state')
-        assert value == 'uploading'
+        value = evaluator._get_field_value(sample_torrent, "info.state")
+        assert value == "uploading"
 
     def test_info_tags_parsed(self, mock_api):
         """info.tags returns parsed list."""
         evaluator = ConditionEvaluator(mock_api)
-        torrent = {'hash': 'test', 'tags': 'tag1,tag2,tag3'}
-        value = evaluator._get_field_value(torrent, 'info.tags')
-        assert value == ['tag1', 'tag2', 'tag3']
+        torrent = {"hash": "test", "tags": "tag1,tag2,tag3"}
+        value = evaluator._get_field_value(torrent, "info.tags")
+        assert value == ["tag1", "tag2", "tag3"]
 
     def test_info_tags_empty(self, mock_api):
         """info.tags with empty tags."""
         evaluator = ConditionEvaluator(mock_api)
-        torrent = {'hash': 'test', 'tags': ''}
-        value = evaluator._get_field_value(torrent, 'info.tags')
+        torrent = {"hash": "test", "tags": ""}
+        value = evaluator._get_field_value(torrent, "info.tags")
         assert value == []
 
     def test_info_missing_field(self, mock_api, sample_torrent):
         """Missing info field returns None."""
         evaluator = ConditionEvaluator(mock_api)
-        value = evaluator._get_field_value(sample_torrent, 'info.nonexistent')
+        value = evaluator._get_field_value(sample_torrent, "info.nonexistent")
         assert value is None
 
     def test_info_category(self, mock_api, sample_torrent):
         """Access info.category field."""
         evaluator = ConditionEvaluator(mock_api)
-        value = evaluator._get_field_value(sample_torrent, 'info.category')
-        assert value == sample_torrent.get('category', '')
+        value = evaluator._get_field_value(sample_torrent, "info.category")
+        assert value == sample_torrent.get("category", "")
 
     def test_info_num_seeds(self, mock_api, sample_torrent):
         """Access info.num_seeds field."""
         evaluator = ConditionEvaluator(mock_api)
-        value = evaluator._get_field_value(sample_torrent, 'info.num_seeds')
+        value = evaluator._get_field_value(sample_torrent, "info.num_seeds")
         assert value == 5
 
     def test_info_completion_on(self, mock_api, sample_torrent):
         """Access info.completion_on timestamp."""
         evaluator = ConditionEvaluator(mock_api)
-        value = evaluator._get_field_value(sample_torrent, 'info.completion_on')
+        value = evaluator._get_field_value(sample_torrent, "info.completion_on")
         assert value == 1700010000
 
 
 # ============================================================================
 # Field Access - Collections (trackers, files, peers)
 # ============================================================================
+
 
 class TestFieldAccessCollections:
     """Test collection field access with lazy loading."""
@@ -497,11 +567,11 @@ class TestFieldAccessCollections:
         mock_api.get_trackers = Mock(return_value=mock_trackers)
         evaluator = ConditionEvaluator(mock_api)
 
-        value = evaluator._get_field_value(sample_torrent, 'trackers.url')
+        value = evaluator._get_field_value(sample_torrent, "trackers.url")
 
         assert isinstance(value, list)
         assert len(value) == 2  # Filtered to HTTP only
-        assert 'tracker1.example.com' in value[0]
+        assert "tracker1.example.com" in value[0]
 
     def test_trackers_cached(self, mock_api, sample_torrent, mock_trackers):
         """Trackers are cached after first call."""
@@ -509,9 +579,9 @@ class TestFieldAccessCollections:
         evaluator = ConditionEvaluator(mock_api)
 
         # First call
-        evaluator._get_field_value(sample_torrent, 'trackers.url')
+        evaluator._get_field_value(sample_torrent, "trackers.url")
         # Second call
-        evaluator._get_field_value(sample_torrent, 'trackers.status')
+        evaluator._get_field_value(sample_torrent, "trackers.status")
 
         # API should be called only once
         mock_api.get_trackers.assert_called_once()
@@ -519,35 +589,35 @@ class TestFieldAccessCollections:
     def test_trackers_filters_special_entries(self, mock_api, sample_torrent):
         """Trackers filters out DHT/PeX/LSD."""
         mock_trackers = [
-            {'url': 'http://real-tracker.com', 'status': 2},
-            {'url': '** [DHT] **', 'status': 0},
-            {'url': '** [PeX] **', 'status': 0},
+            {"url": "http://real-tracker.com", "status": 2},
+            {"url": "** [DHT] **", "status": 0},
+            {"url": "** [PeX] **", "status": 0},
         ]
         mock_api.get_trackers = Mock(return_value=mock_trackers)
         evaluator = ConditionEvaluator(mock_api)
 
-        value = evaluator._get_field_value(sample_torrent, 'trackers.url')
+        value = evaluator._get_field_value(sample_torrent, "trackers.url")
 
         assert len(value) == 1
-        assert 'real-tracker.com' in value[0]
+        assert "real-tracker.com" in value[0]
 
     def test_files_name(self, mock_api, sample_torrent, mock_files):
         """Access files.name returns list of filenames."""
         mock_api.get_files = Mock(return_value=mock_files)
         evaluator = ConditionEvaluator(mock_api)
 
-        value = evaluator._get_field_value(sample_torrent, 'files.name')
+        value = evaluator._get_field_value(sample_torrent, "files.name")
 
         assert isinstance(value, list)
         assert len(value) == 3
-        assert 'Movie.1080p.mkv' in value
+        assert "Movie.1080p.mkv" in value
 
     def test_files_size(self, mock_api, sample_torrent, mock_files):
         """Access files.size returns list of sizes."""
         mock_api.get_files = Mock(return_value=mock_files)
         evaluator = ConditionEvaluator(mock_api)
 
-        value = evaluator._get_field_value(sample_torrent, 'files.size')
+        value = evaluator._get_field_value(sample_torrent, "files.size")
 
         assert isinstance(value, list)
         assert 2147483648 in value
@@ -557,8 +627,8 @@ class TestFieldAccessCollections:
         mock_api.get_files = Mock(return_value=mock_files)
         evaluator = ConditionEvaluator(mock_api)
 
-        evaluator._get_field_value(sample_torrent, 'files.name')
-        evaluator._get_field_value(sample_torrent, 'files.size')
+        evaluator._get_field_value(sample_torrent, "files.name")
+        evaluator._get_field_value(sample_torrent, "files.size")
 
         mock_api.get_files.assert_called_once()
 
@@ -567,27 +637,27 @@ class TestFieldAccessCollections:
         mock_api.get_peers = Mock(return_value=list(mock_peers.values()))
         evaluator = ConditionEvaluator(mock_api)
 
-        value = evaluator._get_field_value(sample_torrent, 'peers.ip')
+        value = evaluator._get_field_value(sample_torrent, "peers.ip")
 
         assert isinstance(value, list)
-        assert '192.168.1.100' in value
+        assert "192.168.1.100" in value
 
     def test_peers_client(self, mock_api, sample_torrent, mock_peers):
         """Access peers.client returns list of clients."""
         mock_api.get_peers = Mock(return_value=list(mock_peers.values()))
         evaluator = ConditionEvaluator(mock_api)
 
-        value = evaluator._get_field_value(sample_torrent, 'peers.client')
+        value = evaluator._get_field_value(sample_torrent, "peers.client")
 
         assert isinstance(value, list)
-        assert any('qBittorrent' in str(c) for c in value)
+        assert any("qBittorrent" in str(c) for c in value)
 
     def test_webseeds_url(self, mock_api, sample_torrent, mock_webseeds):
         """Access webseeds.url returns list of URLs."""
         mock_api.get_webseeds = Mock(return_value=mock_webseeds)
         evaluator = ConditionEvaluator(mock_api)
 
-        value = evaluator._get_field_value(sample_torrent, 'webseeds.url')
+        value = evaluator._get_field_value(sample_torrent, "webseeds.url")
 
         assert isinstance(value, list)
         assert len(value) == 2
@@ -597,17 +667,17 @@ class TestFieldAccessCollections:
         mock_api.get_properties = Mock(return_value=mock_properties)
         evaluator = ConditionEvaluator(mock_api)
 
-        value = evaluator._get_field_value(sample_torrent, 'properties.save_path')
+        value = evaluator._get_field_value(sample_torrent, "properties.save_path")
 
-        assert value == '/downloads/torrents/'
+        assert value == "/downloads/torrents/"
 
     def test_properties_cached(self, mock_api, sample_torrent, mock_properties):
         """Properties are cached."""
         mock_api.get_properties = Mock(return_value=mock_properties)
         evaluator = ConditionEvaluator(mock_api)
 
-        evaluator._get_field_value(sample_torrent, 'properties.save_path')
-        evaluator._get_field_value(sample_torrent, 'properties.comment')
+        evaluator._get_field_value(sample_torrent, "properties.save_path")
+        evaluator._get_field_value(sample_torrent, "properties.comment")
 
         mock_api.get_properties.assert_called_once()
 
@@ -616,7 +686,7 @@ class TestFieldAccessCollections:
         mock_api.get_trackers = Mock(return_value=[])
         evaluator = ConditionEvaluator(mock_api)
 
-        value = evaluator._get_field_value(sample_torrent, 'trackers.url')
+        value = evaluator._get_field_value(sample_torrent, "trackers.url")
 
         assert value == []
 
@@ -629,12 +699,13 @@ class TestFieldAccessCollections:
         evaluator = ConditionEvaluator(mock_api)
 
         with pytest.raises(DataNotReadyError):
-            evaluator._get_field_value(sample_torrent, 'files.name')
+            evaluator._get_field_value(sample_torrent, "files.name")
 
 
 # ============================================================================
 # Field Access - Global Context (transfer, app)
 # ============================================================================
+
 
 class TestFieldAccessGlobal:
     """Test global context field access."""
@@ -644,7 +715,7 @@ class TestFieldAccessGlobal:
         mock_api.get_transfer_info = Mock(return_value=mock_transfer_info)
         evaluator = ConditionEvaluator(mock_api)
 
-        value = evaluator._get_field_value(sample_torrent, 'transfer.dl_info_speed')
+        value = evaluator._get_field_value(sample_torrent, "transfer.dl_info_speed")
 
         assert value == 2097152
 
@@ -653,8 +724,8 @@ class TestFieldAccessGlobal:
         mock_api.get_transfer_info = Mock(return_value=mock_transfer_info)
         evaluator = ConditionEvaluator(mock_api)
 
-        evaluator._get_field_value(sample_torrent, 'transfer.dl_info_speed')
-        evaluator._get_field_value(sample_torrent, 'transfer.up_info_speed')
+        evaluator._get_field_value(sample_torrent, "transfer.dl_info_speed")
+        evaluator._get_field_value(sample_torrent, "transfer.up_info_speed")
 
         mock_api.get_transfer_info.assert_called_once()
 
@@ -663,103 +734,110 @@ class TestFieldAccessGlobal:
         mock_api.get_app_preferences = Mock(return_value=mock_app_preferences)
         evaluator = ConditionEvaluator(mock_api)
 
-        value = evaluator._get_field_value(sample_torrent, 'app.save_path')
+        value = evaluator._get_field_value(sample_torrent, "app.save_path")
 
-        assert value == '/downloads/'
+        assert value == "/downloads/"
 
     def test_app_preferences_cached(self, mock_api, sample_torrent, mock_app_preferences):
         """App preferences cached."""
         mock_api.get_app_preferences = Mock(return_value=mock_app_preferences)
         evaluator = ConditionEvaluator(mock_api)
 
-        evaluator._get_field_value(sample_torrent, 'app.save_path')
-        evaluator._get_field_value(sample_torrent, 'app.locale')
+        evaluator._get_field_value(sample_torrent, "app.save_path")
+        evaluator._get_field_value(sample_torrent, "app.locale")
 
         mock_api.get_app_preferences.assert_called_once()
 
     def test_stats_total(self, mock_api, sample_torrent):
         """Access stats.total."""
         evaluator = ConditionEvaluator(mock_api)
-        evaluator.stats = {'state': {}, 'category': {}, 'tag': {}, 'total': 42}
+        evaluator.stats = {"state": {}, "category": {}, "tag": {}, "total": 42}
 
-        assert evaluator._get_field_value(sample_torrent, 'stats.total') == 42
+        assert evaluator._get_field_value(sample_torrent, "stats.total") == 42
 
     def test_stats_state(self, mock_api, sample_torrent):
         """Access stats.state.<state>."""
         evaluator = ConditionEvaluator(mock_api)
         evaluator.stats = {
-            'state': {'queuedUP': 3, 'uploading': 5},
-            'category': {},
-            'tag': {},
-            'total': 8,
+            "state": {"queuedUP": 3, "uploading": 5},
+            "category": {},
+            "tag": {},
+            "total": 8,
         }
 
-        assert evaluator._get_field_value(sample_torrent, 'stats.state.queuedUP') == 3
-        assert evaluator._get_field_value(sample_torrent, 'stats.state.uploading') == 5
+        assert evaluator._get_field_value(sample_torrent, "stats.state.queuedUP") == 3
+        assert evaluator._get_field_value(sample_torrent, "stats.state.uploading") == 5
 
     def test_stats_category(self, mock_api, sample_torrent):
         """Access stats.category.<category>."""
         evaluator = ConditionEvaluator(mock_api)
         evaluator.stats = {
-            'state': {},
-            'category': {'movies': 2},
-            'tag': {},
-            'total': 2,
+            "state": {},
+            "category": {"movies": 2},
+            "tag": {},
+            "total": 2,
         }
 
-        assert evaluator._get_field_value(sample_torrent, 'stats.category.movies') == 2
+        assert evaluator._get_field_value(sample_torrent, "stats.category.movies") == 2
 
     def test_stats_tag(self, mock_api, sample_torrent):
         """Access stats.tag.<tag>."""
         evaluator = ConditionEvaluator(mock_api)
         evaluator.stats = {
-            'state': {},
-            'category': {},
-            'tag': {'hd': 3, 'private': 1},
-            'total': 3,
+            "state": {},
+            "category": {},
+            "tag": {"hd": 3, "private": 1},
+            "total": 3,
         }
 
-        assert evaluator._get_field_value(sample_torrent, 'stats.tag.hd') == 3
-        assert evaluator._get_field_value(sample_torrent, 'stats.tag.private') == 1
+        assert evaluator._get_field_value(sample_torrent, "stats.tag.hd") == 3
+        assert evaluator._get_field_value(sample_torrent, "stats.tag.private") == 1
 
     def test_stats_missing_key_defaults_to_zero(self, mock_api, sample_torrent):
         """A state/category/tag with no matching torrents resolves to 0, not None/KeyError."""
         evaluator = ConditionEvaluator(mock_api)
-        evaluator.stats = {'state': {'uploading': 5}, 'category': {}, 'tag': {}, 'total': 5}
+        evaluator.stats = {"state": {"uploading": 5}, "category": {}, "tag": {}, "total": 5}
 
-        assert evaluator._get_field_value(sample_torrent, 'stats.state.queuedUP') == 0
-        assert evaluator._get_field_value(sample_torrent, 'stats.category.movies') == 0
-        assert evaluator._get_field_value(sample_torrent, 'stats.tag.hd') == 0
+        assert evaluator._get_field_value(sample_torrent, "stats.state.queuedUP") == 0
+        assert evaluator._get_field_value(sample_torrent, "stats.category.movies") == 0
+        assert evaluator._get_field_value(sample_torrent, "stats.tag.hd") == 0
 
     def test_stats_defaults_before_run(self, mock_api, sample_torrent):
         """Before RulesEngine.run() populates it, stats.* resolves to 0 rather than erroring."""
         evaluator = ConditionEvaluator(mock_api)
 
-        assert evaluator._get_field_value(sample_torrent, 'stats.total') == 0
-        assert evaluator._get_field_value(sample_torrent, 'stats.state.queuedUP') == 0
-        assert evaluator._get_field_value(sample_torrent, 'stats.tag.hd') == 0
-        assert evaluator._get_field_value(sample_torrent, 'stats.dlspeed') == 0
-        assert evaluator._get_field_value(sample_torrent, 'stats.upspeed') == 0
-        assert evaluator._get_field_value(sample_torrent, 'stats.seeds') == 0
-        assert evaluator._get_field_value(sample_torrent, 'stats.leechs') == 0
+        assert evaluator._get_field_value(sample_torrent, "stats.total") == 0
+        assert evaluator._get_field_value(sample_torrent, "stats.state.queuedUP") == 0
+        assert evaluator._get_field_value(sample_torrent, "stats.tag.hd") == 0
+        assert evaluator._get_field_value(sample_torrent, "stats.dlspeed") == 0
+        assert evaluator._get_field_value(sample_torrent, "stats.upspeed") == 0
+        assert evaluator._get_field_value(sample_torrent, "stats.seeds") == 0
+        assert evaluator._get_field_value(sample_torrent, "stats.leechs") == 0
 
     def test_stats_scalar_sums(self, mock_api, sample_torrent):
         """stats.dlspeed/upspeed/seeds/leechs are plain scalars, not nested under a Counter key."""
         evaluator = ConditionEvaluator(mock_api)
         evaluator.stats = {
-            'state': {}, 'category': {}, 'tag': {}, 'total': 3,
-            'dlspeed': 2097152, 'upspeed': 524288, 'seeds': 15, 'leechs': 5,
+            "state": {},
+            "category": {},
+            "tag": {},
+            "total": 3,
+            "dlspeed": 2097152,
+            "upspeed": 524288,
+            "seeds": 15,
+            "leechs": 5,
         }
 
-        assert evaluator._get_field_value(sample_torrent, 'stats.dlspeed') == 2097152
-        assert evaluator._get_field_value(sample_torrent, 'stats.upspeed') == 524288
-        assert evaluator._get_field_value(sample_torrent, 'stats.seeds') == 15
-        assert evaluator._get_field_value(sample_torrent, 'stats.leechs') == 5
+        assert evaluator._get_field_value(sample_torrent, "stats.dlspeed") == 2097152
+        assert evaluator._get_field_value(sample_torrent, "stats.upspeed") == 524288
+        assert evaluator._get_field_value(sample_torrent, "stats.seeds") == 15
+        assert evaluator._get_field_value(sample_torrent, "stats.leechs") == 5
 
 
 # ============================================================================
 # Field Access - Error Handling
 # ============================================================================
+
 
 class TestFieldAccessErrors:
     """Test field access error handling."""
@@ -769,7 +847,7 @@ class TestFieldAccessErrors:
         evaluator = ConditionEvaluator(mock_api)
 
         with pytest.raises(FieldError) as exc_info:
-            evaluator._get_field_value(sample_torrent, 'invalidfield')
+            evaluator._get_field_value(sample_torrent, "invalidfield")
 
         assert "dot notation" in str(exc_info.value).lower()
 
@@ -778,7 +856,7 @@ class TestFieldAccessErrors:
         evaluator = ConditionEvaluator(mock_api)
 
         with pytest.raises(FieldError) as exc_info:
-            evaluator._get_field_value(sample_torrent, 'unknown.field')
+            evaluator._get_field_value(sample_torrent, "unknown.field")
 
         assert "unknown" in str(exc_info.value).lower()
 
@@ -787,12 +865,13 @@ class TestFieldAccessErrors:
         evaluator = ConditionEvaluator(mock_api)
 
         with pytest.raises(FieldError):
-            evaluator._get_field_value(sample_torrent, '.')
+            evaluator._get_field_value(sample_torrent, ".")
 
 
 # ============================================================================
 # Operator Tests - Comparison
 # ============================================================================
+
 
 class TestOperators:
     """Test all comparison operators."""
@@ -801,79 +880,97 @@ class TestOperators:
     def test_operator_equals(self, mock_api):
         """Operator == works."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator('test', '==', 'test', 'field') is True
-        assert evaluator._apply_operator('test', '==', 'other', 'field') is False
+        assert evaluator._apply_operator("test", "==", "test", "field") is True
+        assert evaluator._apply_operator("test", "==", "other", "field") is False
 
     def test_operator_not_equals(self, mock_api):
         """Operator != works."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator('test', '!=', 'other', 'field') is True
-        assert evaluator._apply_operator('test', '!=', 'test', 'field') is False
+        assert evaluator._apply_operator("test", "!=", "other", "field") is True
+        assert evaluator._apply_operator("test", "!=", "test", "field") is False
 
     # String operators
     def test_operator_contains(self, mock_api):
         """Operator contains works."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator('hello world', 'contains', 'world', 'field') is True
-        assert evaluator._apply_operator('hello world', 'contains', 'test', 'field') is False
+        assert evaluator._apply_operator("hello world", "contains", "world", "field") is True
+        assert evaluator._apply_operator("hello world", "contains", "test", "field") is False
 
     def test_operator_not_contains(self, mock_api):
         """Operator not_contains works."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator('hello world', 'not_contains', 'test', 'field') is True
-        assert evaluator._apply_operator('hello world', 'not_contains', 'world', 'field') is False
+        assert evaluator._apply_operator("hello world", "not_contains", "test", "field") is True
+        assert evaluator._apply_operator("hello world", "not_contains", "world", "field") is False
 
     def test_operator_contains_with_list_value(self, mock_api):
         """contains with a list value matches if ANY item is a substring
         (e.g. matching a tracker URL against several known tracker domains
         without needing a hand-built regex alternation)."""
         evaluator = ConditionEvaluator(mock_api)
-        url = 'https://sync.td-peers.com:1234/announce?pk=abc'
-        assert evaluator._apply_operator(url, 'contains', ['sync.td-peers.com', 'td.jumbohostpro.eu'], 'field') is True
-        assert evaluator._apply_operator(url, 'contains', ['nomatch1.com', 'nomatch2.com'], 'field') is False
+        url = "https://sync.td-peers.com:1234/announce?pk=abc"
+        assert (
+            evaluator._apply_operator(
+                url, "contains", ["sync.td-peers.com", "td.jumbohostpro.eu"], "field"
+            )
+            is True
+        )
+        assert (
+            evaluator._apply_operator(url, "contains", ["nomatch1.com", "nomatch2.com"], "field")
+            is False
+        )
 
     def test_operator_contains_with_empty_list_value(self, mock_api):
         """contains with an empty list value matches nothing."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator('hello world', 'contains', [], 'field') is False
+        assert evaluator._apply_operator("hello world", "contains", [], "field") is False
 
     def test_operator_not_contains_with_list_value(self, mock_api):
         """not_contains with a list value is True only if NO item is a substring."""
         evaluator = ConditionEvaluator(mock_api)
-        url = 'https://sync.td-peers.com:1234/announce?pk=abc'
-        assert evaluator._apply_operator(url, 'not_contains', ['nomatch1.com', 'nomatch2.com'], 'field') is True
-        assert evaluator._apply_operator(url, 'not_contains', ['sync.td-peers.com', 'nomatch.com'], 'field') is False
+        url = "https://sync.td-peers.com:1234/announce?pk=abc"
+        assert (
+            evaluator._apply_operator(
+                url, "not_contains", ["nomatch1.com", "nomatch2.com"], "field"
+            )
+            is True
+        )
+        assert (
+            evaluator._apply_operator(
+                url, "not_contains", ["sync.td-peers.com", "nomatch.com"], "field"
+            )
+            is False
+        )
 
     def test_operator_matches_regex(self, mock_api):
         """Operator matches works with regex."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator('test123', 'matches', r'\d+', 'field') is True
-        assert evaluator._apply_operator('testABC', 'matches', r'\d+', 'field') is False
+        assert evaluator._apply_operator("test123", "matches", r"\d+", "field") is True
+        assert evaluator._apply_operator("testABC", "matches", r"\d+", "field") is False
 
     # List operators
     def test_operator_in_list(self, mock_api):
         """Operator in works with list."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator('apple', 'in', ['apple', 'banana'], 'field') is True
-        assert evaluator._apply_operator('cherry', 'in', ['apple', 'banana'], 'field') is False
+        assert evaluator._apply_operator("apple", "in", ["apple", "banana"], "field") is True
+        assert evaluator._apply_operator("cherry", "in", ["apple", "banana"], "field") is False
 
     def test_operator_in_single_value(self, mock_api):
         """Operator in works with single value."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator('test', 'in', 'test', 'field') is True
-        assert evaluator._apply_operator('test', 'in', 'other', 'field') is False
+        assert evaluator._apply_operator("test", "in", "test", "field") is True
+        assert evaluator._apply_operator("test", "in", "other", "field") is False
 
     def test_operator_not_in_list(self, mock_api):
         """Operator not_in works."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator('cherry', 'not_in', ['apple', 'banana'], 'field') is True
-        assert evaluator._apply_operator('apple', 'not_in', ['apple', 'banana'], 'field') is False
+        assert evaluator._apply_operator("cherry", "not_in", ["apple", "banana"], "field") is True
+        assert evaluator._apply_operator("apple", "not_in", ["apple", "banana"], "field") is False
 
     def test_operator_not_in_single_value(self, mock_api):
         """Operator not_in with single value (non-list) works (covers line 306)."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator('cherry', 'not_in', 'apple', 'field') is True
-        assert evaluator._apply_operator('apple', 'not_in', 'apple', 'field') is False
+        assert evaluator._apply_operator("cherry", "not_in", "apple", "field") is True
+        assert evaluator._apply_operator("apple", "not_in", "apple", "field") is False
 
     def test_empty_collection_with_inequality_operators(self, mock_api, sample_torrent):
         """Empty collection [] with !=, not_in, not_contains returns True (covers line 281).
@@ -885,23 +982,23 @@ class TestOperators:
         evaluator = ConditionEvaluator(mock_api)
 
         condition_ne = {
-            'field': 'trackers.url',
-            'operator': '!=',
-            'value': 'http://test.example.com'
+            "field": "trackers.url",
+            "operator": "!=",
+            "value": "http://test.example.com",
         }
         assert evaluator._evaluate_condition(sample_torrent, condition_ne) is True
 
         condition_not_in = {
-            'field': 'trackers.url',
-            'operator': 'not_in',
-            'value': ['http://test.example.com', 'http://other.example.com']
+            "field": "trackers.url",
+            "operator": "not_in",
+            "value": ["http://test.example.com", "http://other.example.com"],
         }
         assert evaluator._evaluate_condition(sample_torrent, condition_not_in) is True
 
         condition_not_contains = {
-            'field': 'trackers.url',
-            'operator': 'not_contains',
-            'value': 'test'
+            "field": "trackers.url",
+            "operator": "not_contains",
+            "value": "test",
         }
         assert evaluator._evaluate_condition(sample_torrent, condition_not_contains) is True
 
@@ -909,63 +1006,65 @@ class TestOperators:
     def test_operator_greater_than(self, mock_api):
         """Operator > works."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator(5, '>', 3, 'field') is True
-        assert evaluator._apply_operator(3, '>', 5, 'field') is False
-        assert evaluator._apply_operator(5, '>', 5, 'field') is False
+        assert evaluator._apply_operator(5, ">", 3, "field") is True
+        assert evaluator._apply_operator(3, ">", 5, "field") is False
+        assert evaluator._apply_operator(5, ">", 5, "field") is False
 
     def test_operator_less_than(self, mock_api):
         """Operator < works."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator(3, '<', 5, 'field') is True
-        assert evaluator._apply_operator(5, '<', 3, 'field') is False
+        assert evaluator._apply_operator(3, "<", 5, "field") is True
+        assert evaluator._apply_operator(5, "<", 3, "field") is False
 
     def test_operator_greater_or_equal(self, mock_api):
         """Operator >= works."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator(5, '>=', 5, 'field') is True
-        assert evaluator._apply_operator(6, '>=', 5, 'field') is True
-        assert evaluator._apply_operator(4, '>=', 5, 'field') is False
+        assert evaluator._apply_operator(5, ">=", 5, "field") is True
+        assert evaluator._apply_operator(6, ">=", 5, "field") is True
+        assert evaluator._apply_operator(4, ">=", 5, "field") is False
 
     def test_operator_less_or_equal(self, mock_api):
         """Operator <= works."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator(5, '<=', 5, 'field') is True
-        assert evaluator._apply_operator(4, '<=', 5, 'field') is True
-        assert evaluator._apply_operator(6, '<=', 5, 'field') is False
+        assert evaluator._apply_operator(5, "<=", 5, "field") is True
+        assert evaluator._apply_operator(4, "<=", 5, "field") is True
+        assert evaluator._apply_operator(6, "<=", 5, "field") is False
 
     # Size operators
     def test_operator_smaller_than(self, mock_api):
         """Operator smaller_than works."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator(500000000, 'smaller_than', '1GB', 'field') is True
-        assert evaluator._apply_operator(2000000000, 'smaller_than', '1GB', 'field') is False
+        assert evaluator._apply_operator(500000000, "smaller_than", "1GB", "field") is True
+        assert evaluator._apply_operator(2000000000, "smaller_than", "1GB", "field") is False
 
     def test_operator_larger_than(self, mock_api):
         """Operator larger_than works."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator(2000000000, 'larger_than', '1GB', 'field') is True
-        assert evaluator._apply_operator(500000000, 'larger_than', '1GB', 'field') is False
+        assert evaluator._apply_operator(2000000000, "larger_than", "1GB", "field") is True
+        assert evaluator._apply_operator(500000000, "larger_than", "1GB", "field") is False
 
     # Time operators
-    @patch('qbt_rules.utils.time.time', return_value=1700000000)
+    @patch("qbt_rules.utils.time.time", return_value=1700000000)
     def test_operator_older_than(self, mock_time, mock_api):
         """Operator older_than works."""
         evaluator = ConditionEvaluator(mock_api)
         old_timestamp = 1700000000 - 7776000  # 90 days ago
-        assert evaluator._apply_operator(old_timestamp, 'older_than', '30 days', 'field') is True
+        assert evaluator._apply_operator(old_timestamp, "older_than", "30 days", "field") is True
 
         recent_timestamp = 1700000000 - 86400  # 1 day ago
-        assert evaluator._apply_operator(recent_timestamp, 'older_than', '30 days', 'field') is False
+        assert (
+            evaluator._apply_operator(recent_timestamp, "older_than", "30 days", "field") is False
+        )
 
-    @patch('qbt_rules.utils.time.time', return_value=1700000000)
+    @patch("qbt_rules.utils.time.time", return_value=1700000000)
     def test_operator_newer_than(self, mock_time, mock_api):
         """Operator newer_than works."""
         evaluator = ConditionEvaluator(mock_api)
         recent_timestamp = 1700000000 - 86400  # 1 day ago
-        assert evaluator._apply_operator(recent_timestamp, 'newer_than', '30 days', 'field') is True
+        assert evaluator._apply_operator(recent_timestamp, "newer_than", "30 days", "field") is True
 
         old_timestamp = 1700000000 - 7776000  # 90 days ago
-        assert evaluator._apply_operator(old_timestamp, 'newer_than', '30 days', 'field') is False
+        assert evaluator._apply_operator(old_timestamp, "newer_than", "30 days", "field") is False
 
     # Unknown operator
     def test_unknown_operator_raises_error(self, mock_api):
@@ -973,33 +1072,33 @@ class TestOperators:
         evaluator = ConditionEvaluator(mock_api)
 
         with pytest.raises(OperatorError) as exc_info:
-            evaluator._apply_operator('value', 'unknown_op', 'expected', 'field')
+            evaluator._apply_operator("value", "unknown_op", "expected", "field")
 
-        assert 'unknown_op' in str(exc_info.value)
+        assert "unknown_op" in str(exc_info.value)
 
     # None/missing values
     def test_none_value_with_equals(self, mock_api):
         """None value with == returns False."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator(None, '==', 'test', 'field') is False
+        assert evaluator._apply_operator(None, "==", "test", "field") is False
 
     def test_none_value_with_not_equals(self, mock_api):
         """None value with != returns True."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator(None, '!=', 'test', 'field') is True
+        assert evaluator._apply_operator(None, "!=", "test", "field") is True
 
     # List values (collections)
     def test_list_value_any_match(self, mock_api):
         """List values return True if ANY item matches."""
         evaluator = ConditionEvaluator(mock_api)
-        values = ['apple', 'banana', 'cherry']
-        assert evaluator._apply_operator(values, '==', 'banana', 'field') is True
+        values = ["apple", "banana", "cherry"]
+        assert evaluator._apply_operator(values, "==", "banana", "field") is True
 
     def test_list_value_no_match(self, mock_api):
         """List values return False if NO items match."""
         evaluator = ConditionEvaluator(mock_api)
-        values = ['apple', 'banana', 'cherry']
-        assert evaluator._apply_operator(values, '==', 'grape', 'field') is False
+        values = ["apple", "banana", "cherry"]
+        assert evaluator._apply_operator(values, "==", "grape", "field") is False
 
     # Negation operators against list values must check ALL items, not ANY
     # (regression: e.g. tags ['private', 'iptorrent.com'] with not_contains
@@ -1011,49 +1110,50 @@ class TestOperators:
         """not_contains on a list is False if ANY item positively contains
         the value -- a single matching item should veto the whole check."""
         evaluator = ConditionEvaluator(mock_api)
-        tags = ['private', 'iptorrent.com']
-        assert evaluator._apply_operator(tags, 'not_contains', 'private', 'field') is False
+        tags = ["private", "iptorrent.com"]
+        assert evaluator._apply_operator(tags, "not_contains", "private", "field") is False
 
     def test_list_value_not_contains_no_items_match(self, mock_api):
         """not_contains on a list is True only when NO item contains the value."""
         evaluator = ConditionEvaluator(mock_api)
-        tags = ['iptorrent.com', 'hd']
-        assert evaluator._apply_operator(tags, 'not_contains', 'private', 'field') is True
+        tags = ["iptorrent.com", "hd"]
+        assert evaluator._apply_operator(tags, "not_contains", "private", "field") is True
 
     def test_list_value_not_equals_one_item_matches(self, mock_api):
         """!= on a list is False if ANY item equals the value."""
         evaluator = ConditionEvaluator(mock_api)
-        values = ['apple', 'banana', 'cherry']
-        assert evaluator._apply_operator(values, '!=', 'banana', 'field') is False
+        values = ["apple", "banana", "cherry"]
+        assert evaluator._apply_operator(values, "!=", "banana", "field") is False
 
     def test_list_value_not_equals_no_items_match(self, mock_api):
         """!= on a list is True only when NO item equals the value."""
         evaluator = ConditionEvaluator(mock_api)
-        values = ['apple', 'banana', 'cherry']
-        assert evaluator._apply_operator(values, '!=', 'grape', 'field') is True
+        values = ["apple", "banana", "cherry"]
+        assert evaluator._apply_operator(values, "!=", "grape", "field") is True
 
     def test_list_value_not_in_one_item_matches(self, mock_api):
         """not_in on a list is False if ANY item is in the excluded set."""
         evaluator = ConditionEvaluator(mock_api)
-        values = ['private', 'iptorrent.com']
-        assert evaluator._apply_operator(values, 'not_in', ['private', 'seedbox'], 'field') is False
+        values = ["private", "iptorrent.com"]
+        assert evaluator._apply_operator(values, "not_in", ["private", "seedbox"], "field") is False
 
     def test_list_value_not_in_no_items_match(self, mock_api):
         """not_in on a list is True only when NO item is in the excluded set."""
         evaluator = ConditionEvaluator(mock_api)
-        values = ['iptorrent.com', 'hd']
-        assert evaluator._apply_operator(values, 'not_in', ['private', 'seedbox'], 'field') is True
+        values = ["iptorrent.com", "hd"]
+        assert evaluator._apply_operator(values, "not_in", ["private", "seedbox"], "field") is True
 
     def test_list_value_not_contains_empty_list_stays_vacuous(self, mock_api):
         """Empty list with not_contains is still vacuously True (unchanged
         by the ALL-vs-ANY fix -- this path is a separate early return)."""
         evaluator = ConditionEvaluator(mock_api)
-        assert evaluator._apply_operator([], 'not_contains', 'private', 'field') is True
+        assert evaluator._apply_operator([], "not_contains", "private", "field") is True
 
 
 # ============================================================================
 # Error Handling
 # ============================================================================
+
 
 class TestEvaluationErrorHandling:
     """Test error handling during evaluation."""
@@ -1061,17 +1161,13 @@ class TestEvaluationErrorHandling:
     def test_evaluation_error_returns_false(self, mock_api, sample_torrent):
         """Evaluation errors return False instead of raising."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {
-            'all': [
-                {'field': 'invalid_field', 'operator': '==', 'value': 'test'}
-            ]
-        }
+        conditions = {"all": [{"field": "invalid_field", "operator": "==", "value": "test"}]}
 
-        result = evaluator.evaluate(sample_torrent, conditions, current_context='adhoc-run')
+        result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is False
 
     def test_numeric_comparison_non_numeric_values(self, mock_api):
         """Numeric operators with non-numeric values return False."""
         evaluator = ConditionEvaluator(mock_api)
-        result = evaluator._apply_operator('not_a_number', '>', 5, 'field')
+        result = evaluator._apply_operator("not_a_number", ">", 5, "field")
         assert result is False

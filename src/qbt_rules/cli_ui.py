@@ -42,7 +42,9 @@ def render_table(headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> str:
     return "\n".join(lines)
 
 
-def print_table(headers: Sequence[str], rows: Sequence[Sequence[Any]], title: Optional[str] = None) -> None:
+def print_table(
+    headers: Sequence[str], rows: Sequence[Sequence[Any]], title: Optional[str] = None
+) -> None:
     """
     Print a table, optionally preceded by a title line
 

@@ -964,9 +964,9 @@ def test_golden_response(backend, name, tmp_path, monkeypatch):
         return
 
     expected = _load(path)
-    assert (
-        expected is not None
-    ), f"No golden file {path} -- run QBT_RULES_UPDATE_GOLDENS=1 pytest tests/golden"
+    assert expected is not None, (
+        f"No golden file {path} -- run QBT_RULES_UPDATE_GOLDENS=1 pytest tests/golden"
+    )
     # Body first, as text, so a mismatch shows a readable diff
     assert actual["body"] == expected["body"]
     assert actual == expected

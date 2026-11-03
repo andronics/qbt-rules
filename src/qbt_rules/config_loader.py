@@ -35,12 +35,11 @@ from qbt_rules.rules_validation import check_rules_structure
 # convention.
 ENV_VAR_MAP = {
     # Rules & queue misc
-    'rules.file': 'QBT_RULES_RULES_FILE',
-    'config.dir': 'QBT_RULES_CONFIG_DIR',
-    'queue.cleanup_after': 'QBT_RULES_QUEUE_CLEANUP_AFTER',
-
+    "rules.file": "QBT_RULES_RULES_FILE",
+    "config.dir": "QBT_RULES_CONFIG_DIR",
+    "queue.cleanup_after": "QBT_RULES_QUEUE_CLEANUP_AFTER",
     # engine.dry_run has no section prefix at all
-    'engine.dry_run': 'QBT_RULES_DRY_RUN',
+    "engine.dry_run": "QBT_RULES_DRY_RUN",
 }
 
 # Note: logging.* is NOT resolved through this map or resolve_section_config()
@@ -50,7 +49,7 @@ ENV_VAR_MAP = {
 # matching the convention exactly -- no exception entry needed here.
 
 # Default config location (Linux FHS standard)
-DEFAULT_CONFIG_SHARE_PATH = Path('/usr/share/qbt-rules')
+DEFAULT_CONFIG_SHARE_PATH = Path("/usr/share/qbt-rules")
 
 
 def copy_default_if_missing(target_path: Path, default_filename: str) -> bool:
@@ -104,7 +103,7 @@ def get_nested_config(config: Dict[str, Any], key: str, default: Any = None) -> 
         >>> get_nested_config(config, 'server.missing')
         None
     """
-    keys = key.split('.')
+    keys = key.split(".")
     value = config
 
     for k in keys:
@@ -146,7 +145,7 @@ def parse_bool(value: Any) -> bool:
         return value != 0
 
     if isinstance(value, str):
-        return value.lower() in ('true', '1', 'yes', 'on')
+        return value.lower() in ("true", "1", "yes", "on")
 
     return bool(value)
 
@@ -180,7 +179,7 @@ def parse_int(value: Any, default: int = 0) -> int:
         return default
 
 
-_RETENTION_UNITS = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400, 'w': 604800}
+_RETENTION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
 
 
 def parse_retention(value: Any) -> Optional[int]:
@@ -204,7 +203,7 @@ def parse_retention(value: Any) -> Optional[int]:
     if text.isdigit():
         seconds = int(text)
     else:
-        match = re.fullmatch(r'(\d+)\s*([smhdw])', text)
+        match = re.fullmatch(r"(\d+)\s*([smhdw])", text)
         if match:
             seconds = int(match.group(1)) * _RETENTION_UNITS[match.group(2)]
         else:
@@ -240,16 +239,16 @@ def parse_duration(value: Union[str, int]) -> str:
     if isinstance(value, int):
         # Convert seconds to days
         days = value // 86400
-        return f'{days}d'
+        return f"{days}d"
 
     if isinstance(value, str):
         # Already in format like '7d', '2w', etc.
         value = value.strip().lower()
 
         # Handle "30 days" format
-        if ' day' in value:
+        if " day" in value:
             days = int(value.split()[0])
-            return f'{days}d'
+            return f"{days}d"
 
         return value
 
@@ -261,7 +260,7 @@ def resolve_config(
     env_var: str,
     config: Dict[str, Any],
     config_key: str,
-    default: Optional[Any] = None
+    default: Optional[Any] = None,
 ) -> Any:
     """
     Universal configuration resolver with _FILE support
@@ -315,7 +314,7 @@ def resolve_config(
     if file_var in os.environ:
         file_path = os.environ[file_var]
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 content = f.read().strip()
             logging.debug(f"Loaded config from file: {file_var}={file_path}")
             return content
@@ -365,11 +364,11 @@ def expand_env_vars(value: Any) -> Any:
     """
     if isinstance(value, str):
         # Pattern: ${VAR_NAME:-default} or ${VAR_NAME}
-        pattern = r'\$\{([^}:]+)(?::-([^}]*))?\}'
+        pattern = r"\$\{([^}:]+)(?::-([^}]*))?\}"
 
         def replacer(match):
             var_name = match.group(1)
-            default_value = match.group(2) if match.group(2) is not None else ''
+            default_value = match.group(2) if match.group(2) is not None else ""
             return os.environ.get(var_name, default_value)
 
         return re.sub(pattern, replacer, value)
@@ -400,39 +399,24 @@ def load_yaml_file(file_path: Path) -> Dict[str, Any]:
     """
     try:
         if not file_path.exists():
-            raise ConfigurationError(
-                str(file_path),
-                f"File does not exist"
-            )
+            raise ConfigurationError(str(file_path), f"File does not exist")
 
-        with open(file_path, 'r') as f:
+        with open(file_path, "r") as f:
             content = yaml.safe_load(f)
 
         if content is None:
-            raise ConfigurationError(
-                str(file_path),
-                "File is empty"
-            )
+            raise ConfigurationError(str(file_path), "File is empty")
 
         return content
 
     except ConfigurationError:
         raise
     except yaml.YAMLError as e:
-        raise ConfigurationError(
-            str(file_path),
-            f"Invalid YAML syntax: {str(e)}"
-        )
+        raise ConfigurationError(str(file_path), f"Invalid YAML syntax: {str(e)}")
     except PermissionError:
-        raise ConfigurationError(
-            str(file_path),
-            "Permission denied - cannot read file"
-        )
+        raise ConfigurationError(str(file_path), "Permission denied - cannot read file")
     except Exception as e:
-        raise ConfigurationError(
-            str(file_path),
-            f"Cannot read file: {str(e)}"
-        )
+        raise ConfigurationError(str(file_path), f"Cannot read file: {str(e)}")
 
 
 class Config:
@@ -447,15 +431,15 @@ class Config:
                        Defaults to /config
         """
         if config_dir is None:
-            config_dir = Path(os.environ.get('CONFIG_DIR', '/config'))
+            config_dir = Path(os.environ.get("CONFIG_DIR", "/config"))
 
         self.config_dir = config_dir
-        self.config_file = config_dir / 'config.yml'
-        self.rules_file = config_dir / 'rules.yml'
+        self.config_file = config_dir / "config.yml"
+        self.rules_file = config_dir / "rules.yml"
 
         # Auto-copy defaults if missing
-        copy_default_if_missing(self.config_file, 'config.default.yml')
-        copy_default_if_missing(self.rules_file, 'rules.default.yml')
+        copy_default_if_missing(self.config_file, "config.default.yml")
+        copy_default_if_missing(self.rules_file, "rules.default.yml")
 
         # Resolver and cache for resolved rules (set by _load_rules)
         self._resolver: Optional[RuleResolver] = None
@@ -497,12 +481,12 @@ class Config:
         if problems:
             raise ConfigurationError(str(self.rules_file), problems[0].message)
 
-        rules = raw_rules.get('rules', [])
+        rules = raw_rules.get("rules", [])
         logging.debug(f"Loaded {len(rules)} rules")
 
         # Extract refs block and initialize resolver
-        refs = raw_rules.get('refs') or {}
-        instances = raw_rules.get('instances') or {}
+        refs = raw_rules.get("refs") or {}
+        instances = raw_rules.get("instances") or {}
 
         # Create resolver with global refs
         # TODO: Support per-instance resolvers when running against specific instances
@@ -515,7 +499,7 @@ class Config:
         # without sniffing structure. Refreshed on every hot-reload since
         # this is set inside _load_rules(), which get_rules() re-invokes
         # when rules.yml changes on disk.
-        self.rules_version = raw_rules.get('version', 1)
+        self.rules_version = raw_rules.get("version", 1)
         self.rules = rules
         self._resolver = resolver
 
@@ -523,9 +507,11 @@ class Config:
         self._resolved_rules_cache = None
 
         if refs:
-            logging.debug(f"Initialized resolver with refs: vars={len(resolver.vars)}, "
-                         f"conditions={len(resolver.conditions)}, "
-                         f"actions={len(resolver.actions)}")
+            logging.debug(
+                f"Initialized resolver with refs: vars={len(resolver.vars)}, "
+                f"conditions={len(resolver.conditions)}, "
+                f"actions={len(resolver.actions)}"
+            )
 
     def _load_schedule_from_env(self) -> Optional[List[Dict[str, str]]]:
         """
@@ -543,18 +529,20 @@ class Config:
         entries = []
         i = 0
         while True:
-            cron = resolve_config(None, f'QBT_RULES_SCHEDULE_{i}_CRON', {}, 'unused', default=None)
+            cron = resolve_config(None, f"QBT_RULES_SCHEDULE_{i}_CRON", {}, "unused", default=None)
             if cron is None:
                 break
 
-            context = resolve_config(None, f'QBT_RULES_SCHEDULE_{i}_CONTEXT', {}, 'unused', default=None)
+            context = resolve_config(
+                None, f"QBT_RULES_SCHEDULE_{i}_CONTEXT", {}, "unused", default=None
+            )
             if context is None:
                 raise ConfigurationError(
                     str(self.config_file),
-                    f"QBT_RULES_SCHEDULE_{i}_CRON is set but QBT_RULES_SCHEDULE_{i}_CONTEXT is missing"
+                    f"QBT_RULES_SCHEDULE_{i}_CRON is set but QBT_RULES_SCHEDULE_{i}_CONTEXT is missing",
                 )
 
-            entries.append({'cron': cron, 'context': context})
+            entries.append({"cron": cron, "context": context})
             i += 1
 
         return entries if entries else None
@@ -572,37 +560,34 @@ class Config:
         top-level config.yml section.
         """
         env_schedule = self._load_schedule_from_env()
-        self.schedule = env_schedule if env_schedule is not None else (self.config.get('schedule') or [])
+        self.schedule = (
+            env_schedule if env_schedule is not None else (self.config.get("schedule") or [])
+        )
 
         if not isinstance(self.schedule, list):
-            raise ConfigurationError(
-                str(self.config_file),
-                "'schedule' must be a list"
-            )
+            raise ConfigurationError(str(self.config_file), "'schedule' must be a list")
 
         for i, entry in enumerate(self.schedule):
             if not isinstance(entry, dict):
                 raise ConfigurationError(
-                    str(self.config_file),
-                    f"Schedule entry #{i+1} must be a dictionary"
+                    str(self.config_file), f"Schedule entry #{i + 1} must be a dictionary"
                 )
 
-            if 'cron' not in entry:
+            if "cron" not in entry:
                 raise ConfigurationError(
-                    str(self.config_file),
-                    f"Schedule entry #{i+1} missing required field: 'cron'"
+                    str(self.config_file), f"Schedule entry #{i + 1} missing required field: 'cron'"
                 )
 
-            if 'context' not in entry:
+            if "context" not in entry:
                 raise ConfigurationError(
                     str(self.config_file),
-                    f"Schedule entry #{i+1} missing required field: 'context'"
+                    f"Schedule entry #{i + 1} missing required field: 'context'",
                 )
 
-            if not croniter.is_valid(entry['cron']):
+            if not croniter.is_valid(entry["cron"]):
                 raise ConfigurationError(
                     str(self.config_file),
-                    f"Schedule entry #{i+1} has an invalid cron expression: '{entry['cron']}'"
+                    f"Schedule entry #{i + 1} has an invalid cron expression: '{entry['cron']}'",
                 )
 
         logging.debug(f"Loaded {len(self.schedule)} schedule entries")
@@ -622,7 +607,9 @@ class Config:
 
     def is_dry_run(self) -> bool:
         """Check if dry-run mode is enabled"""
-        return parse_bool(resolve_config(None, 'QBT_RULES_DRY_RUN', self.config, 'engine.dry_run', default=False))
+        return parse_bool(
+            resolve_config(None, "QBT_RULES_DRY_RUN", self.config, "engine.dry_run", default=False)
+        )
 
     def _current_rules_stamp(self) -> tuple:
         """
@@ -684,7 +671,9 @@ class Config:
             self.reload_rules()
         except Exception as e:
             # Keep existing rules on error - graceful degradation
-            logging.warning(f"Failed to reload rules from {self.rules_file}: {e}. Using cached rules.")
+            logging.warning(
+                f"Failed to reload rules from {self.rules_file}: {e}. Using cached rules."
+            )
 
         # Return raw rules if requested
         if not resolved:
@@ -707,7 +696,7 @@ class Config:
                     resolved_rules.append(resolved_rule)
                 except Exception as e:
                     # Log error with rule id for debugging
-                    rule_id = rule.get('id', 'unknown')
+                    rule_id = rule.get("id", "unknown")
                     logging.error(f"Failed to resolve rule '{rule_id}': {e}")
                     raise  # Re-raise to surface the error
 

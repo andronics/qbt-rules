@@ -22,7 +22,7 @@ def temp_db_path(tmp_path):
 @pytest.fixture
 def queue_backend(temp_db_path):
     """Create a real SQLite queue backend"""
-    queue = create_queue('sqlite', db_path=temp_db_path)
+    queue = create_queue("sqlite", db_path=temp_db_path)
     yield queue
     queue.close()
 
@@ -34,11 +34,11 @@ class TestSchedulerEndToEnd:
         """A due schedule entry should produce a real, retrievable queued job"""
         scheduler = Scheduler(
             queue=queue_backend,
-            entries=[{'cron': '* * * * *', 'context': 'nightly'}],
+            entries=[{"cron": "* * * * *", "context": "nightly"}],
             poll_interval=0.01,
         )
         # Force immediate firing instead of waiting for a real minute boundary
-        scheduler._entries[0]['next_fire'] = time.time() - 1
+        scheduler._entries[0]["next_fire"] = time.time() - 1
 
         scheduler.start()
         time.sleep(0.1)
@@ -46,28 +46,28 @@ class TestSchedulerEndToEnd:
 
         jobs = queue_backend.list_jobs()
         assert len(jobs) == 1
-        assert jobs[0]['context'] == 'nightly'
-        assert jobs[0]['status'] == 'pending'
+        assert jobs[0]["context"] == "nightly"
+        assert jobs[0]["status"] == "pending"
 
     def test_multiple_ticks_enqueue_multiple_jobs(self, queue_backend):
         """Firing on successive ticks should enqueue a separate job each time"""
         scheduler = Scheduler(
             queue=queue_backend,
-            entries=[{'cron': '* * * * *', 'context': 'nightly'}],
+            entries=[{"cron": "* * * * *", "context": "nightly"}],
             poll_interval=0.02,
         )
-        scheduler._entries[0]['next_fire'] = time.time() - 1
+        scheduler._entries[0]["next_fire"] = time.time() - 1
 
         scheduler.start()
         time.sleep(0.05)
         # Force it due again for a second fire
-        scheduler._entries[0]['next_fire'] = time.time() - 1
+        scheduler._entries[0]["next_fire"] = time.time() - 1
         time.sleep(0.05)
         scheduler.stop()
 
         jobs = queue_backend.list_jobs()
         assert len(jobs) == 2
-        assert all(j['context'] == 'nightly' for j in jobs)
+        assert all(j["context"] == "nightly" for j in jobs)
 
     def test_regression_replaces_external_cron_sweep(self, queue_backend):
         """
@@ -78,10 +78,10 @@ class TestSchedulerEndToEnd:
         """
         scheduler = Scheduler(
             queue=queue_backend,
-            entries=[{'cron': '*/30 * * * *', 'context': 'cron'}],
+            entries=[{"cron": "*/30 * * * *", "context": "cron"}],
             poll_interval=0.01,
         )
-        scheduler._entries[0]['next_fire'] = time.time() - 1
+        scheduler._entries[0]["next_fire"] = time.time() - 1
 
         scheduler.start()
         time.sleep(0.1)
@@ -89,5 +89,5 @@ class TestSchedulerEndToEnd:
 
         jobs = queue_backend.list_jobs()
         assert len(jobs) == 1
-        assert jobs[0]['context'] == 'cron'
-        assert jobs[0]['hash'] is None  # sweeps the whole library, same as the external cron did
+        assert jobs[0]["context"] == "cron"
+        assert jobs[0]["hash"] is None  # sweeps the whole library, same as the external cron did

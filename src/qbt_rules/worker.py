@@ -38,7 +38,7 @@ class Worker:
         notifications_config: Optional[Dict[str, str]] = None,
         integrations_config: Optional[Dict[str, Dict[str, str]]] = None,
         cleanup_after: Optional[int] = None,
-        cleanup_interval: float = 3600.0
+        cleanup_interval: float = 3600.0,
     ):
         """
         Initialize worker
@@ -69,7 +69,7 @@ class Worker:
         self.integrations_config = integrations_config
         self.cleanup_after = cleanup_after
         self.cleanup_interval = cleanup_interval
-        self._next_cleanup = float('-inf')  # monotonic time; run on first loop
+        self._next_cleanup = float("-inf")  # monotonic time; run on first loop
 
         self.running = False
         self.thread: Optional[threading.Thread] = None
@@ -123,10 +123,12 @@ class Worker:
             Dictionary with worker status information
         """
         return {
-            'running': self.running,
-            'thread_alive': self.is_alive(),
-            'last_job_completed': self.last_job_completed.isoformat() if self.last_job_completed else None,
-            'queue_depth': self.queue.get_queue_depth()
+            "running": self.running,
+            "thread_alive": self.is_alive(),
+            "last_job_completed": self.last_job_completed.isoformat()
+            if self.last_job_completed
+            else None,
+            "queue_depth": self.queue.get_queue_depth(),
         }
 
     def _run_loop(self):
@@ -182,13 +184,15 @@ class Worker:
         Args:
             job: Job dictionary from queue
         """
-        job_id = job['job_id']
-        context = job.get('context')
-        hash_filter = job.get('hash')
-        job_dry_run = bool(job.get('dry_run'))
+        job_id = job["job_id"]
+        context = job.get("context")
+        hash_filter = job.get("hash")
+        job_dry_run = bool(job.get("dry_run"))
 
-        logger.info(f"Processing job {job_id} (context={context}, hash={hash_filter}"
-                    f"{', dry_run=True' if job_dry_run else ''})")
+        logger.info(
+            f"Processing job {job_id} (context={context}, hash={hash_filter}"
+            f"{', dry_run=True' if job_dry_run else ''})"
+        )
 
         started_at = datetime.now(timezone.utc)
 
@@ -203,7 +207,7 @@ class Worker:
                 status=JobStatus.COMPLETED,
                 started_at=started_at,
                 completed_at=completed_at,
-                result=result
+                result=result,
             )
 
             self.last_job_completed = completed_at
@@ -228,15 +232,16 @@ class Worker:
                 status=JobStatus.FAILED,
                 started_at=started_at,
                 completed_at=completed_at,
-                error=error_trace
+                error=error_trace,
             )
             metrics.record_job_duration((completed_at - started_at).total_seconds())
 
             logger.error(f"Job {job_id} failed: {error_msg}")
             logger.debug(f"Job {job_id} traceback:\n{error_trace}")
 
-    def _execute_job(self, context: Optional[str], hash_filter: Optional[str],
-                     job_dry_run: bool = False) -> Dict[str, Any]:
+    def _execute_job(
+        self, context: Optional[str], hash_filter: Optional[str], job_dry_run: bool = False
+    ) -> Dict[str, Any]:
         """
         Execute job using RulesEngine
 
@@ -262,7 +267,7 @@ class Worker:
             config=self.config,
             dry_run=dry_run,
             notifications_config=self.notifications_config,
-            integrations_config=self.integrations_config
+            integrations_config=self.integrations_config,
         )
 
         # Execute rules
@@ -272,18 +277,18 @@ class Worker:
         stats = engine.stats
 
         result = {
-            'total_torrents': stats.total_torrents,
-            'torrents_processed': stats.processed,
-            'rules_matched': stats.rules_matched,
-            'actions_executed': stats.actions_executed,
-            'actions_skipped': stats.actions_skipped,
-            'errors': stats.errors,
-            'dry_run': dry_run,
+            "total_torrents": stats.total_torrents,
+            "torrents_processed": stats.processed,
+            "rules_matched": stats.rules_matched,
+            "actions_executed": stats.actions_executed,
+            "actions_skipped": stats.actions_skipped,
+            "errors": stats.errors,
+            "dry_run": dry_run,
             # Per-rule breakdown of the counters above, keyed by rule id (or
             # name when no id is set) -- see RuleStats.by_rule. New key,
             # additive: any existing consumer reading only the aggregate
             # fields above is unaffected by its presence.
-            'by_rule': stats.by_rule,
+            "by_rule": stats.by_rule,
         }
 
         return result

@@ -9,10 +9,12 @@ import logging.handlers
 from typing import Dict, Any, Optional
 
 # Standard log formats
-LOG_FORMAT_SIMPLE = '%(asctime)s | %(levelname)-8s | %(message)s'
-LOG_FORMAT_DETAILED = '%(asctime)s | %(levelname)-8s | %(name)s:%(funcName)s:%(lineno)d | %(message)s'
-CONSOLE_FORMAT_BARE = '%(message)s'
-DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
+LOG_FORMAT_SIMPLE = "%(asctime)s | %(levelname)-8s | %(message)s"
+LOG_FORMAT_DETAILED = (
+    "%(asctime)s | %(levelname)-8s | %(name)s:%(funcName)s:%(lineno)d | %(message)s"
+)
+CONSOLE_FORMAT_BARE = "%(message)s"
+DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 # Log file rotation defaults (logging.max_bytes / logging.backup_count)
 DEFAULT_MAX_BYTES = 10 * 1024 * 1024
@@ -38,9 +40,9 @@ def setup_logging(logging_config: Dict[str, Any]):
     """
     global _file_settings
 
-    log_level = logging_config['level']
-    trace_mode = logging_config['trace_mode']
-    client_mode = logging_config.get('client_mode', False)
+    log_level = logging_config["level"]
+    trace_mode = logging_config["trace_mode"]
+    client_mode = logging_config.get("client_mode", False)
 
     # The log file is the persistent diagnostic record -- full format
     # (timestamp, level, and function/line under --trace) so it's there to
@@ -71,15 +73,15 @@ def setup_logging(logging_config: Dict[str, Any]):
     file_handler = None
     _file_settings = None
     try:
-        log_file = logging_config['file']
+        log_file = logging_config["file"]
         log_file.parent.mkdir(parents=True, exist_ok=True)
 
         settings = {
-            'file': log_file,
-            'level': getattr(logging, log_level),
-            'formatter': logging.Formatter(file_log_format, datefmt=DATE_FORMAT),
-            'max_bytes': logging_config.get('max_bytes', DEFAULT_MAX_BYTES),
-            'backup_count': logging_config.get('backup_count', DEFAULT_BACKUP_COUNT),
+            "file": log_file,
+            "level": getattr(logging, log_level),
+            "formatter": logging.Formatter(file_log_format, datefmt=DATE_FORMAT),
+            "max_bytes": logging_config.get("max_bytes", DEFAULT_MAX_BYTES),
+            "backup_count": logging_config.get("backup_count", DEFAULT_BACKUP_COUNT),
         }
         file_handler = _build_file_handler(settings, rotate=True)
         _file_settings = settings
@@ -113,14 +115,14 @@ def setup_logging(logging_config: Dict[str, Any]):
 def _build_file_handler(settings: Dict[str, Any], rotate: bool) -> logging.Handler:
     if rotate:
         handler = logging.handlers.RotatingFileHandler(
-            settings['file'],
-            maxBytes=settings['max_bytes'],
-            backupCount=settings['backup_count'],
+            settings["file"],
+            maxBytes=settings["max_bytes"],
+            backupCount=settings["backup_count"],
         )
     else:
-        handler = logging.handlers.WatchedFileHandler(settings['file'])
-    handler.setLevel(settings['level'])
-    handler.setFormatter(settings['formatter'])
+        handler = logging.handlers.WatchedFileHandler(settings["file"])
+    handler.setLevel(settings["level"])
+    handler.setFormatter(settings["formatter"])
     return handler
 
 

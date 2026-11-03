@@ -54,9 +54,7 @@ jobs:
           ruff check src/ || echo "Linting issues found (non-blocking)"
 
       - name: Check code formatting
-        continue-on-error: true
-        run: |
-          black --check src/ || echo "Formatting issues found (non-blocking)"
+        run: ruff format --check
 
       - name: Type check with mypy
         continue-on-error: true

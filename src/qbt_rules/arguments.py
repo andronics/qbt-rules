@@ -18,10 +18,10 @@ def smart_config_default() -> str:
 
     Returns ./config if it exists (bare metal), otherwise /config (Docker)
     """
-    local_config = Path('./config')
+    local_config = Path("./config")
     if local_config.exists() and local_config.is_dir():
-        return './config'
-    return '/config'
+        return "./config"
+    return "/config"
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -31,211 +31,168 @@ def create_parser() -> argparse.ArgumentParser:
     Returns:
         Configured ArgumentParser
     """
-    
+
     parser = argparse.ArgumentParser(
-        description=f'qbt-rules - rules engine',
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        description=f"qbt-rules - rules engine",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     # Mode selection
     parser.add_argument(
-        '--serve',
-        action='store_true',
-        help='Run in server mode (HTTP API + worker)'
+        "--serve", action="store_true", help="Run in server mode (HTTP API + worker)"
     )
 
     # Execution arguments (client mode)
     parser.add_argument(
-        '--context',
+        "--context",
         type=str,
         default=None,
-        help='Context filter for rules (any custom string identifier you define)',
-        metavar="CONTEXT"
+        help="Context filter for rules (any custom string identifier you define)",
+        metavar="CONTEXT",
     )
 
     parser.add_argument(
-        '--hash',
+        "--hash",
         type=str,
         default=None,
-        help='Torrent hash to process (40-character hex string)',
-        metavar="HASH"
+        help="Torrent hash to process (40-character hex string)",
+        metavar="HASH",
     )
 
     parser.add_argument(
-        '--wait',
-        action='store_true',
-        help='Wait for job to complete (polls server for status)'
+        "--wait", action="store_true", help="Wait for job to complete (polls server for status)"
     )
 
     # Common configuration arguments
     parser.add_argument(
-        '--config-dir',
+        "--config-dir",
         type=Path,
         default=None,
-        help=f'Path to configuration directory (default: {smart_config_default()} or CONFIG_DIR env var)',
-        metavar="DIR"
+        help=f"Path to configuration directory (default: {smart_config_default()} or CONFIG_DIR env var)",
+        metavar="DIR",
     )
 
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Simulate changes without making them (useful for testing)'
+        "--dry-run",
+        action="store_true",
+        help="Simulate changes without making them (useful for testing)",
     )
 
     parser.add_argument(
-        '--log-level',
-        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-        help='Set logging verbosity (default: INFO)',
-        metavar="LEVEL"
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Set logging verbosity (default: INFO)",
+        metavar="LEVEL",
     )
 
     parser.add_argument(
-        '--trace',
-        action='store_true',
-        help='Enable trace mode with detailed logging (module/function/line)'
+        "--trace",
+        action="store_true",
+        help="Enable trace mode with detailed logging (module/function/line)",
     )
 
     # Server configuration (for --serve mode)
     parser.add_argument(
-        '--server-host',
-        type=str,
-        help='Server bind address (default: 0.0.0.0)',
-        metavar="HOST"
+        "--server-host", type=str, help="Server bind address (default: 0.0.0.0)", metavar="HOST"
     )
 
     parser.add_argument(
-        '--server-port',
-        type=int,
-        help='Server port (default: 5000)',
-        metavar="PORT"
+        "--server-port", type=int, help="Server port (default: 5000)", metavar="PORT"
     )
 
     parser.add_argument(
-        '--server-api-key',
-        type=str,
-        help='Server API key for authentication',
-        metavar="KEY"
+        "--server-api-key", type=str, help="Server API key for authentication", metavar="KEY"
     )
 
     parser.add_argument(
-        '--server-workers',
-        type=int,
-        help='Gunicorn worker processes (default: 1)',
-        metavar="NUM"
+        "--server-workers", type=int, help="Gunicorn worker processes (default: 1)", metavar="NUM"
     )
 
     # Client configuration (for client mode)
     parser.add_argument(
-        '--client-server-url',
+        "--client-server-url",
         type=str,
-        help='Server URL for client (default: http://localhost:5000)',
-        metavar="URL"
+        help="Server URL for client (default: http://localhost:5000)",
+        metavar="URL",
     )
 
     parser.add_argument(
-        '--client-api-key',
-        type=str,
-        help='Client API key for authentication',
-        metavar="KEY"
+        "--client-api-key", type=str, help="Client API key for authentication", metavar="KEY"
     )
 
     # Queue configuration (for --serve mode)
     parser.add_argument(
-        '--queue-backend',
-        choices=['sqlite', 'redis'],
-        help='Queue backend (default: sqlite)',
-        metavar="BACKEND"
+        "--queue-backend",
+        choices=["sqlite", "redis"],
+        help="Queue backend (default: sqlite)",
+        metavar="BACKEND",
     )
 
     parser.add_argument(
-        '--queue-sqlite-path',
+        "--queue-sqlite-path",
         type=str,
-        help='SQLite database path (default: /config/qbt-rules.db)',
-        metavar="PATH"
+        help="SQLite database path (default: /config/qbt-rules.db)",
+        metavar="PATH",
     )
 
     parser.add_argument(
-        '--queue-redis-url',
+        "--queue-redis-url",
         type=str,
-        help='Redis connection URL (default: redis://localhost:6379/0)',
-        metavar="URL"
+        help="Redis connection URL (default: redis://localhost:6379/0)",
+        metavar="URL",
     )
 
     # Job management commands
+    parser.add_argument("--list-jobs", action="store_true", help="List recent jobs")
+
     parser.add_argument(
-        '--list-jobs',
-        action='store_true',
-        help='List recent jobs'
+        "--job-status", type=str, metavar="JOB_ID", help="Get status of specific job"
     )
 
     parser.add_argument(
-        '--job-status',
-        type=str,
-        metavar="JOB_ID",
-        help='Get status of specific job'
+        "--cancel-job", type=str, metavar="JOB_ID", dest="cancel_job_id", help="Cancel pending job"
+    )
+
+    parser.add_argument("--stats", action="store_true", help="Get server statistics")
+
+    parser.add_argument(
+        "--status-filter",
+        choices=["pending", "processing", "completed", "failed", "cancelled"],
+        help="Filter jobs by status (for --list-jobs)",
+        metavar="STATUS",
     )
 
     parser.add_argument(
-        '--cancel-job',
-        type=str,
-        metavar="JOB_ID",
-        dest='cancel_job_id',
-        help='Cancel pending job'
-    )
-
-    parser.add_argument(
-        '--stats',
-        action='store_true',
-        help='Get server statistics'
-    )
-
-    parser.add_argument(
-        '--status-filter',
-        choices=['pending', 'processing', 'completed', 'failed', 'cancelled'],
-        help='Filter jobs by status (for --list-jobs)',
-        metavar="STATUS"
-    )
-
-    parser.add_argument(
-        '--limit',
+        "--limit",
         type=int,
         default=20,
-        help='Limit number of results (for --list-jobs, default: 20)',
-        metavar="NUM"
+        help="Limit number of results (for --list-jobs, default: 20)",
+        metavar="NUM",
     )
 
     parser.add_argument(
-        '--output',
-        choices=['table', 'json'],
-        default='table',
-        help='Output format for data-display commands: --list-jobs, --job-status, '
-             '--stats, --cancel-job, --list-rules (default: table)',
-        metavar="FORMAT"
+        "--output",
+        choices=["table", "json"],
+        default="table",
+        help="Output format for data-display commands: --list-jobs, --job-status, "
+        "--stats, --cancel-job, --list-rules (default: table)",
+        metavar="FORMAT",
     )
 
     # Utility arguments
+    parser.add_argument("--version", action="version", version=f"qbt-rules v{__version__}")
+
     parser.add_argument(
-        '--version',
-        action='version',
-        version=f'qbt-rules v{__version__}'
+        "--validate",
+        action="store_true",
+        help="Validate configuration and rules files without running",
     )
 
     parser.add_argument(
-        '--validate',
-        action='store_true',
-        help='Validate configuration and rules files without running'
+        "--list-rules", action="store_true", help="List all rules with priorities and exit"
     )
 
-    parser.add_argument(
-        '--list-rules',
-        action='store_true',
-        help='List all rules with priorities and exit'
-    )
-
-
-        
-
-    parser.epilog = '''
+    parser.epilog = """
 Examples:
 
   Server Mode:
@@ -301,9 +258,7 @@ Environment Variables:
     QBT_RULES_QUEUE_BACKEND=sqlite
 
 See PLAN.md or config.default.yml for complete configuration reference.
-    '''
-
-
+    """
 
     return parser
 
@@ -351,13 +306,13 @@ def process_args(args: argparse.Namespace) -> Path:
     # (--log-level/--trace are handled directly by legacy_cli.py's
     # get_logging_config(), not via this env-var-setting indirection)
     if args.dry_run:
-        os.environ['QBT_RULES_DRY_RUN'] = 'true'
+        os.environ["QBT_RULES_DRY_RUN"] = "true"
 
     # Determine config directory
     if args.config_dir:
         config_dir = args.config_dir
-    elif 'CONFIG_DIR' in os.environ:
-        config_dir = Path(os.environ['CONFIG_DIR'])
+    elif "CONFIG_DIR" in os.environ:
+        config_dir = Path(os.environ["CONFIG_DIR"])
     else:
         config_dir = Path(smart_config_default())
 
@@ -376,6 +331,7 @@ def handle_utility_args(args: argparse.Namespace, config) -> Optional[int]:
         The utility command's exit code, or None if no utility was handled
     """
     from qbt_rules.log_setup import get_logger
+
     logger = get_logger(__name__)
 
     # Handle --validate
@@ -386,8 +342,9 @@ def handle_utility_args(args: argparse.Namespace, config) -> Optional[int]:
             # Check qBittorrent config -- deferred import avoids a circular
             # import (legacy_cli.py already imports this module at load time)
             from qbt_rules.legacy_cli import get_notifications_config, get_qbittorrent_config
+
             qbt_config = get_qbittorrent_config(args, config)
-            required = ['host', 'username', 'password']
+            required = ["host", "username", "password"]
             missing = [k for k in required if not qbt_config.get(k)]
             if missing:
                 logger.error(f"Missing qBittorrent configuration: {', '.join(missing)}")
@@ -403,7 +360,7 @@ def handle_utility_args(args: argparse.Namespace, config) -> Optional[int]:
             else:
                 logger.info(f"✓ Loaded {len(rules)} rules")
 
-            issues = lint_rules({'rules': rules}, notifications=notifications_config)
+            issues = lint_rules({"rules": rules}, notifications=notifications_config)
             for issue in issues:
                 log = getattr(logger, issue.severity)
                 log(f"  {format_path(issue.path)}: {issue.message}")
@@ -426,9 +383,9 @@ def handle_utility_args(args: argparse.Namespace, config) -> Optional[int]:
         from qbt_rules import cli_ui
 
         rules = config.get_rules()
-        output_format = getattr(args, 'output', 'table')
+        output_format = getattr(args, "output", "table")
 
-        if output_format == 'json':
+        if output_format == "json":
             cli_ui.print_json(rules)
             return 0
 
@@ -439,23 +396,23 @@ def handle_utility_args(args: argparse.Namespace, config) -> Optional[int]:
         # Rules execute in file order (no sorting)
         rows = []
         for index, rule in enumerate(rules, 1):
-            enabled = '✓' if rule.get('enabled', True) else '✗'
-            stop = '✓' if rule.get('stop_on_match', False) else '-'
+            enabled = "✓" if rule.get("enabled", True) else "✗"
+            stop = "✓" if rule.get("stop_on_match", False) else "-"
 
             # Get context filter (from rule level)
-            context_filter = rule.get('context', 'any')
+            context_filter = rule.get("context", "any")
             if isinstance(context_filter, list):
-                context_filter = ','.join(context_filter)
+                context_filter = ",".join(context_filter)
 
-            rule_id = rule.get('id', 'unnamed')
-            description = rule.get('meta', {}).get('description', '')
+            rule_id = rule.get("id", "unnamed")
+            description = rule.get("meta", {}).get("description", "")
 
             rows.append([index, enabled, stop, context_filter, rule_id, description])
 
         cli_ui.print_table(
-            headers=['#', 'Enabled', 'Stop', 'Context', 'ID', 'Description'],
+            headers=["#", "Enabled", "Stop", "Context", "ID", "Description"],
             rows=rows,
-            title=f"Rules ({len(rules)} total, execute in file order):"
+            title=f"Rules ({len(rules)} total, execute in file order):",
         )
         return 0
 

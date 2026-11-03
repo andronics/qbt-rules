@@ -40,16 +40,14 @@ class QBittorrentAPI:
             AuthenticationError: If login fails (only when connect_now=True)
             ConnectionError: If cannot reach server (only when connect_now=True)
         """
-        self.host = host.rstrip('/')
+        self.host = host.rstrip("/")
         self.username = username
         self.password = password
         self._connected = False
 
         # Initialize qbittorrent-api client (does not connect yet)
         self.client = qbittorrentapi.Client(
-            host=self.host,
-            username=self.username,
-            password=self.password
+            host=self.host, username=self.username, password=self.password
         )
 
         if connect_now:
@@ -84,8 +82,12 @@ class QBittorrentAPI:
 
     # Torrent Information Methods
 
-    def get_torrents(self, filter_type: Optional[str] = None, category: Optional[str] = None,
-                     tag: Optional[str] = None) -> List[Dict]:
+    def get_torrents(
+        self,
+        filter_type: Optional[str] = None,
+        category: Optional[str] = None,
+        tag: Optional[str] = None,
+    ) -> List[Dict]:
         """
         Get list of torrents
 
@@ -100,11 +102,7 @@ class QBittorrentAPI:
         self._ensure_connected()
 
         # Use qbittorrent-api Client
-        torrents = self.client.torrents_info(
-            status_filter=filter_type,
-            category=category,
-            tag=tag
-        )
+        torrents = self.client.torrents_info(status_filter=filter_type, category=category, tag=tag)
 
         # Convert to list of dicts (qbittorrent-api returns TorrentInfoList)
         return [dict(t) for t in torrents]
@@ -192,8 +190,8 @@ class QBittorrentAPI:
         peers_data = self.client.sync_torrent_peers(torrent_hash=torrent_hash)
 
         # Convert peers dict to list of dicts for consistency
-        peers_dict = peers_data.get('peers', {})
-        return [{'id': peer_id, **dict(peer_data)} for peer_id, peer_data in peers_dict.items()]
+        peers_dict = peers_data.get("peers", {})
+        return [{"id": peer_id, **dict(peer_data)} for peer_id, peer_data in peers_dict.items()]
 
     # Global Information Methods
 
@@ -278,8 +276,9 @@ class QBittorrentAPI:
         self.client.torrents_set_download_limit(limit=limit, torrent_hashes=hashes)
         return True
 
-    def set_share_limits(self, hashes: List[str], ratio_limit: float = -2,
-                         seeding_time_limit: int = -2) -> bool:
+    def set_share_limits(
+        self, hashes: List[str], ratio_limit: float = -2, seeding_time_limit: int = -2
+    ) -> bool:
         """
         Set share limits
 
@@ -289,9 +288,7 @@ class QBittorrentAPI:
             seeding_time_limit: Max seeding time in minutes (-2=global, -1=unlimited, >=0=limit)
         """
         self.client.torrents_set_share_limits(
-            ratio_limit=ratio_limit,
-            seeding_time_limit=seeding_time_limit,
-            torrent_hashes=hashes
+            ratio_limit=ratio_limit, seeding_time_limit=seeding_time_limit, torrent_hashes=hashes
         )
         return True
 

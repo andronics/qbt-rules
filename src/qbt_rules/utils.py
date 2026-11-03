@@ -18,10 +18,10 @@ def parse_tags(torrent: Dict) -> List[str]:
     Returns:
         List of tag strings
     """
-    tags_str = torrent.get('tags', '')
+    tags_str = torrent.get("tags", "")
     if not tags_str:
         return []
-    return [tag.strip() for tag in tags_str.split(',') if tag.strip()]
+    return [tag.strip() for tag in tags_str.split(",") if tag.strip()]
 
 
 def parse_duration(duration: str) -> int:
@@ -45,7 +45,7 @@ def parse_duration(duration: str) -> int:
     duration = duration.lower().strip()
 
     # Extract number and unit
-    match = re.match(r'(\d+)\s*(second|minute|hour|day|week|month|year)s?', duration)
+    match = re.match(r"(\d+)\s*(second|minute|hour|day|week|month|year)s?", duration)
     if not match:
         logging.warning(f"Invalid duration format: {duration}, defaulting to 0")
         return 0
@@ -54,13 +54,13 @@ def parse_duration(duration: str) -> int:
     unit = match.group(2)
 
     multipliers = {
-        'second': 1,
-        'minute': 60,
-        'hour': 3600,
-        'day': 86400,
-        'week': 604800,
-        'month': 2592000,  # 30 days
-        'year': 31536000   # 365 days
+        "second": 1,
+        "minute": 60,
+        "hour": 3600,
+        "day": 86400,
+        "week": 604800,
+        "month": 2592000,  # 30 days
+        "year": 31536000,  # 365 days
     }
 
     return amount * multipliers.get(unit, 0)
@@ -92,7 +92,7 @@ def parse_size(size: str) -> int:
     s = size.strip()
 
     # number + unit (unit may include suffixes like KiB, MB, Gb, etc.)
-    match = re.match(r'(\d+(?:\.\d+)?)\s*([A-Za-z]+)?', s)
+    match = re.match(r"(\d+(?:\.\d+)?)\s*([A-Za-z]+)?", s)
     if not match:
         logging.warning(f"Invalid size format: {size}, defaulting to 0")
         return 0
@@ -133,7 +133,7 @@ def parse_size(size: str) -> int:
     for pre in iec_prefixes:
         if unit.startswith(pre):
             prefix = pre
-            unit_type = unit[len(pre):]  # should be 'B' or 'b'
+            unit_type = unit[len(pre) :]  # should be 'B' or 'b'
             break
 
     # SI (kB, MB…) — only if IEC not matched
@@ -179,6 +179,7 @@ def parse_size(size: str) -> int:
 
     return int(value_bytes)
 
+
 def is_larger_than(size_bytes: int, human_size: str) -> bool:
     """
     Check if size_bytes is larger than a human-readable size.
@@ -196,6 +197,7 @@ def is_larger_than(size_bytes: int, human_size: str) -> bool:
     target_bytes = parse_size(human_size)
     return size_bytes > target_bytes
 
+
 def is_smaller_than(size_bytes: int, human_size: str) -> bool:
     """
     Check if size_bytes is smaller than a human-readable size.
@@ -212,6 +214,7 @@ def is_smaller_than(size_bytes: int, human_size: str) -> bool:
 
     target_bytes = parse_size(human_size)
     return size_bytes < target_bytes
+
 
 def is_older_than(timestamp: int, duration: str) -> bool:
     """
@@ -261,7 +264,7 @@ def format_bytes(bytes_count: int) -> str:
     Returns:
         Formatted string like "1.5 GB"
     """
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
         if bytes_count < 1024.0:
             return f"{bytes_count:.2f} {unit}"
         bytes_count /= 1024.0
@@ -326,10 +329,10 @@ def validate_field_name(field: str) -> bool:
     Raises:
         ValueError if invalid format
     """
-    if '.' not in field:
+    if "." not in field:
         return False
 
-    prefix = field.split('.', 1)[0]
-    valid_prefixes = ['info', 'trackers', 'files', 'peers', 'properties', 'transfer', 'webseeds']
+    prefix = field.split(".", 1)[0]
+    valid_prefixes = ["info", "trackers", "files", "peers", "properties", "transfer", "webseeds"]
 
     return prefix in valid_prefixes

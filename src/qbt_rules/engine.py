@@ -11,7 +11,13 @@ from typing import Dict, List, Any, Optional, Tuple
 import requests
 
 from qbt_rules.qbittorrent import QBittorrentAPI
-from qbt_rules.utils import parse_tags, is_older_than, is_newer_than, is_larger_than, is_smaller_than
+from qbt_rules.utils import (
+    parse_tags,
+    is_older_than,
+    is_newer_than,
+    is_larger_than,
+    is_smaller_than,
+)
 from qbt_rules.errors import DataNotReadyError, FieldError, OperatorError
 from qbt_rules.trackie import (
     ACCOUNT_FIELDS,
@@ -30,7 +36,7 @@ logger = get_logger(__name__)
 
 # set_file_priority's accepted priorities -- qBittorrent's own values, plus
 # names for readability in rules
-FILE_PRIORITIES = {'skip': 0, 'normal': 1, 'high': 6, 'maximum': 7}
+FILE_PRIORITIES = {"skip": 0, "normal": 1, "high": 6, "maximum": 7}
 
 # Pattern for runtime action-param templating: ${info.name}, ${trackers.url},
 # etc -- the per-torrent counterpart to resolver.py's TOKEN_PATTERN, which
@@ -38,12 +44,13 @@ FILE_PRIORITIES = {'skip': 0, 'normal': 1, 'high': 6, 'maximum': 7}
 # leaves these untouched for ActionExecutor to resolve here instead.
 # One-or-more `.segment` repeats (not just one) so multi-level paths like
 # ${stats.state.queuedUP} match too, not just single-dot fields.
-ACTION_TEMPLATE_PATTERN = re.compile(r'\$\{(\w+(?:\.\w+)+)\}')
+ACTION_TEMPLATE_PATTERN = re.compile(r"\$\{(\w+(?:\.\w+)+)\}")
 
 
 @dataclass
 class RuleStats:
     """Statistics for rule execution"""
+
     total_torrents: int = 0
     processed: int = 0
     rules_matched: int = 0
@@ -86,14 +93,14 @@ class ConditionEvaluator:
         # stats.* still resolves to 0 rather than erroring if the evaluator
         # is ever used standalone, outside of RulesEngine.run().
         self.stats: Dict[str, Any] = {
-            'state': {},
-            'category': {},
-            'tag': {},
-            'total': 0,
-            'dlspeed': 0,
-            'upspeed': 0,
-            'seeds': 0,
-            'leechs': 0,
+            "state": {},
+            "category": {},
+            "tag": {},
+            "total": 0,
+            "dlspeed": 0,
+            "upspeed": 0,
+            "seeds": 0,
+            "leechs": 0,
         }
 
         # tracker.* namespace (trackie integration). Set by RulesEngine when
@@ -170,16 +177,16 @@ class ConditionEvaluator:
                 return self._evaluate_all(torrent, conditions, trace)
 
             # Evaluate logical groups
-            if 'all' in conditions:
-                if not self._evaluate_all(torrent, conditions['all'], trace):
+            if "all" in conditions:
+                if not self._evaluate_all(torrent, conditions["all"], trace):
                     return False
 
-            if 'any' in conditions:
-                if not self._evaluate_any(torrent, conditions['any'], trace):
+            if "any" in conditions:
+                if not self._evaluate_any(torrent, conditions["any"], trace):
                     return False
 
-            if 'none' in conditions:
-                if not self._evaluate_none(torrent, conditions['none'], trace):
+            if "none" in conditions:
+                if not self._evaluate_none(torrent, conditions["none"], trace):
                     return False
 
             return True
@@ -188,7 +195,9 @@ class ConditionEvaluator:
             # Expected/benign -- e.g. the files list right after an OnTorrentAdded
             # webhook, before qBittorrent has indexed the torrent. Not a real error,
             # so keep it out of the ERROR-level log noise every other rule failure uses.
-            logger.debug(f"Skipping rule for {torrent.get('name', 'unknown')}: {e.message} ({e.details.get('Field')})")
+            logger.debug(
+                f"Skipping rule for {torrent.get('name', 'unknown')}: {e.message} ({e.details.get('Field')})"
+            )
             return False
 
         except Exception as e:
@@ -223,19 +232,27 @@ class ConditionEvaluator:
         else:
             return current_context == required_context
 
-    def _evaluate_all(self, torrent: Dict, conditions: List[Dict], trace: Optional[List[Dict]] = None) -> bool:
+    def _evaluate_all(
+        self, torrent: Dict, conditions: List[Dict], trace: Optional[List[Dict]] = None
+    ) -> bool:
         """All conditions must match (AND)"""
         return all(self._evaluate_condition(torrent, cond, trace) for cond in conditions)
 
-    def _evaluate_any(self, torrent: Dict, conditions: List[Dict], trace: Optional[List[Dict]] = None) -> bool:
+    def _evaluate_any(
+        self, torrent: Dict, conditions: List[Dict], trace: Optional[List[Dict]] = None
+    ) -> bool:
         """Any condition must match (OR)"""
         return any(self._evaluate_condition(torrent, cond, trace) for cond in conditions)
 
-    def _evaluate_none(self, torrent: Dict, conditions: List[Dict], trace: Optional[List[Dict]] = None) -> bool:
+    def _evaluate_none(
+        self, torrent: Dict, conditions: List[Dict], trace: Optional[List[Dict]] = None
+    ) -> bool:
         """No conditions must match (NOT)"""
         return not any(self._evaluate_condition(torrent, cond, trace) for cond in conditions)
 
-    def _evaluate_condition(self, torrent: Dict, condition: Dict, trace: Optional[List[Dict]] = None) -> bool:
+    def _evaluate_condition(
+        self, torrent: Dict, condition: Dict, trace: Optional[List[Dict]] = None
+    ) -> bool:
         """
         Evaluate a single condition
 
@@ -248,17 +265,17 @@ class ConditionEvaluator:
             True if condition matches
         """
         # Handle nested logical operators
-        if 'all' in condition:
-            return self._evaluate_all(torrent, condition['all'], trace)
-        if 'any' in condition:
-            return self._evaluate_any(torrent, condition['any'], trace)
-        if 'none' in condition:
-            return self._evaluate_none(torrent, condition['none'], trace)
+        if "all" in condition:
+            return self._evaluate_all(torrent, condition["all"], trace)
+        if "any" in condition:
+            return self._evaluate_any(torrent, condition["any"], trace)
+        if "none" in condition:
+            return self._evaluate_none(torrent, condition["none"], trace)
 
         # Handle regular field conditions
-        field = condition['field']
-        operator = condition['operator']
-        value = condition['value']
+        field = condition["field"]
+        operator = condition["operator"]
+        value = condition["value"]
 
         # Get field value using dot notation
         actual = self._get_field_value(torrent, field)
@@ -267,13 +284,15 @@ class ConditionEvaluator:
         passed = self._apply_operator(actual, operator, value, field)
 
         if trace is not None:
-            trace.append({
-                'field': field,
-                'operator': operator,
-                'value': value,
-                'actual': actual,
-                'passed': passed,
-            })
+            trace.append(
+                {
+                    "field": field,
+                    "operator": operator,
+                    "value": value,
+                    "actual": actual,
+                    "passed": passed,
+                }
+            )
 
         return passed
 
@@ -306,34 +325,31 @@ class ConditionEvaluator:
         Raises:
             FieldError: If field format is invalid
         """
-        if '.' not in field:
-            raise FieldError(
-                field,
-                "Field must use dot notation with API prefix"
-            )
+        if "." not in field:
+            raise FieldError(field, "Field must use dot notation with API prefix")
 
         # Split into API endpoint and property
-        endpoint, property_name = field.split('.', 1)
-        torrent_hash = torrent.get('hash', '')
+        endpoint, property_name = field.split(".", 1)
+        torrent_hash = torrent.get("hash", "")
 
         # Route to appropriate API endpoint
-        if endpoint == 'info':
+        if endpoint == "info":
             # Base torrent info - already available, no API call
-            if property_name == 'tags':
+            if property_name == "tags":
                 return parse_tags(torrent)
             return torrent.get(property_name)
 
-        elif endpoint == 'trackers':
+        elif endpoint == "trackers":
             # Trackers collection - lazy load with cache
             if torrent_hash not in self.trackers_cache:
                 self.trackers_cache[torrent_hash] = self.api.get_trackers(torrent_hash)
             items = self.trackers_cache[torrent_hash]
             # Filter out special entries (DHT, PeX, LSD)
-            items = [t for t in items if t.get('url', '').startswith('http')]
+            items = [t for t in items if t.get("url", "").startswith("http")]
             # Return list of property values
             return [item.get(property_name) for item in items if property_name in item]
 
-        elif endpoint == 'files':
+        elif endpoint == "files":
             # Files collection - lazy load with cache
             if torrent_hash not in self.files_cache:
                 self.files_cache[torrent_hash] = self.api.get_files(torrent_hash)
@@ -349,40 +365,40 @@ class ConditionEvaluator:
                 raise DataNotReadyError(field, torrent_hash)
             return [item.get(property_name) for item in items if property_name in item]
 
-        elif endpoint == 'peers':
+        elif endpoint == "peers":
             # Peers collection - lazy load with cache
             if torrent_hash not in self.peers_cache:
                 self.peers_cache[torrent_hash] = self.api.get_peers(torrent_hash)
             items = self.peers_cache[torrent_hash]
             return [item.get(property_name) for item in items if property_name in item]
 
-        elif endpoint == 'properties':
+        elif endpoint == "properties":
             # Extended properties - lazy load with cache
             if torrent_hash not in self.properties_cache:
                 self.properties_cache[torrent_hash] = self.api.get_properties(torrent_hash)
             props = self.properties_cache[torrent_hash]
             return props.get(property_name)
 
-        elif endpoint == 'webseeds':
+        elif endpoint == "webseeds":
             # Web seeds collection - lazy load with cache
             if torrent_hash not in self.webseeds_cache:
                 self.webseeds_cache[torrent_hash] = self.api.get_webseeds(torrent_hash)
             items = self.webseeds_cache[torrent_hash]
             return [item.get(property_name) for item in items if property_name in item]
 
-        elif endpoint == 'transfer':
+        elif endpoint == "transfer":
             # Global transfer info - single call cached
             if self.transfer_info is None:
                 self.transfer_info = self.api.get_transfer_info()
             return self.transfer_info.get(property_name)
 
-        elif endpoint == 'app':
+        elif endpoint == "app":
             # Global app preferences - single call cached
             if self.app_preferences is None:
                 self.app_preferences = self.api.get_app_preferences()
             return self.app_preferences.get(property_name)
 
-        elif endpoint == 'stats':
+        elif endpoint == "stats":
             # Aggregate torrent counts/sums - snapshot taken once per run by
             # RulesEngine.run(), not recomputed per rule (see self.stats
             # docstring in __init__). Unlike other endpoints, missing keys
@@ -392,19 +408,16 @@ class ConditionEvaluator:
             # leechs are plain scalars (fleet-wide sums), not nested like
             # state/category/tag, so they fall through to the final
             # self.stats.get(property_name, 0) below.
-            parts = property_name.split('.', 1)
-            if len(parts) == 2 and parts[0] in ('state', 'category', 'tag'):
+            parts = property_name.split(".", 1)
+            if len(parts) == 2 and parts[0] in ("state", "category", "tag"):
                 return self.stats.get(parts[0], {}).get(parts[1], 0)
             return self.stats.get(property_name, 0)
 
-        elif endpoint == 'tracker':
+        elif endpoint == "tracker":
             return self._get_tracker_field(torrent, property_name, field)
 
         else:
-            raise FieldError(
-                field,
-                f"Unknown API endpoint: '{endpoint}'"
-            )
+            raise FieldError(field, f"Unknown API endpoint: '{endpoint}'")
 
     def _trackie(self, field: str, torrent_hash: str) -> TrackieSnapshot:
         """This run's trackie snapshot, fetched on first use"""
@@ -417,7 +430,9 @@ class ConditionEvaluator:
                 # this run will be skipped for the same reason
                 logger.warning(f"tracker.* rules skipped this run: {self._trackie_error}")
         if self._trackie_snapshot is None:
-            raise TrackerDataNotReadyError(field, torrent_hash, self._trackie_error or "no snapshot")
+            raise TrackerDataNotReadyError(
+                field, torrent_hash, self._trackie_error or "no snapshot"
+            )
         return self._trackie_snapshot
 
     def _get_tracker_field(self, torrent: Dict, property_name: str, field: str) -> Any:
@@ -436,29 +451,30 @@ class ConditionEvaluator:
         """
         if self.trackie is None:
             raise FieldError(
-                field,
-                "tracker.* fields need the trackie integration: set integrations.trackie.url"
+                field, "tracker.* fields need the trackie integration: set integrations.trackie.url"
             )
 
-        is_account = property_name.startswith('account.')
-        name = property_name[len('account.'):] if is_account else property_name
+        is_account = property_name.startswith("account.")
+        name = property_name[len("account.") :] if is_account else property_name
         known = (
-            set(ACCOUNT_FIELDS) | set(COMPUTED_ACCOUNT_FIELDS) if is_account
+            set(ACCOUNT_FIELDS) | set(COMPUTED_ACCOUNT_FIELDS)
+            if is_account
             else set(TORRENT_FIELDS) | set(COMPUTED_TORRENT_FIELDS)
         )
         if name not in known:
             raise FieldError(
-                field,
-                f"Unknown tracker field '{name}' (valid: {', '.join(sorted(known))})"
+                field, f"Unknown tracker field '{name}' (valid: {', '.join(sorted(known))})"
             )
 
-        torrent_hash = torrent.get('hash', '')
+        torrent_hash = torrent.get("hash", "")
         snap = self._trackie(field, torrent_hash)
         record = snap.record(torrent_hash)
 
         if is_account:
-            key = record['tracker'] if record else snap.tracker_for_urls(
-                self._get_field_value(torrent, 'trackers.url')
+            key = (
+                record["tracker"]
+                if record
+                else snap.tracker_for_urls(self._get_field_value(torrent, "trackers.url"))
             )
             if key is None:
                 raise TrackerDataNotReadyError(
@@ -467,23 +483,27 @@ class ConditionEvaluator:
             stale = snap.stale_reason(key)
             account = snap.accounts.get(key)
             if stale or account is None:
-                raise TrackerDataNotReadyError(field, torrent_hash, stale or f"no account data for '{key}'")
-            if name == 'ratio_ok':
-                ratio, minimum = account.get('ratio'), account.get('min_ratio')
+                raise TrackerDataNotReadyError(
+                    field, torrent_hash, stale or f"no account data for '{key}'"
+                )
+            if name == "ratio_ok":
+                ratio, minimum = account.get("ratio"), account.get("min_ratio")
                 return None if ratio is None or minimum is None else ratio >= minimum
-            if name == 'age':
-                return snap.age_s(account.get('seen_at'))
+            if name == "age":
+                return snap.age_s(account.get("seen_at"))
             return account.get(ACCOUNT_FIELDS[name])
 
         if record is None:
             # Not on a covered tracker, not on the tracker's pages (so its
             # standing is unknown), or not matched to this hash yet
-            raise TrackerDataNotReadyError(field, torrent_hash, "trackie has no record for this torrent")
-        stale = snap.stale_reason(record.get('tracker', ''))
+            raise TrackerDataNotReadyError(
+                field, torrent_hash, "trackie has no record for this torrent"
+            )
+        stale = snap.stale_reason(record.get("tracker", ""))
         if stale:
             raise TrackerDataNotReadyError(field, torrent_hash, stale)
-        if name == 'age':
-            return snap.age_s(record.get('seen_at'))
+        if name == "age":
+            return snap.age_s(record.get("seen_at"))
         return record.get(TORRENT_FIELDS[name])
 
     def _apply_operator(self, actual: Any, operator: str, expected: Any, field: str) -> bool:
@@ -504,12 +524,12 @@ class ConditionEvaluator:
         """
         # Handle None/missing values
         if actual is None:
-            return operator in ['!=', 'not_in', 'not_contains']
+            return operator in ["!=", "not_in", "not_contains"]
 
         # Handle list values (from collection fields)
         if isinstance(actual, list):
             if not actual:  # Empty list
-                return operator in ['!=', 'not_in', 'not_contains']
+                return operator in ["!=", "not_in", "not_contains"]
 
             # Negation operators need ALL items to satisfy the check (i.e. none
             # of the items positively match) -- applying ANY here would mean
@@ -520,65 +540,65 @@ class ConditionEvaluator:
             # incorrectly returns True even though the torrent IS tagged
             # private. Positive operators keep ANY semantics: "does at least
             # one item match" is the natural meaning for e.g. contains/==/in.
-            if operator in ('!=', 'not_in', 'not_contains'):
+            if operator in ("!=", "not_in", "not_contains"):
                 return all(self._apply_operator(item, operator, expected, field) for item in actual)
 
             return any(self._apply_operator(item, operator, expected, field) for item in actual)
 
         # String operators
-        if operator == '==':
+        if operator == "==":
             return actual == expected
-        elif operator == '!=':
+        elif operator == "!=":
             return actual != expected
-        elif operator == 'contains':
+        elif operator == "contains":
             if isinstance(expected, list):
                 return any(str(item) in str(actual) for item in expected)
             return expected in str(actual)
-        elif operator == 'not_contains':
+        elif operator == "not_contains":
             if isinstance(expected, list):
                 return not any(str(item) in str(actual) for item in expected)
             return expected not in str(actual)
-        elif operator == 'matches':
+        elif operator == "matches":
             return re.search(str(expected), str(actual)) is not None
 
         # List operators
-        elif operator == 'in':
+        elif operator == "in":
             if isinstance(expected, list):
                 return actual in expected
             return actual == expected
-        elif operator == 'not_in':
+        elif operator == "not_in":
             if isinstance(expected, list):
                 return actual not in expected
             return actual != expected
 
         # Numeric operators
-        elif operator in ['>', '<', '>=', '<=']:
+        elif operator in [">", "<", ">=", "<="]:
             try:
                 actual_num = float(actual)
                 expected_num = float(expected)
 
-                if operator == '>':
+                if operator == ">":
                     return actual_num > expected_num
-                elif operator == '<':
+                elif operator == "<":
                     return actual_num < expected_num
-                elif operator == '>=':
+                elif operator == ">=":
                     return actual_num >= expected_num
-                elif operator == '<=':
+                elif operator == "<=":
                     return actual_num <= expected_num
             except (ValueError, TypeError):
                 logger.warning(f"Cannot compare non-numeric values for field {field}")
                 return False
 
         # Size operators
-        elif operator == 'smaller_than':
+        elif operator == "smaller_than":
             return is_smaller_than(int(actual), str(expected))
-        elif operator == 'larger_than':
+        elif operator == "larger_than":
             return is_larger_than(int(actual), str(expected))
 
         # Time operators
-        elif operator == 'older_than':
+        elif operator == "older_than":
             return is_older_than(int(actual), str(expected))
-        elif operator == 'newer_than':
+        elif operator == "newer_than":
             return is_newer_than(int(actual), str(expected))
 
         else:
@@ -594,7 +614,7 @@ class ActionExecutor:
         dry_run: bool,
         notifications_config: Optional[Dict[str, str]] = None,
         integrations_config: Optional[Dict[str, Dict[str, str]]] = None,
-        field_resolver: Optional['ConditionEvaluator'] = None,
+        field_resolver: Optional["ConditionEvaluator"] = None,
     ):
         """
         Initialize action executor
@@ -636,13 +656,15 @@ class ActionExecutor:
         Returns:
             Tuple of (success, skipped_due_to_idempotency)
         """
-        action_type = action['type']
-        params = action.get('params', {})
+        action_type = action["type"]
+        params = action.get("params", {})
 
         try:
             # Check idempotency before executing
             if self._should_skip_idempotent(torrent, action_type, params):
-                logger.info(f"  {torrent['name']} - {action_type} already in desired state (skipped)")
+                logger.info(
+                    f"  {torrent['name']} - {action_type} already in desired state (skipped)"
+                )
                 return True, True
             if self.dry_run:
                 self._log_dry_run(torrent, action_type, params)
@@ -659,32 +681,32 @@ class ActionExecutor:
 
     def _should_skip_idempotent(self, torrent: Dict, action_type: str, params: Dict) -> bool:
         """Check if action is idempotent and already applied"""
-        if action_type == 'stop':
-            return 'paused' in torrent.get('state', '').lower()
+        if action_type == "stop":
+            return "paused" in torrent.get("state", "").lower()
 
-        elif action_type == 'start':
-            return 'paused' not in torrent.get('state', '').lower()
+        elif action_type == "start":
+            return "paused" not in torrent.get("state", "").lower()
 
-        elif action_type == 'set_category':
-            return torrent.get('category') == params.get('category')
+        elif action_type == "set_category":
+            return torrent.get("category") == params.get("category")
 
-        elif action_type == 'add_tag':
+        elif action_type == "add_tag":
             current_tags = set(parse_tags(torrent))
-            new_tags = set(params.get('tags', []))
+            new_tags = set(params.get("tags", []))
             return new_tags.issubset(current_tags)
 
-        elif action_type == 'remove_tag':
+        elif action_type == "remove_tag":
             current_tags = set(parse_tags(torrent))
-            remove_tags = set(params.get('tags', []))
+            remove_tags = set(params.get("tags", []))
             return not remove_tags.intersection(current_tags)
 
-        elif action_type == 'force_start':
-            return bool(torrent.get('force_start'))
+        elif action_type == "force_start":
+            return bool(torrent.get("force_start"))
 
-        elif action_type == 'release_force_start':
-            return not torrent.get('force_start')
+        elif action_type == "release_force_start":
+            return not torrent.get("force_start")
 
-        elif action_type == 'set_file_priority':
+        elif action_type == "set_file_priority":
             # Skip only on a definite "nothing to change"; an unloaded file
             # list or bad params (None) fall through so _execute_action can
             # report them instead of logging "already in desired state"
@@ -695,23 +717,25 @@ class ActionExecutor:
 
     def _log_dry_run(self, torrent: Dict, action_type: str, params: Dict):
         """Log what would happen in dry run"""
-        if action_type == 'delete_torrent':
+        if action_type == "delete_torrent":
             delete_files = self._resolve_delete_files(params)
             logger.info(f"  Would delete {torrent['name']} (delete_files={delete_files})")
-        elif action_type == 'notify':
-            service = params.get('service', self.notifications_config.get('service', 'generic'))
-            message = self._render_notify_message(torrent, params.get('message'))
+        elif action_type == "notify":
+            service = params.get("service", self.notifications_config.get("service", "generic"))
+            message = self._render_notify_message(torrent, params.get("message"))
             logger.info(f"  Would notify via {service}: {message}")
-        elif action_type == 'arr_blocklist':
-            service = params.get('service')
-            search = bool(params.get('search', True))
+        elif action_type == "arr_blocklist":
+            service = params.get("service")
+            search = bool(params.get("search", True))
             action_desc = "blocklist and search" if search else "blocklist (no search)"
             logger.info(f"  Would {action_desc} for {torrent['name']} via {service}")
-        elif action_type == 'set_file_priority':
+        elif action_type == "set_file_priority":
             targets = self._file_priority_targets(torrent, params)
             if targets is not None:
-                priority = self._parse_file_priority(params.get('priority'))
-                logger.info(f"  Would set priority {priority} on {len(targets)} file(s) of {torrent['name']}")
+                priority = self._parse_file_priority(params.get("priority"))
+                logger.info(
+                    f"  Would set priority {priority} on {len(targets)} file(s) of {torrent['name']}"
+                )
         else:
             logger.info(f"  Would {action_type} {torrent['name']} (params={params})")
 
@@ -725,80 +749,80 @@ class ActionExecutor:
         Returns:
             True if the underlying files should be deleted, False to keep them
         """
-        return bool(params.get('delete_files', True))
+        return bool(params.get("delete_files", True))
 
     def _execute_action(self, torrent: Dict, action_type: str, params: Dict) -> bool:
         """Execute the actual action"""
-        torrent_hash = torrent['hash']
+        torrent_hash = torrent["hash"]
 
-        if action_type == 'stop':
+        if action_type == "stop":
             success = self.api.stop_torrents([torrent_hash])
             if success:
                 logger.info(f"  Stopped {torrent['name']}")
             return success
 
-        elif action_type == 'start':
+        elif action_type == "start":
             success = self.api.start_torrents([torrent_hash])
             if success:
                 logger.info(f"  Started {torrent['name']}")
             return success
 
-        elif action_type == 'force_start':
+        elif action_type == "force_start":
             success = self.api.force_start_torrents([torrent_hash])
             if success:
                 logger.info(f"  Force started {torrent['name']}")
             return success
 
-        elif action_type == 'release_force_start':
+        elif action_type == "release_force_start":
             success = self.api.force_start_torrents([torrent_hash], enable=False)
             if success:
                 logger.info(f"  Released force-start for {torrent['name']}")
             return success
 
-        elif action_type == 'recheck':
+        elif action_type == "recheck":
             success = self.api.recheck_torrents([torrent_hash])
             if success:
                 logger.info(f"  Rechecking {torrent['name']}")
             return success
 
-        elif action_type == 'reannounce':
+        elif action_type == "reannounce":
             success = self.api.reannounce_torrents([torrent_hash])
             if success:
                 logger.info(f"  Reannouncing {torrent['name']}")
             return success
 
-        elif action_type == 'delete_torrent':
+        elif action_type == "delete_torrent":
             delete_files = self._resolve_delete_files(params)
             success = self.api.delete_torrents([torrent_hash], delete_files=delete_files)
             if success:
                 logger.info(f"  Deleted {torrent['name']} (delete_files={delete_files})")
             return success
 
-        elif action_type == 'set_category':
-            category = params.get('category', '')
+        elif action_type == "set_category":
+            category = params.get("category", "")
             success = self.api.set_category([torrent_hash], category)
             if success:
                 logger.info(f"  Set category for {torrent['name']} to {category}")
             return success
 
-        elif action_type == 'add_tag':
-            tags = params.get('tags', [])
+        elif action_type == "add_tag":
+            tags = params.get("tags", [])
             success = self.api.add_tags([torrent_hash], tags)
             if success:
                 logger.info(f"  Added tags {tags} to {torrent['name']}")
             return success
 
-        elif action_type == 'remove_tag':
-            tags = params.get('tags', [])
+        elif action_type == "remove_tag":
+            tags = params.get("tags", [])
             success = self.api.remove_tags([torrent_hash], tags)
             if success:
                 logger.info(f"  Removed tags {tags} from {torrent['name']}")
             return success
 
-        elif action_type == 'set_tags':
+        elif action_type == "set_tags":
             # Remove all existing tags first, then set new ones
             current_tags = parse_tags(torrent)
-            new_tags = params.get('tags', [])
+            new_tags = params.get("tags", [])
             if current_tags:
                 self.api.remove_tags([torrent_hash], current_tags)
             success = self.api.add_tags([torrent_hash], new_tags)
@@ -806,51 +830,51 @@ class ActionExecutor:
                 logger.info(f"  Set tags for {torrent['name']} to {new_tags}")
             return success
 
-        elif action_type == 'set_upload_limit':
-            limit = params.get('limit', -1)
+        elif action_type == "set_upload_limit":
+            limit = params.get("limit", -1)
             success = self.api.set_upload_limit([torrent_hash], limit)
             if success:
                 logger.info(f"  Set upload limit for {torrent['name']} to {limit}")
             return success
 
-        elif action_type == 'set_download_limit':
-            limit = params.get('limit', -1)
+        elif action_type == "set_download_limit":
+            limit = params.get("limit", -1)
             success = self.api.set_download_limit([torrent_hash], limit)
             if success:
                 logger.info(f"  Set download limit for {torrent['name']} to {limit}")
             return success
 
-        elif action_type == 'increase_priority':
+        elif action_type == "increase_priority":
             success = self.api.increase_priority([torrent_hash])
             if success:
                 logger.info(f"  Increased priority for {torrent['name']}")
             return success
 
-        elif action_type == 'decrease_priority':
+        elif action_type == "decrease_priority":
             success = self.api.decrease_priority([torrent_hash])
             if success:
                 logger.info(f"  Decreased priority for {torrent['name']}")
             return success
 
-        elif action_type == 'set_top_priority':
+        elif action_type == "set_top_priority":
             success = self.api.set_top_priority([torrent_hash])
             if success:
                 logger.info(f"  Set top priority for {torrent['name']}")
             return success
 
-        elif action_type == 'set_bottom_priority':
+        elif action_type == "set_bottom_priority":
             success = self.api.set_bottom_priority([torrent_hash])
             if success:
                 logger.info(f"  Set bottom priority for {torrent['name']}")
             return success
 
-        elif action_type == 'set_file_priority':
+        elif action_type == "set_file_priority":
             return self._execute_set_file_priority(torrent, params)
 
-        elif action_type == 'notify':
+        elif action_type == "notify":
             return self._execute_notify(torrent, params)
 
-        elif action_type == 'arr_blocklist':
+        elif action_type == "arr_blocklist":
             return self._execute_arr_blocklist(torrent, params)
 
         else:
@@ -866,8 +890,9 @@ class ActionExecutor:
             return int(key)
         return None
 
-    def _file_priority_targets(self, torrent: Dict, params: Dict,
-                               quiet: bool = False) -> Optional[List[int]]:
+    def _file_priority_targets(
+        self, torrent: Dict, params: Dict, quiet: bool = False
+    ) -> Optional[List[int]]:
         """
         File indices set_file_priority would change, or None if it can't run
 
@@ -880,13 +905,15 @@ class ActionExecutor:
         quiet suppresses the logging, for the idempotency check that runs
         before the action logs the same problem itself.
         """
-        priority = self._parse_file_priority(params.get('priority'))
+        priority = self._parse_file_priority(params.get("priority"))
         if priority is None:
             if not quiet:
-                logger.error(f"  set_file_priority: invalid priority {params.get('priority')!r} "
-                             f"(expected 0/skip, 1/normal, 6/high or 7/maximum)")
+                logger.error(
+                    f"  set_file_priority: invalid priority {params.get('priority')!r} "
+                    f"(expected 0/skip, 1/normal, 6/high or 7/maximum)"
+                )
             return None
-        pattern = params.get('pattern')
+        pattern = params.get("pattern")
         try:
             regex = re.compile(pattern) if pattern else None
         except re.error as e:
@@ -897,21 +924,22 @@ class ActionExecutor:
         files = self._torrent_files(torrent)
         if not files:
             if not quiet:
-                logger.warning(f"  set_file_priority: file list for {torrent['name']} not loaded "
-                               f"yet, retried next run")
+                logger.warning(
+                    f"  set_file_priority: file list for {torrent['name']} not loaded "
+                    f"yet, retried next run"
+                )
             return None
 
         return [
-            f.get('index', position)
+            f.get("index", position)
             for position, f in enumerate(files)
-            if (regex is None or regex.search(f.get('name', '')))
-            and f.get('priority') != priority
+            if (regex is None or regex.search(f.get("name", ""))) and f.get("priority") != priority
         ]
 
     def _torrent_files(self, torrent: Dict) -> List[Dict]:
         """A torrent's file list, from the evaluator's per-run cache when it has one"""
-        cache: Optional[Dict[str, List[Dict]]] = getattr(self.field_resolver, 'files_cache', None)
-        torrent_hash = torrent['hash']
+        cache: Optional[Dict[str, List[Dict]]] = getattr(self.field_resolver, "files_cache", None)
+        torrent_hash = torrent["hash"]
         if cache is None:
             return self.api.get_files(torrent_hash)
         if torrent_hash not in cache:
@@ -921,17 +949,17 @@ class ActionExecutor:
     def _execute_set_file_priority(self, torrent: Dict, params: Dict) -> bool:
         """Set the download priority of a torrent's files, all or those matching a pattern"""
         targets = self._file_priority_targets(torrent, params)
-        priority = self._parse_file_priority(params.get('priority'))
+        priority = self._parse_file_priority(params.get("priority"))
         if targets is None or priority is None:
             return False
-        success = self.api.set_file_priority(torrent['hash'], targets, priority)
+        success = self.api.set_file_priority(torrent["hash"], targets, priority)
         if success:
             # Keep the cached list current so later rules this run see the
             # new priorities (and this action stays idempotent within a run)
             wanted = set(targets)
             for position, f in enumerate(self._torrent_files(torrent)):
-                if f.get('index', position) in wanted:
-                    f['priority'] = priority
+                if f.get("index", position) in wanted:
+                    f["priority"] = priority
             logger.info(f"  Set priority {priority} on {len(targets)} file(s) of {torrent['name']}")
         return success
 
@@ -975,13 +1003,15 @@ class ActionExecutor:
                 # the whole notification
                 value = None
             if isinstance(value, list):
-                return ', '.join(str(v) for v in value)
-            return '' if value is None else str(value)
+                return ", ".join(str(v) for v in value)
+            return "" if value is None else str(value)
 
         try:
             return ACTION_TEMPLATE_PATTERN.sub(replace, message)
         except FieldError as e:
-            logger.warning(f"  notify: message template references an unknown field ({e}), skipping")
+            logger.warning(
+                f"  notify: message template references an unknown field ({e}), skipping"
+            )
             return None
 
     def _execute_notify(self, torrent: Dict, params: Dict) -> bool:
@@ -994,34 +1024,40 @@ class ActionExecutor:
         matches; pair with add_tag + a condition excluding already-tagged
         torrents if that's not desired.
         """
-        service = params.get('service', self.notifications_config.get('service', 'generic'))
-        url = params.get('url') or self.notifications_config.get('webhook_url')
+        service = params.get("service", self.notifications_config.get("service", "generic"))
+        url = params.get("url") or self.notifications_config.get("webhook_url")
 
         if not url:
-            logger.error("  notify: no webhook URL configured (set params.url or notifications.webhook_url)")
+            logger.error(
+                "  notify: no webhook URL configured (set params.url or notifications.webhook_url)"
+            )
             return False
 
-        message = self._render_notify_message(torrent, params.get('message'))
-        if params.get('message') is not None and message is None:
+        message = self._render_notify_message(torrent, params.get("message"))
+        if params.get("message") is not None and message is None:
             # Template rendering failed (already logged a warning) -- don't fire
             return False
-        if message is None and not (service == 'generic' and 'body' in params):
-            logger.error("  notify: no message provided (set params.message, or params.body for generic)")
+        if message is None and not (service == "generic" and "body" in params):
+            logger.error(
+                "  notify: no message provided (set params.message, or params.body for generic)"
+            )
             return False
 
-        if service == 'discord':
-            kwargs = {'json': {'content': message}}
-        elif service == 'slack':
-            kwargs = {'json': {'text': message}}
-        elif service == 'ntfy':
-            kwargs = {'data': message.encode('utf-8')}
-        elif service == 'generic':
-            if 'body' in params:
-                kwargs = {'json': params['body']}
+        if service == "discord":
+            kwargs = {"json": {"content": message}}
+        elif service == "slack":
+            kwargs = {"json": {"text": message}}
+        elif service == "ntfy":
+            kwargs = {"data": message.encode("utf-8")}
+        elif service == "generic":
+            if "body" in params:
+                kwargs = {"json": params["body"]}
             else:
-                kwargs = {'json': {'message': message}}
+                kwargs = {"json": {"message": message}}
         else:
-            logger.error(f"  notify: unknown service '{service}' (expected discord, slack, ntfy, or generic)")
+            logger.error(
+                f"  notify: unknown service '{service}' (expected discord, slack, ntfy, or generic)"
+            )
             return False
 
         try:
@@ -1030,7 +1066,9 @@ class ActionExecutor:
             logger.info(f"  Sent {service} notification for {torrent['name']}")
             return True
         except requests.exceptions.RequestException as e:
-            logger.error(f"  notify: failed to send {service} notification for {torrent['name']}: {e}")
+            logger.error(
+                f"  notify: failed to send {service} notification for {torrent['name']}: {e}"
+            )
             return False
 
     def _find_arr_queue_records(self, base_url: str, api_key: str, torrent_hash: str) -> List[Dict]:
@@ -1050,18 +1088,18 @@ class ActionExecutor:
         while True:
             response = requests.get(
                 f"{base_url}/api/v3/queue",
-                params={'apikey': api_key, 'page': page, 'pageSize': page_size},
-                timeout=10
+                params={"apikey": api_key, "page": page, "pageSize": page_size},
+                timeout=10,
             )
             response.raise_for_status()
             data = response.json()
-            records = data.get('records', [])
+            records = data.get("records", [])
 
             for record in records:
-                if record.get('downloadId', '').upper() == torrent_hash:
+                if record.get("downloadId", "").upper() == torrent_hash:
                     matches.append(record)
 
-            total_records = data.get('totalRecords', len(records))
+            total_records = data.get("totalRecords", len(records))
             if not records or page * page_size >= total_records:
                 return matches
             page += 1
@@ -1087,16 +1125,16 @@ class ActionExecutor:
                 blocklist-only action (e.g. reviewing candidates manually
                 before letting the arr re-grab anything)
         """
-        service = params.get('service')
-        if service not in ('sonarr', 'radarr'):
+        service = params.get("service")
+        if service not in ("sonarr", "radarr"):
             logger.error(
                 f"  arr_blocklist: params.service must be 'sonarr' or 'radarr', got {service!r}"
             )
             return False
 
         integration = self.integrations_config.get(service, {})
-        base_url = integration.get('url')
-        api_key = integration.get('api_key')
+        base_url = integration.get("url")
+        api_key = integration.get("api_key")
         if not base_url or not api_key:
             logger.error(
                 f"  arr_blocklist: {service} is not configured "
@@ -1104,8 +1142,8 @@ class ActionExecutor:
             )
             return False
 
-        base_url = base_url.rstrip('/')
-        torrent_hash = torrent['hash'].upper()
+        base_url = base_url.rstrip("/")
+        torrent_hash = torrent["hash"].upper()
 
         try:
             records = self._find_arr_queue_records(base_url, api_key, torrent_hash)
@@ -1119,18 +1157,18 @@ class ActionExecutor:
             )
             return True
 
-        remove_from_client = bool(params.get('remove_from_client', False))
+        remove_from_client = bool(params.get("remove_from_client", False))
 
         for record in records:
             try:
                 response = requests.delete(
                     f"{base_url}/api/v3/queue/{record['id']}",
                     params={
-                        'apikey': api_key,
-                        'removeFromClient': str(remove_from_client).lower(),
-                        'blocklist': 'true',
+                        "apikey": api_key,
+                        "removeFromClient": str(remove_from_client).lower(),
+                        "blocklist": "true",
                     },
-                    timeout=10
+                    timeout=10,
                 )
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
@@ -1140,23 +1178,22 @@ class ActionExecutor:
                 )
                 return False
 
-        if not bool(params.get('search', True)):
-            logger.info(f"  Blocklisted {torrent['name']} in {service} (search=false, no search triggered)")
+        if not bool(params.get("search", True)):
+            logger.info(
+                f"  Blocklisted {torrent['name']} in {service} (search=false, no search triggered)"
+            )
             return True
 
-        if service == 'sonarr':
-            episode_ids = [r['episodeId'] for r in records if 'episodeId' in r]
-            command = {'name': 'EpisodeSearch', 'episodeIds': episode_ids}
+        if service == "sonarr":
+            episode_ids = [r["episodeId"] for r in records if "episodeId" in r]
+            command = {"name": "EpisodeSearch", "episodeIds": episode_ids}
         else:
-            movie_ids = sorted({r['movieId'] for r in records if 'movieId' in r})
-            command = {'name': 'MoviesSearch', 'movieIds': movie_ids}
+            movie_ids = sorted({r["movieId"] for r in records if "movieId" in r})
+            command = {"name": "MoviesSearch", "movieIds": movie_ids}
 
         try:
             response = requests.post(
-                f"{base_url}/api/v3/command",
-                params={'apikey': api_key},
-                json=command,
-                timeout=10
+                f"{base_url}/api/v3/command", params={"apikey": api_key}, json=command, timeout=10
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
@@ -1173,10 +1210,10 @@ class RulesEngine:
     def __init__(
         self,
         api: QBittorrentAPI,
-        config: 'Config',
+        config: "Config",
         dry_run: bool = False,
         notifications_config: Optional[Dict[str, str]] = None,
-        integrations_config: Optional[Dict[str, Dict[str, str]]] = None
+        integrations_config: Optional[Dict[str, Dict[str, str]]] = None,
     ):
         """
         Initialize engine
@@ -1195,17 +1232,18 @@ class RulesEngine:
         self.dry_run = dry_run
         self.evaluator = ConditionEvaluator(api)
         self.executor = ActionExecutor(
-            api, dry_run,
+            api,
+            dry_run,
             notifications_config=notifications_config,
             integrations_config=integrations_config,
             field_resolver=self.evaluator,
         )
-        trackie = (integrations_config or {}).get('trackie') or {}
-        if trackie.get('url'):
+        trackie = (integrations_config or {}).get("trackie") or {}
+        if trackie.get("url"):
             self.evaluator.trackie = TrackieClient(
-                trackie['url'],
-                max_age_s=parse_max_age(trackie.get('max_age')),
-                timeout_s=float(trackie.get('timeout') or 10),
+                trackie["url"],
+                max_age_s=parse_max_age(trackie.get("max_age")),
+                timeout_s=float(trackie.get("timeout") or 10),
             )
         self.stats = RuleStats()
 
@@ -1232,7 +1270,7 @@ class RulesEngine:
 
             if torrent_hash:
                 # Single torrent mode (webhook)
-                torrents = [t for t in all_torrents if t['hash'] == torrent_hash]
+                torrents = [t for t in all_torrents if t["hash"] == torrent_hash]
                 if not torrents:
                     logger.warning(f"Torrent not found: {torrent_hash}")
                     return
@@ -1269,14 +1307,14 @@ class RulesEngine:
             self.evaluator.reset_trackie()
 
             self.evaluator.stats = {
-                'state': Counter(t.get('state') for t in all_torrents),
-                'category': Counter(t.get('category') for t in all_torrents if t.get('category')),
-                'tag': Counter(tag for t in all_torrents for tag in parse_tags(t)),
-                'total': len(all_torrents),
-                'dlspeed': sum(t.get('dlspeed', 0) for t in all_torrents),
-                'upspeed': sum(t.get('upspeed', 0) for t in all_torrents),
-                'seeds': sum(t.get('num_seeds', 0) for t in all_torrents),
-                'leechs': sum(t.get('num_leechs', 0) for t in all_torrents),
+                "state": Counter(t.get("state") for t in all_torrents),
+                "category": Counter(t.get("category") for t in all_torrents if t.get("category")),
+                "tag": Counter(tag for t in all_torrents for tag in parse_tags(t)),
+                "total": len(all_torrents),
+                "dlspeed": sum(t.get("dlspeed", 0) for t in all_torrents),
+                "upspeed": sum(t.get("upspeed", 0) for t in all_torrents),
+                "seeds": sum(t.get("num_seeds", 0) for t in all_torrents),
+                "leechs": sum(t.get("num_leechs", 0) for t in all_torrents),
             }
 
             # Get rules (execute in YAML file order)
@@ -1292,16 +1330,16 @@ class RulesEngine:
                 # the human-readable text for logs; falls back to the id
                 # itself when absent, since id is required and description
                 # isn't.
-                rule_id = rule.get('id', 'unnamed')
-                rule_label = rule.get('meta', {}).get('description') or rule_id
+                rule_id = rule.get("id", "unnamed")
+                rule_label = rule.get("meta", {}).get("description") or rule_id
 
-                if not rule.get('enabled', True):
+                if not rule.get("enabled", True):
                     logger.debug(f"Skipping disabled rule: {rule_label}")
                     continue
 
                 rule_totals = self.stats.by_rule.setdefault(
                     rule_id,
-                    {'matched': 0, 'actions_executed': 0, 'actions_skipped': 0, 'errors': 0}
+                    {"matched": 0, "actions_executed": 0, "actions_skipped": 0, "errors": 0},
                 )
 
                 logger.info(f"Processing rule: {rule_label}")
@@ -1309,24 +1347,28 @@ class RulesEngine:
                 matched_count = 0
                 for torrent in torrents:
                     # Skip if already processed by stop_on_match rule
-                    if torrent['hash'] in processed_torrents:
+                    if torrent["hash"] in processed_torrents:
                         continue
 
                     # Skip if torrent was deleted by a previous rule
-                    if torrent.get('_deleted'):
+                    if torrent.get("_deleted"):
                         continue
 
                     # Evaluate conditions
                     # Pass runtime context and rule's context requirement separately
-                    if self.evaluator.evaluate(torrent, rule.get('conditions', {}), context, rule.get('context')):
+                    if self.evaluator.evaluate(
+                        torrent, rule.get("conditions", {}), context, rule.get("context")
+                    ):
                         matched_count += 1
                         self.stats.rules_matched += 1
-                        rule_totals['matched'] += 1
+                        rule_totals["matched"] += 1
 
-                        logger.debug(f"Rule '{rule_label}' matched: {torrent.get('name', 'unknown')}")
+                        logger.debug(
+                            f"Rule '{rule_label}' matched: {torrent.get('name', 'unknown')}"
+                        )
 
                         # Execute actions
-                        for action in rule.get('actions', []):
+                        for action in rule.get("actions", []):
                             # Snapshot state/tags before executing so stats.* (the
                             # fleet-wide Counter snapshot taken once at the top of
                             # run() -- see its docstring) can be kept live for the
@@ -1339,57 +1381,65 @@ class RulesEngine:
                             # after -- execute() is what mutates the torrent (via
                             # the API call it makes), so capturing afterward would
                             # already see the post-action value as "pre".
-                            pre_state = torrent.get('state')
+                            pre_state = torrent.get("state")
                             pre_tags = set(parse_tags(torrent))
 
                             success, skipped = self.executor.execute(torrent, action)
                             if success:
                                 if skipped:
                                     self.stats.actions_skipped += 1
-                                    rule_totals['actions_skipped'] += 1
+                                    rule_totals["actions_skipped"] += 1
                                 else:
                                     self.stats.actions_executed += 1
-                                    rule_totals['actions_executed'] += 1
+                                    rule_totals["actions_executed"] += 1
 
                                     # Re-fetch torrent to update cache for subsequent rules
                                     # This allows later rules to see changes (tags, category, etc.)
                                     try:
-                                        updated = self.api.get_torrent(torrent['hash'])
+                                        updated = self.api.get_torrent(torrent["hash"])
                                         if updated:
                                             torrent.update(updated)
-                                            logger.debug(f"Updated cache for {torrent.get('name', 'unknown')} after action")
+                                            logger.debug(
+                                                f"Updated cache for {torrent.get('name', 'unknown')} after action"
+                                            )
 
-                                            post_state = torrent.get('state')
+                                            post_state = torrent.get("state")
                                             if post_state != pre_state:
-                                                self.evaluator.stats['state'][pre_state] -= 1
-                                                self.evaluator.stats['state'][post_state] += 1
+                                                self.evaluator.stats["state"][pre_state] -= 1
+                                                self.evaluator.stats["state"][post_state] += 1
 
                                             post_tags = set(parse_tags(torrent))
                                             for tag in post_tags - pre_tags:
-                                                self.evaluator.stats['tag'][tag] += 1
+                                                self.evaluator.stats["tag"][tag] += 1
                                             for tag in pre_tags - post_tags:
-                                                self.evaluator.stats['tag'][tag] -= 1
+                                                self.evaluator.stats["tag"][tag] -= 1
                                         else:
                                             # Torrent was deleted
-                                            logger.debug(f"Torrent {torrent['hash']} no longer exists (likely deleted)")
-                                            torrent['_deleted'] = True
+                                            logger.debug(
+                                                f"Torrent {torrent['hash']} no longer exists (likely deleted)"
+                                            )
+                                            torrent["_deleted"] = True
 
-                                            self.evaluator.stats['state'][pre_state] -= 1
-                                            self.evaluator.stats['total'] -= 1
+                                            self.evaluator.stats["state"][pre_state] -= 1
+                                            self.evaluator.stats["total"] -= 1
                                             for tag in pre_tags:
-                                                self.evaluator.stats['tag'][tag] -= 1
-                                            if torrent.get('category'):
-                                                self.evaluator.stats['category'][torrent['category']] -= 1
+                                                self.evaluator.stats["tag"][tag] -= 1
+                                            if torrent.get("category"):
+                                                self.evaluator.stats["category"][
+                                                    torrent["category"]
+                                                ] -= 1
                                     except Exception as e:
-                                        logger.warning(f"Failed to update cache for {torrent['hash']}: {e}")
+                                        logger.warning(
+                                            f"Failed to update cache for {torrent['hash']}: {e}"
+                                        )
                                         # Continue execution - don't fail the rule
                             else:
                                 self.stats.errors += 1
-                                rule_totals['errors'] += 1
+                                rule_totals["errors"] += 1
 
                         # Mark as processed if stop_on_match
-                        if rule.get('stop_on_match', False):
-                            processed_torrents.add(torrent['hash'])
+                        if rule.get("stop_on_match", False):
+                            processed_torrents.add(torrent["hash"])
 
                 if matched_count > 0:
                     logger.info(f"  Rule '{rule_label}' matched {matched_count} torrent(s)")

@@ -21,6 +21,7 @@ from qbt_rules.errors import (
 # QBittorrentError - Base Class
 # ============================================================================
 
+
 class TestQBittorrentError:
     """Test base QBittorrentError class."""
 
@@ -35,9 +36,7 @@ class TestQBittorrentError:
     def test_error_with_details(self):
         """Error with details dict."""
         error = QBittorrentError(
-            "TEST-001",
-            "Test message",
-            details={"Key1": "Value1", "Key2": "Value2"}
+            "TEST-001", "Test message", details={"Key1": "Value1", "Key2": "Value2"}
         )
         assert "Key1" in error.details
         assert error.details["Key1"] == "Value1"
@@ -59,7 +58,7 @@ class TestQBittorrentError:
             "TEST-001",
             "Test message",
             details={"Host": "localhost", "Port": 8080},
-            fix="Check configuration"
+            fix="Check configuration",
         )
         formatted = error.format_error()
         assert "Test message" in formatted
@@ -71,6 +70,7 @@ class TestQBittorrentError:
 # ============================================================================
 # AuthenticationError
 # ============================================================================
+
 
 class TestAuthenticationError:
     """Test AuthenticationError class."""
@@ -98,6 +98,7 @@ class TestAuthenticationError:
 # ConnectionError
 # ============================================================================
 
+
 class TestConnectionError:
     """Test ConnectionError class."""
 
@@ -119,6 +120,7 @@ class TestConnectionError:
 # ============================================================================
 # APIError
 # ============================================================================
+
 
 class TestAPIError:
     """Test APIError class."""
@@ -147,6 +149,7 @@ class TestAPIError:
 # ConfigurationError
 # ============================================================================
 
+
 class TestConfigurationError:
     """Test ConfigurationError class."""
 
@@ -168,6 +171,7 @@ class TestConfigurationError:
 # ============================================================================
 # LoggingSetupError
 # ============================================================================
+
 
 class TestLoggingSetupError:
     """Test LoggingSetupError class."""
@@ -196,6 +200,7 @@ class TestLoggingSetupError:
 # RuleValidationError
 # ============================================================================
 
+
 class TestRuleValidationError:
     """Test RuleValidationError class."""
 
@@ -217,6 +222,7 @@ class TestRuleValidationError:
 # ============================================================================
 # FieldError
 # ============================================================================
+
 
 class TestFieldError:
     """Test FieldError class."""
@@ -246,6 +252,7 @@ class TestFieldError:
 # ============================================================================
 # OperatorError
 # ============================================================================
+
 
 class TestOperatorError:
     """Test OperatorError class."""
@@ -277,11 +284,13 @@ class TestOperatorError:
 # handle_errors decorator
 # ============================================================================
 
+
 class TestHandleErrorsDecorator:
     """Test handle_errors decorator."""
 
     def test_successful_execution(self):
         """Decorator allows successful execution."""
+
         @handle_errors
         def successful_func():
             return "success"
@@ -291,36 +300,40 @@ class TestHandleErrorsDecorator:
 
     def test_handles_qbittorrent_error(self):
         """Decorator catches QBittorrentError and exits."""
+
         @handle_errors
         def error_func():
             raise ConfigurationError("/config/test.yml", "Test error")
 
-        with patch('sys.exit') as mock_exit:
+        with patch("sys.exit") as mock_exit:
             error_func()
             mock_exit.assert_called_once_with(1)
 
     def test_handles_keyboard_interrupt(self):
         """Decorator handles KeyboardInterrupt gracefully."""
+
         @handle_errors
         def interrupted_func():
             raise KeyboardInterrupt()
 
-        with patch('sys.exit') as mock_exit:
+        with patch("sys.exit") as mock_exit:
             interrupted_func()
             mock_exit.assert_called_once_with(0)
 
     def test_handles_unexpected_exception(self):
         """Decorator handles unexpected exceptions."""
+
         @handle_errors
         def unexpected_error_func():
             raise ValueError("Unexpected error")
 
-        with patch('sys.exit') as mock_exit:
+        with patch("sys.exit") as mock_exit:
             unexpected_error_func()
             mock_exit.assert_called_once_with(1)
 
     def test_preserves_function_args(self):
         """Decorator preserves function arguments."""
+
         @handle_errors
         def func_with_args(a, b, c=None):
             return f"{a}-{b}-{c}"

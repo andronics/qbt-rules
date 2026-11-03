@@ -6,13 +6,12 @@ pytest>=7.4.0
 pytest-cov>=4.1.0
 
 # Type checking
-mypy>=1.5.0
+mypy>=1.15
 types-requests>=2.31.0
 types-PyYAML>=6.0.12
 
 # Code quality
-black>=23.7.0
-ruff>=0.0.287
+ruff>=0.11
 
 # Build tools
 build>=1.0.0

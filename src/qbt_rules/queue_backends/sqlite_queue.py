@@ -36,7 +36,7 @@ class SQLiteQueue(QueueManager):
     SCHEMA_VERSION = 2
     BUSY_TIMEOUT_MS = 5000
 
-    def __init__(self, db_path: str = '/config/qbt-rules.db'):
+    def __init__(self, db_path: str = "/config/qbt-rules.db"):
         """
         Initialize SQLite queue
 
@@ -63,22 +63,22 @@ class SQLiteQueue(QueueManager):
         Returns:
             SQLite connection for current thread
         """
-        if not hasattr(self.local, 'conn'):
+        if not hasattr(self.local, "conn"):
             conn = sqlite3.connect(
                 str(self.db_path),
                 check_same_thread=False,
-                isolation_level=None  # Autocommit mode
+                isolation_level=None,  # Autocommit mode
             )
             conn.row_factory = sqlite3.Row
             # Enable WAL mode for better concurrency
-            conn.execute('PRAGMA journal_mode=WAL')
+            conn.execute("PRAGMA journal_mode=WAL")
             # Enable foreign keys
-            conn.execute('PRAGMA foreign_keys=ON')
+            conn.execute("PRAGMA foreign_keys=ON")
             # Wait for contended locks instead of failing immediately.
             # Needed alongside BEGIN IMMEDIATE in _transaction() below --
             # without it, a connection blocked at BEGIN IMMEDIATE raises
             # 'database is locked' right away instead of waiting its turn.
-            conn.execute(f'PRAGMA busy_timeout = {self.BUSY_TIMEOUT_MS}')
+            conn.execute(f"PRAGMA busy_timeout = {self.BUSY_TIMEOUT_MS}")
 
             # Track this connection
             with self._conn_lock:
@@ -110,11 +110,11 @@ class SQLiteQueue(QueueManager):
             # one transaction ever holds the write lock at a time, and
             # everyone else cleanly waits their turn (via busy_timeout)
             # instead of racing.
-            conn.execute('BEGIN IMMEDIATE')
+            conn.execute("BEGIN IMMEDIATE")
             yield conn
-            conn.execute('COMMIT')
+            conn.execute("COMMIT")
         except Exception:
-            conn.execute('ROLLBACK')
+            conn.execute("ROLLBACK")
             raise
 
     def _init_database(self):
@@ -122,22 +122,22 @@ class SQLiteQueue(QueueManager):
         conn = self._get_connection()
 
         # Create schema_version table
-        conn.execute('''
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS schema_version (
                 version INTEGER PRIMARY KEY,
                 applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-        ''')
+        """)
 
         # Check current schema version
-        cursor = conn.execute('SELECT MAX(version) FROM schema_version')
+        cursor = conn.execute("SELECT MAX(version) FROM schema_version")
         current_version = cursor.fetchone()[0]
 
         if current_version is None:
             # Initial schema creation: v1, then the same migrations an
             # existing database gets, so both paths end up identical
             self._create_schema_v1(conn)
-            conn.execute('INSERT INTO schema_version (version) VALUES (1)')
+            conn.execute("INSERT INTO schema_version (version) VALUES (1)")
             logger.info("Created database schema v1")
             current_version = 1
 
@@ -148,7 +148,7 @@ class SQLiteQueue(QueueManager):
         """Create initial database schema (version 1)"""
 
         # Jobs table: Complete job data
-        conn.execute('''
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS jobs (
                 id TEXT PRIMARY KEY,
                 context TEXT,
@@ -160,25 +160,25 @@ class SQLiteQueue(QueueManager):
                 result TEXT,
                 error TEXT
             )
-        ''')
+        """)
 
         # Indexes for efficient queries
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at)')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_jobs_context ON jobs(context)')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_jobs_completed_at ON jobs(completed_at)')
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_context ON jobs(context)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_completed_at ON jobs(completed_at)")
 
         # Queue table: Pending jobs in FIFO order
-        conn.execute('''
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 job_id TEXT NOT NULL UNIQUE,
                 priority INTEGER DEFAULT 0,
                 FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
             )
-        ''')
+        """)
 
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_queue_priority ON queue(priority, id)')
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_queue_priority ON queue(priority, id)")
 
     def _migrate_schema(self, conn: sqlite3.Connection, from_version: int):
         """
@@ -191,30 +191,46 @@ class SQLiteQueue(QueueManager):
         if from_version < 2:
             # v2: per-job dry-run, so `qbt-rules --dry-run --context ...` (and
             # /api/execute?dry_run=true) dry-run that job on a live server
-            conn.execute('ALTER TABLE jobs ADD COLUMN dry_run INTEGER NOT NULL DEFAULT 0')
-            conn.execute('INSERT INTO schema_version (version) VALUES (2)')
+            conn.execute("ALTER TABLE jobs ADD COLUMN dry_run INTEGER NOT NULL DEFAULT 0")
+            conn.execute("INSERT INTO schema_version (version) VALUES (2)")
 
         logger.info(f"Schema migration from v{from_version} to v{self.SCHEMA_VERSION} completed")
 
-    def enqueue(self, context: Optional[str] = None, hash_filter: Optional[str] = None,
-                dry_run: bool = False) -> str:
+    def enqueue(
+        self,
+        context: Optional[str] = None,
+        hash_filter: Optional[str] = None,
+        dry_run: bool = False,
+    ) -> str:
         """Add job to queue"""
         job_id = self.generate_job_id()
         created_at = datetime.now(timezone.utc)
 
         with self._transaction() as conn:
             # Insert job
-            conn.execute('''
+            conn.execute(
+                """
                 INSERT INTO jobs (id, context, hash, status, created_at, dry_run)
                 VALUES (?, ?, ?, ?, ?, ?)
-            ''', (job_id, context, hash_filter, JobStatus.PENDING, created_at.isoformat(),
-                  1 if dry_run else 0))
+            """,
+                (
+                    job_id,
+                    context,
+                    hash_filter,
+                    JobStatus.PENDING,
+                    created_at.isoformat(),
+                    1 if dry_run else 0,
+                ),
+            )
 
             # Add to queue
-            conn.execute('''
+            conn.execute(
+                """
                 INSERT INTO queue (job_id, priority)
                 VALUES (?, 0)
-            ''', (job_id,))
+            """,
+                (job_id,),
+            )
 
         logger.debug(f"Enqueued job {job_id} (context={context}, hash={hash_filter})")
         return job_id
@@ -223,31 +239,34 @@ class SQLiteQueue(QueueManager):
         """Get next pending job and mark as processing"""
         with self._transaction() as conn:
             # Get next job from queue (FIFO)
-            cursor = conn.execute('''
+            cursor = conn.execute("""
                 SELECT job_id FROM queue
                 ORDER BY priority DESC, id ASC
                 LIMIT 1
-            ''')
+            """)
             row = cursor.fetchone()
 
             if not row:
                 return None
 
-            job_id = row['job_id']
+            job_id = row["job_id"]
 
             # Mark job as processing
             started_at = datetime.now(timezone.utc)
-            conn.execute('''
+            conn.execute(
+                """
                 UPDATE jobs
                 SET status = ?, started_at = ?
                 WHERE id = ?
-            ''', (JobStatus.PROCESSING, started_at.isoformat(), job_id))
+            """,
+                (JobStatus.PROCESSING, started_at.isoformat(), job_id),
+            )
 
             # Remove from queue
-            conn.execute('DELETE FROM queue WHERE job_id = ?', (job_id,))
+            conn.execute("DELETE FROM queue WHERE job_id = ?", (job_id,))
 
             # Get full job data
-            cursor = conn.execute('SELECT * FROM jobs WHERE id = ?', (job_id,))
+            cursor = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
             job_row = cursor.fetchone()
 
         if not job_row:
@@ -258,7 +277,7 @@ class SQLiteQueue(QueueManager):
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Get job by ID"""
         conn = self._get_connection()
-        cursor = conn.execute('SELECT * FROM jobs WHERE id = ?', (job_id,))
+        cursor = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
         row = cursor.fetchone()
 
         if not row:
@@ -271,7 +290,7 @@ class SQLiteQueue(QueueManager):
         status: Optional[str] = None,
         context: Optional[str] = None,
         limit: int = 50,
-        offset: int = 0
+        offset: int = 0,
     ) -> List[Dict[str, Any]]:
         """List jobs with filtering"""
         # Limit max to 100
@@ -280,18 +299,18 @@ class SQLiteQueue(QueueManager):
         conn = self._get_connection()
 
         # Build query
-        query = 'SELECT * FROM jobs WHERE 1=1'
+        query = "SELECT * FROM jobs WHERE 1=1"
         params = []
 
         if status:
-            query += ' AND status = ?'
+            query += " AND status = ?"
             params.append(status)
 
         if context:
-            query += ' AND context = ?'
+            query += " AND context = ?"
             params.append(context)
 
-        query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
         cursor = conn.execute(query, params)
@@ -304,9 +323,9 @@ class SQLiteQueue(QueueManager):
         conn = self._get_connection()
 
         if status:
-            cursor = conn.execute('SELECT COUNT(*) FROM jobs WHERE status = ?', (status,))
+            cursor = conn.execute("SELECT COUNT(*) FROM jobs WHERE status = ?", (status,))
         else:
-            cursor = conn.execute('SELECT COUNT(*) FROM jobs')
+            cursor = conn.execute("SELECT COUNT(*) FROM jobs")
 
         return cursor.fetchone()[0]
 
@@ -317,7 +336,7 @@ class SQLiteQueue(QueueManager):
         started_at: Optional[datetime] = None,
         completed_at: Optional[datetime] = None,
         result: Optional[Dict[str, Any]] = None,
-        error: Optional[str] = None
+        error: Optional[str] = None,
     ) -> bool:
         """Update job status and fields"""
         if not self.validate_status(status):
@@ -326,23 +345,23 @@ class SQLiteQueue(QueueManager):
         conn = self._get_connection()
 
         # Build update query
-        updates = ['status = ?']
+        updates = ["status = ?"]
         params = [status]
 
         if started_at is not None:
-            updates.append('started_at = ?')
+            updates.append("started_at = ?")
             params.append(started_at.isoformat())
 
         if completed_at is not None:
-            updates.append('completed_at = ?')
+            updates.append("completed_at = ?")
             params.append(completed_at.isoformat())
 
         if result is not None:
-            updates.append('result = ?')
+            updates.append("result = ?")
             params.append(json.dumps(result))
 
         if error is not None:
-            updates.append('error = ?')
+            updates.append("error = ?")
             params.append(error)
 
         params.append(job_id)
@@ -356,17 +375,17 @@ class SQLiteQueue(QueueManager):
         """Cancel pending job"""
         with self._transaction() as conn:
             # Check if job is pending
-            cursor = conn.execute('SELECT status FROM jobs WHERE id = ?', (job_id,))
+            cursor = conn.execute("SELECT status FROM jobs WHERE id = ?", (job_id,))
             row = cursor.fetchone()
 
-            if not row or row['status'] != JobStatus.PENDING:
+            if not row or row["status"] != JobStatus.PENDING:
                 return False
 
             # Update status to cancelled
-            conn.execute('UPDATE jobs SET status = ? WHERE id = ?', (JobStatus.CANCELLED, job_id))
+            conn.execute("UPDATE jobs SET status = ? WHERE id = ?", (JobStatus.CANCELLED, job_id))
 
             # Remove from queue
-            conn.execute('DELETE FROM queue WHERE job_id = ?', (job_id,))
+            conn.execute("DELETE FROM queue WHERE job_id = ?", (job_id,))
 
         logger.debug(f"Cancelled job {job_id}")
         return True
@@ -377,11 +396,14 @@ class SQLiteQueue(QueueManager):
 
         # Cancelled jobs never get a completed_at, so fall back to created_at
         conn = self._get_connection()
-        cursor = conn.execute('''
+        cursor = conn.execute(
+            """
             DELETE FROM jobs
             WHERE status IN (?, ?, ?)
             AND COALESCE(completed_at, created_at) < ?
-        ''', (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED, cutoff_date.isoformat()))
+        """,
+            (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED, cutoff_date.isoformat()),
+        )
 
         deleted = cursor.rowcount
         if deleted > 0:
@@ -399,25 +421,28 @@ class SQLiteQueue(QueueManager):
 
         # Count by status
         stats = {
-            'total_jobs': self.count_jobs(),
-            'pending': self.count_jobs(JobStatus.PENDING),
-            'processing': self.count_jobs(JobStatus.PROCESSING),
-            'completed': self.count_jobs(JobStatus.COMPLETED),
-            'failed': self.count_jobs(JobStatus.FAILED),
-            'cancelled': self.count_jobs(JobStatus.CANCELLED),
+            "total_jobs": self.count_jobs(),
+            "pending": self.count_jobs(JobStatus.PENDING),
+            "processing": self.count_jobs(JobStatus.PROCESSING),
+            "completed": self.count_jobs(JobStatus.COMPLETED),
+            "failed": self.count_jobs(JobStatus.FAILED),
+            "cancelled": self.count_jobs(JobStatus.CANCELLED),
         }
 
         # Average execution time for completed jobs
-        cursor = conn.execute('''
+        cursor = conn.execute(
+            """
             SELECT AVG(
                 (julianday(completed_at) - julianday(started_at)) * 86400
             ) as avg_time
             FROM jobs
             WHERE status = ? AND started_at IS NOT NULL AND completed_at IS NOT NULL
-        ''', (JobStatus.COMPLETED,))
+        """,
+            (JobStatus.COMPLETED,),
+        )
 
         avg_time = cursor.fetchone()[0]
-        stats['average_execution_time'] = round(avg_time, 2) if avg_time else None
+        stats["average_execution_time"] = round(avg_time, 2) if avg_time else None
 
         return stats
 
@@ -425,7 +450,7 @@ class SQLiteQueue(QueueManager):
         """Check if database is accessible"""
         try:
             conn = self._get_connection()
-            conn.execute('SELECT 1')
+            conn.execute("SELECT 1")
             return True
         except Exception as e:
             logger.error(f"Queue health check failed: {e}")
@@ -442,16 +467,18 @@ class SQLiteQueue(QueueManager):
             Job dictionary with parsed JSON fields
         """
         job = {
-            'job_id': row['id'],
-            'context': row['context'],
-            'hash': row['hash'],
-            'dry_run': bool(row['dry_run']),
-            'status': row['status'],
-            'created_at': datetime.fromisoformat(row['created_at']) if row['created_at'] else None,
-            'started_at': datetime.fromisoformat(row['started_at']) if row['started_at'] else None,
-            'completed_at': datetime.fromisoformat(row['completed_at']) if row['completed_at'] else None,
-            'result': json.loads(row['result']) if row['result'] else None,
-            'error': row['error']
+            "job_id": row["id"],
+            "context": row["context"],
+            "hash": row["hash"],
+            "dry_run": bool(row["dry_run"]),
+            "status": row["status"],
+            "created_at": datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
+            "started_at": datetime.fromisoformat(row["started_at"]) if row["started_at"] else None,
+            "completed_at": datetime.fromisoformat(row["completed_at"])
+            if row["completed_at"]
+            else None,
+            "result": json.loads(row["result"]) if row["result"] else None,
+            "error": row["error"],
         }
 
         return job
@@ -468,8 +495,8 @@ class SQLiteQueue(QueueManager):
             self._connections.clear()
 
         # Also close thread-local connection if exists
-        if hasattr(self.local, 'conn'):
-            delattr(self.local, 'conn')
+        if hasattr(self.local, "conn"):
+            delattr(self.local, "conn")
 
     def __del__(self):
         """Cleanup on deletion"""

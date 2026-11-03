@@ -18,19 +18,24 @@ from typing import Optional
 
 from qbt_rules.arguments import create_parser, process_args, validate_torrent_hash
 from qbt_rules.config_loader import (
-    load_config, resolve_config, parse_int, parse_bool, parse_retention, ENV_VAR_MAP
+    load_config,
+    resolve_config,
+    parse_int,
+    parse_bool,
+    parse_retention,
+    ENV_VAR_MAP,
 )
 from qbt_rules.qbittorrent import QBittorrentAPI
 from qbt_rules.errors import handle_errors
-from qbt_rules.log_setup import (
-    setup_logging, get_logger, DEFAULT_MAX_BYTES, DEFAULT_BACKUP_COUNT
-)
+from qbt_rules.log_setup import setup_logging, get_logger, DEFAULT_MAX_BYTES, DEFAULT_BACKUP_COUNT
 from qbt_rules import cli_ui
 
 logger = None  # Set after logging is configured
 
 
-def resolve_section_config(args, config_obj, section: str, fields: dict, parsers: Optional[dict] = None) -> dict:
+def resolve_section_config(
+    args, config_obj, section: str, fields: dict, parsers: Optional[dict] = None
+) -> dict:
     """
     Generic resolver for a config.yml section's scalar fields
 
@@ -58,10 +63,9 @@ def resolve_section_config(args, config_obj, section: str, fields: dict, parsers
     parsers = parsers or {}
     result = {}
     for field, default in fields.items():
-        config_key = f'{section}.{field}'
+        config_key = f"{section}.{field}"
         env_var = ENV_VAR_MAP.get(
-            config_key,
-            f"QBT_RULES_{section.upper().replace('.', '_')}_{field.upper()}"
+            config_key, f"QBT_RULES_{section.upper().replace('.', '_')}_{field.upper()}"
         )
         cli_value = getattr(args, f"{section.replace('.', '_')}_{field}", None)
         value = resolve_config(cli_value, env_var, config_obj.config, config_key, default=default)
@@ -93,45 +97,72 @@ def get_logging_config(args, config_obj) -> dict:
         (int -- rotated files to keep)
     """
     level = resolve_config(
-        getattr(args, 'log_level', None),
-        'QBT_RULES_LOGGING_LEVEL', config_obj.config, 'logging.level', default='INFO'
+        getattr(args, "log_level", None),
+        "QBT_RULES_LOGGING_LEVEL",
+        config_obj.config,
+        "logging.level",
+        default="INFO",
     )
 
     file_str = resolve_config(
-        None, 'QBT_RULES_LOGGING_FILE', config_obj.config, 'logging.file',
-        default='logs/qbittorrent.log'
+        None,
+        "QBT_RULES_LOGGING_FILE",
+        config_obj.config,
+        "logging.file",
+        default="logs/qbittorrent.log",
     )
     file_path = Path(file_str)
     if not file_path.is_absolute():
         file_path = config_obj.config_dir / file_path
 
-    trace_mode = parse_bool(resolve_config(
-        True if getattr(args, 'trace', False) else None,
-        'QBT_RULES_LOGGING_TRACE_MODE', config_obj.config, 'logging.trace_mode', default=False
-    ))
+    trace_mode = parse_bool(
+        resolve_config(
+            True if getattr(args, "trace", False) else None,
+            "QBT_RULES_LOGGING_TRACE_MODE",
+            config_obj.config,
+            "logging.trace_mode",
+            default=False,
+        )
+    )
 
-    http_access = parse_bool(resolve_config(
-        None, 'QBT_RULES_LOGGING_HTTP_ACCESS', config_obj.config, 'logging.http_access', default=False
-    ))
+    http_access = parse_bool(
+        resolve_config(
+            None,
+            "QBT_RULES_LOGGING_HTTP_ACCESS",
+            config_obj.config,
+            "logging.http_access",
+            default=False,
+        )
+    )
 
-    max_bytes = parse_int(resolve_config(
-        None, 'QBT_RULES_LOGGING_MAX_BYTES', config_obj.config, 'logging.max_bytes',
-        default=DEFAULT_MAX_BYTES
-    ))
+    max_bytes = parse_int(
+        resolve_config(
+            None,
+            "QBT_RULES_LOGGING_MAX_BYTES",
+            config_obj.config,
+            "logging.max_bytes",
+            default=DEFAULT_MAX_BYTES,
+        )
+    )
 
-    backup_count = parse_int(resolve_config(
-        None, 'QBT_RULES_LOGGING_BACKUP_COUNT', config_obj.config, 'logging.backup_count',
-        default=DEFAULT_BACKUP_COUNT
-    ))
+    backup_count = parse_int(
+        resolve_config(
+            None,
+            "QBT_RULES_LOGGING_BACKUP_COUNT",
+            config_obj.config,
+            "logging.backup_count",
+            default=DEFAULT_BACKUP_COUNT,
+        )
+    )
 
     return {
-        'level': level.upper(),
-        'file': file_path,
-        'trace_mode': trace_mode,
-        'http_access': http_access,
-        'client_mode': not getattr(args, 'serve', False),
-        'max_bytes': max_bytes,
-        'backup_count': backup_count,
+        "level": level.upper(),
+        "file": file_path,
+        "trace_mode": trace_mode,
+        "http_access": http_access,
+        "client_mode": not getattr(args, "serve", False),
+        "max_bytes": max_bytes,
+        "backup_count": backup_count,
     }
 
 
@@ -143,11 +174,16 @@ def get_qbittorrent_config(args, config_obj) -> dict:
     Returns:
         Dictionary with 'host', 'username', 'password'
     """
-    return resolve_section_config(args, config_obj, 'qbittorrent', {
-        'host': 'http://localhost:8080',
-        'username': 'admin',
-        'password': '',
-    })
+    return resolve_section_config(
+        args,
+        config_obj,
+        "qbittorrent",
+        {
+            "host": "http://localhost:8080",
+            "username": "admin",
+            "password": "",
+        },
+    )
 
 
 def get_server_config(args, config_obj) -> dict:
@@ -157,17 +193,23 @@ def get_server_config(args, config_obj) -> dict:
     Returns:
         Dictionary with server configuration
     """
-    return resolve_section_config(args, config_obj, 'server', {
-        'host': '0.0.0.0',
-        'port': 5000,
-        'api_key': None,
-        'workers': 1,
-        'editor_enabled': True,
-    }, parsers={'port': parse_int, 'workers': parse_int, 'editor_enabled': parse_bool})
+    return resolve_section_config(
+        args,
+        config_obj,
+        "server",
+        {
+            "host": "0.0.0.0",
+            "port": 5000,
+            "api_key": None,
+            "workers": 1,
+            "editor_enabled": True,
+        },
+        parsers={"port": parse_int, "workers": parse_int, "editor_enabled": parse_bool},
+    )
 
 
 # The api_key value config.default.yml ships with, for both server and client
-PLACEHOLDER_API_KEY = 'your-secure-api-key-here-generate-a-random-key'
+PLACEHOLDER_API_KEY = "your-secure-api-key-here-generate-a-random-key"
 
 
 def get_client_config(args, config_obj) -> dict:
@@ -184,14 +226,19 @@ def get_client_config(args, config_obj) -> dict:
     Returns:
         Dictionary with client configuration
     """
-    client = resolve_section_config(args, config_obj, 'client', {
-        'server_url': 'http://localhost:5000',
-        'api_key': None,
-    })
-    if not client['api_key'] or client['api_key'] == PLACEHOLDER_API_KEY:
-        server_key = get_server_config(args, config_obj)['api_key']
+    client = resolve_section_config(
+        args,
+        config_obj,
+        "client",
+        {
+            "server_url": "http://localhost:5000",
+            "api_key": None,
+        },
+    )
+    if not client["api_key"] or client["api_key"] == PLACEHOLDER_API_KEY:
+        server_key = get_server_config(args, config_obj)["api_key"]
         if server_key:
-            client['api_key'] = server_key
+            client["api_key"] = server_key
     return client
 
 
@@ -202,12 +249,18 @@ def get_queue_config(args, config_obj) -> dict:
     Returns:
         Dictionary with queue configuration
     """
-    return resolve_section_config(args, config_obj, 'queue', {
-        'backend': 'sqlite',
-        'sqlite_path': '/config/qbt-rules.db',
-        'redis_url': 'redis://localhost:6379/0',
-        'cleanup_after': '7d',
-    }, parsers={'cleanup_after': parse_retention})
+    return resolve_section_config(
+        args,
+        config_obj,
+        "queue",
+        {
+            "backend": "sqlite",
+            "sqlite_path": "/config/qbt-rules.db",
+            "redis_url": "redis://localhost:6379/0",
+            "cleanup_after": "7d",
+        },
+        parsers={"cleanup_after": parse_retention},
+    )
 
 
 def get_notifications_config(args, config_obj) -> dict:
@@ -222,10 +275,15 @@ def get_notifications_config(args, config_obj) -> dict:
     Returns:
         Dictionary with notifications configuration
     """
-    return resolve_section_config(args, config_obj, 'notifications', {
-        'webhook_url': None,
-        'service': 'generic',
-    })
+    return resolve_section_config(
+        args,
+        config_obj,
+        "notifications",
+        {
+            "webhook_url": None,
+            "service": "generic",
+        },
+    )
 
 
 def get_integrations_config(args, config_obj) -> dict:
@@ -248,18 +306,37 @@ def get_integrations_config(args, config_obj) -> dict:
         and 'trackie' ({'url', 'max_age', 'timeout'})
     """
     return {
-        'sonarr': resolve_section_config(args, config_obj, 'integrations.sonarr', {
-            'url': None, 'api_key': None,
-        }),
-        'radarr': resolve_section_config(args, config_obj, 'integrations.radarr', {
-            'url': None, 'api_key': None,
-        }),
+        "sonarr": resolve_section_config(
+            args,
+            config_obj,
+            "integrations.sonarr",
+            {
+                "url": None,
+                "api_key": None,
+            },
+        ),
+        "radarr": resolve_section_config(
+            args,
+            config_obj,
+            "integrations.radarr",
+            {
+                "url": None,
+                "api_key": None,
+            },
+        ),
         # Not an arr: trackie serves tracker-side seeding stats for the
         # tracker.* field namespace. No API key -- it's read-only and meant
         # to sit on the same internal network as qbt-rules.
-        'trackie': resolve_section_config(args, config_obj, 'integrations.trackie', {
-            'url': None, 'max_age': None, 'timeout': None,
-        }),
+        "trackie": resolve_section_config(
+            args,
+            config_obj,
+            "integrations.trackie",
+            {
+                "url": None,
+                "max_age": None,
+                "timeout": None,
+            },
+        ),
     }
 
 
@@ -270,10 +347,16 @@ def get_metrics_config(args, config_obj) -> dict:
     Returns:
         Dictionary with 'enabled' (bool) and 'multiproc_dir' (str)
     """
-    return resolve_section_config(args, config_obj, 'metrics', {
-        'enabled': False,
-        'multiproc_dir': '/tmp/qbt-rules-metrics',
-    }, parsers={'enabled': parse_bool})
+    return resolve_section_config(
+        args,
+        config_obj,
+        "metrics",
+        {
+            "enabled": False,
+            "multiproc_dir": "/tmp/qbt-rules-metrics",
+        },
+        parsers={"enabled": parse_bool},
+    )
 
 
 def get_schedule_config(args, config_obj) -> list:
@@ -318,20 +401,21 @@ def run_server_mode(args, config_obj, logging_config):
     # are imported below, so PROMETHEUS_MULTIPROC_DIR is set in os.environ
     # before prometheus_client is first imported anywhere in this process --
     # see metrics.py's module docstring for why this ordering matters)
-    if metrics_config['enabled']:
-        multiproc_dir = Path(metrics_config['multiproc_dir'])
+    if metrics_config["enabled"]:
+        multiproc_dir = Path(metrics_config["multiproc_dir"])
         multiproc_dir.mkdir(parents=True, exist_ok=True)
-        for stale_file in multiproc_dir.glob('*.db'):
+        for stale_file in multiproc_dir.glob("*.db"):
             stale_file.unlink()
-        os.environ['PROMETHEUS_MULTIPROC_DIR'] = str(multiproc_dir)
+        os.environ["PROMETHEUS_MULTIPROC_DIR"] = str(multiproc_dir)
 
     from qbt_rules import metrics
-    metrics.init(enabled=metrics_config['enabled'])
-    if metrics_config['enabled']:
+
+    metrics.init(enabled=metrics_config["enabled"])
+    if metrics_config["enabled"]:
         logger.info(f"Metrics enabled (multiproc dir: {metrics_config['multiproc_dir']})")
 
     # Validate API key
-    if not server_config['api_key']:
+    if not server_config["api_key"]:
         logger.error("Server API key is required. Set via:")
         logger.error("  - CLI: --server-api-key <key>")
         logger.error("  - Env: QBT_RULES_SERVER_API_KEY or QBT_RULES_SERVER_API_KEY_FILE")
@@ -340,32 +424,34 @@ def run_server_mode(args, config_obj, logging_config):
 
     # Initialize queue
     from qbt_rules.queue_manager import create_queue
+
     queue = create_queue(
-        backend=queue_config['backend'],
-        db_path=queue_config['sqlite_path'],
-        redis_url=queue_config['redis_url']
+        backend=queue_config["backend"],
+        db_path=queue_config["sqlite_path"],
+        redis_url=queue_config["redis_url"],
     )
     logger.info(f"Queue backend: {queue.__class__.__name__}")
 
     # Initialize qBittorrent API (lazy initialization - won't connect until first job)
     qbt_config = get_qbittorrent_config(args, config_obj)
     api = QBittorrentAPI(
-        host=qbt_config['host'],
-        username=qbt_config['username'],
-        password=qbt_config['password'],
-        connect_now=False  # Defer connection until first job execution
+        host=qbt_config["host"],
+        username=qbt_config["username"],
+        password=qbt_config["password"],
+        connect_now=False,  # Defer connection until first job execution
     )
     logger.info(f"qBittorrent: {qbt_config['host']} (will connect on first job)")
 
     # Initialize worker
     from qbt_rules.worker import Worker
+
     worker = Worker(
         queue=queue,
         api=api,
         config=config_obj,
         notifications_config=notifications_config,
         integrations_config=integrations_config,
-        cleanup_after=queue_config['cleanup_after']
+        cleanup_after=queue_config["cleanup_after"],
     )
     worker.start()
     logger.info("Worker started")
@@ -374,19 +460,21 @@ def run_server_mode(args, config_obj, logging_config):
     # run_server()/Gunicorn forks, and must NOT be restarted per-fork the
     # way the worker thread is; see Scheduler's docstring)
     from qbt_rules.scheduler import Scheduler
+
     schedule_entries = get_schedule_config(args, config_obj)
     scheduler = Scheduler(queue=queue, entries=schedule_entries)
     scheduler.start()
 
     # Create Flask app
     from qbt_rules.web import create_app, run_server
+
     app = create_app(
         queue_manager=queue,
         worker_instance=worker,
-        api_key=server_config['api_key'],
+        api_key=server_config["api_key"],
         config=config_obj,
         metrics_config=metrics_config,
-        editor=server_config['editor_enabled']
+        editor=server_config["editor_enabled"],
     )
 
     # Run server
@@ -395,16 +483,16 @@ def run_server_mode(args, config_obj, logging_config):
     logger.info("=" * 60)
 
     # Get HTTP access logging preference
-    log_http_access = logging_config['http_access']
+    log_http_access = logging_config["http_access"]
 
     try:
         run_server(
             app=app,
-            host=server_config['host'],
-            port=server_config['port'],
-            workers=server_config['workers'],
+            host=server_config["host"],
+            port=server_config["port"],
+            workers=server_config["workers"],
             log_http_access=log_http_access,
-            metrics_enabled=metrics_config['enabled']
+            metrics_enabled=metrics_config["enabled"],
         )
     except KeyboardInterrupt:
         logger.info("\nShutting down...")
@@ -424,7 +512,7 @@ def run_client_mode(args, config_obj):
     client_config = get_client_config(args, config_obj)
 
     # Validate API key
-    if not client_config['api_key']:
+    if not client_config["api_key"]:
         logger.error("Client API key is required. Set via:")
         logger.error("  - CLI: --client-api-key <key>")
         logger.error("  - Env: QBT_RULES_CLIENT_API_KEY or QBT_RULES_CLIENT_API_KEY_FILE")
@@ -432,8 +520,8 @@ def run_client_mode(args, config_obj):
         sys.exit(1)
 
     # Determine context and hash
-    context = args.context if hasattr(args, 'context') and args.context else None
-    hash_filter = args.hash if hasattr(args, 'hash') and args.hash else None
+    context = args.context if hasattr(args, "context") and args.context else None
+    hash_filter = args.hash if hasattr(args, "hash") and args.hash else None
 
     # Validate hash if provided
     if hash_filter:
@@ -444,37 +532,29 @@ def run_client_mode(args, config_obj):
             sys.exit(1)
 
     # Submit job to server
-    server_url = client_config['server_url'].rstrip('/')
-    api_key = client_config['api_key']
+    server_url = client_config["server_url"].rstrip("/")
+    api_key = client_config["api_key"]
 
     logger.info(f"Submitting job to {server_url}")
     logger.info(f"  Context: {context or 'none'}")
     logger.info(f"  Hash: {hash_filter or 'all torrents'}")
-    dry_run = bool(getattr(args, 'dry_run', False))
+    dry_run = bool(getattr(args, "dry_run", False))
     if dry_run:
         logger.info("  Dry run: yes")
 
-    params = {
-        'context': context,
-        'hash': hash_filter,
-        'key': api_key
-    }
+    params = {"context": context, "hash": hash_filter, "key": api_key}
     if dry_run:
-        params['dry_run'] = 'true'
+        params["dry_run"] = "true"
 
     try:
-        response = requests.post(
-            f"{server_url}/api/execute",
-            params=params,
-            timeout=10
-        )
+        response = requests.post(f"{server_url}/api/execute", params=params, timeout=10)
 
         if response.status_code == 202:
             job = response.json()
-            if dry_run and job.get('dry_run') is not True:
+            if dry_run and job.get("dry_run") is not True:
                 # A server older than per-job dry-run ignores the parameter
                 # and would run the job for real -- cancel it before it starts
-                _cancel_unconfirmed_dry_run(server_url, api_key, job['job_id'])
+                _cancel_unconfirmed_dry_run(server_url, api_key, job["job_id"])
                 sys.exit(1)
             logger.info(f"✓ Job queued: {job['job_id']}")
             logger.info(f"  Status: {job['status']}")
@@ -482,7 +562,7 @@ def run_client_mode(args, config_obj):
 
             # Wait for completion if requested
             if args.wait:
-                wait_for_job(server_url, api_key, job['job_id'])
+                wait_for_job(server_url, api_key, job["job_id"])
 
         elif response.status_code == 401:
             logger.error("Authentication failed - check API key")
@@ -506,21 +586,27 @@ def run_client_mode(args, config_obj):
 
 def _cancel_unconfirmed_dry_run(server_url: str, api_key: str, job_id: str):
     """Cancel a job the server queued without the dry-run the client asked for"""
-    logger.error("The server didn't confirm dry-run for this job (it's older than "
-                 "per-job dry-run support), so it would have run for real.")
+    logger.error(
+        "The server didn't confirm dry-run for this job (it's older than "
+        "per-job dry-run support), so it would have run for real."
+    )
     try:
-        response = requests.delete(f"{server_url}/api/jobs/{job_id}",
-                                   params={'key': api_key}, timeout=10)
+        response = requests.delete(
+            f"{server_url}/api/jobs/{job_id}", params={"key": api_key}, timeout=10
+        )
         cancelled = response.status_code == 200
     except requests.exceptions.RequestException:
         cancelled = False
     if cancelled:
         logger.error(f"Cancelled job {job_id} before it ran.")
     else:
-        logger.error(f"Could not cancel job {job_id}; it may already be running. "
-                     f"Check it with --job-status {job_id}.")
-    logger.error("Upgrade the server, or set dry_run on the server instead "
-                 "(QBT_RULES_DRY_RUN=true).")
+        logger.error(
+            f"Could not cancel job {job_id}; it may already be running. "
+            f"Check it with --job-status {job_id}."
+        )
+    logger.error(
+        "Upgrade the server, or set dry_run on the server instead (QBT_RULES_DRY_RUN=true)."
+    )
 
 
 def wait_for_job(server_url: str, api_key: str, job_id: str):
@@ -541,28 +627,26 @@ def wait_for_job(server_url: str, api_key: str, job_id: str):
     while elapsed < max_wait:
         try:
             response = requests.get(
-                f"{server_url}/api/jobs/{job_id}",
-                params={'key': api_key},
-                timeout=10
+                f"{server_url}/api/jobs/{job_id}", params={"key": api_key}, timeout=10
             )
 
             if response.status_code == 200:
                 job = response.json()
-                status = job['status']
+                status = job["status"]
 
-                if status == 'completed':
+                if status == "completed":
                     logger.info(f"✓ Job completed successfully")
-                    result = job.get('result', {})
+                    result = job.get("result", {})
                     logger.info(f"  Torrents processed: {result.get('torrents_processed', 0)}")
                     logger.info(f"  Rules matched: {result.get('rules_matched', 0)}")
                     logger.info(f"  Actions executed: {result.get('actions_executed', 0)}")
                     return
-                elif status == 'failed':
+                elif status == "failed":
                     logger.error(f"✗ Job failed")
-                    error = job.get('error', 'Unknown error')
+                    error = job.get("error", "Unknown error")
                     logger.error(f"  Error: {error}")
                     sys.exit(1)
-                elif status == 'cancelled':
+                elif status == "cancelled":
                     logger.warning(f"Job was cancelled")
                     sys.exit(1)
                 else:
@@ -583,29 +667,25 @@ def wait_for_job(server_url: str, api_key: str, job_id: str):
 def list_jobs_command(args, config_obj):
     """List jobs command"""
     client_config = get_client_config(args, config_obj)
-    server_url = client_config['server_url'].rstrip('/')
-    api_key = client_config['api_key']
+    server_url = client_config["server_url"].rstrip("/")
+    api_key = client_config["api_key"]
 
-    status_filter = getattr(args, 'status_filter', None)
-    limit = getattr(args, 'limit', 20)
-    output_format = getattr(args, 'output', 'table')
+    status_filter = getattr(args, "status_filter", None)
+    limit = getattr(args, "limit", 20)
+    output_format = getattr(args, "output", "table")
 
     try:
         response = requests.get(
             f"{server_url}/api/jobs",
-            params={
-                'status': status_filter,
-                'limit': limit,
-                'key': api_key
-            },
-            timeout=10
+            params={"status": status_filter, "limit": limit, "key": api_key},
+            timeout=10,
         )
 
         if response.status_code == 200:
             data = response.json()
-            jobs = data['jobs']
+            jobs = data["jobs"]
 
-            if output_format == 'json':
+            if output_format == "json":
                 cli_ui.print_json(data)
                 return
 
@@ -614,12 +694,12 @@ def list_jobs_command(args, config_obj):
                 return
 
             cli_ui.print_table(
-                headers=['Job ID', 'Status', 'Context', 'Created'],
+                headers=["Job ID", "Status", "Context", "Created"],
                 rows=[
-                    [job['job_id'], job['status'], job.get('context') or 'none', job['created_at']]
+                    [job["job_id"], job["status"], job.get("context") or "none", job["created_at"]]
                     for job in jobs
                 ],
-                title=f"Jobs (showing {len(jobs)} of {data['total']} total):"
+                title=f"Jobs (showing {len(jobs)} of {data['total']} total):",
             )
 
         else:
@@ -633,40 +713,41 @@ def list_jobs_command(args, config_obj):
 def job_status_command(args, config_obj):
     """Get job status command"""
     client_config = get_client_config(args, config_obj)
-    server_url = client_config['server_url'].rstrip('/')
-    api_key = client_config['api_key']
+    server_url = client_config["server_url"].rstrip("/")
+    api_key = client_config["api_key"]
 
     job_id = args.job_status
-    output_format = getattr(args, 'output', 'table')
+    output_format = getattr(args, "output", "table")
 
     try:
         response = requests.get(
-            f"{server_url}/api/jobs/{job_id}",
-            params={'key': api_key},
-            timeout=10
+            f"{server_url}/api/jobs/{job_id}", params={"key": api_key}, timeout=10
         )
 
         if response.status_code == 200:
             job = response.json()
 
-            if output_format == 'json':
+            if output_format == "json":
                 cli_ui.print_json(job)
                 return
 
-            cli_ui.print_kv_section("Job Details:", [
-                ("Job ID", job['job_id']),
-                ("Status", job['status']),
-                ("Context", job.get('context') or 'none'),
-                ("Hash", job.get('hash') or 'all'),
-                ("Created", job['created_at']),
-                ("Started", job['started_at'] or 'not started'),
-                ("Completed", job['completed_at'] or 'not completed'),
-            ])
+            cli_ui.print_kv_section(
+                "Job Details:",
+                [
+                    ("Job ID", job["job_id"]),
+                    ("Status", job["status"]),
+                    ("Context", job.get("context") or "none"),
+                    ("Hash", job.get("hash") or "all"),
+                    ("Created", job["created_at"]),
+                    ("Started", job["started_at"] or "not started"),
+                    ("Completed", job["completed_at"] or "not completed"),
+                ],
+            )
 
-            if job.get('result'):
-                cli_ui.print_kv_section("Result:", list(job['result'].items()), indent=2)
+            if job.get("result"):
+                cli_ui.print_kv_section("Result:", list(job["result"].items()), indent=2)
 
-            if job.get('error'):
+            if job.get("error"):
                 cli_ui.print_message(f"\n  Error:\n    {job['error']}")
 
         elif response.status_code == 404:
@@ -682,21 +763,19 @@ def job_status_command(args, config_obj):
 def cancel_job_command(args, config_obj):
     """Cancel job command"""
     client_config = get_client_config(args, config_obj)
-    server_url = client_config['server_url'].rstrip('/')
-    api_key = client_config['api_key']
+    server_url = client_config["server_url"].rstrip("/")
+    api_key = client_config["api_key"]
 
     job_id = args.cancel_job_id
-    output_format = getattr(args, 'output', 'table')
+    output_format = getattr(args, "output", "table")
 
     try:
         response = requests.delete(
-            f"{server_url}/api/jobs/{job_id}",
-            params={'key': api_key},
-            timeout=10
+            f"{server_url}/api/jobs/{job_id}", params={"key": api_key}, timeout=10
         )
 
         if response.status_code == 200:
-            if output_format == 'json':
+            if output_format == "json":
                 cli_ui.print_json(response.json())
             else:
                 cli_ui.print_message(f"✓ Job cancelled: {job_id}")
@@ -716,49 +795,64 @@ def cancel_job_command(args, config_obj):
 def stats_command(args, config_obj):
     """Get server stats command"""
     client_config = get_client_config(args, config_obj)
-    server_url = client_config['server_url'].rstrip('/')
-    api_key = client_config['api_key']
+    server_url = client_config["server_url"].rstrip("/")
+    api_key = client_config["api_key"]
 
-    output_format = getattr(args, 'output', 'table')
+    output_format = getattr(args, "output", "table")
 
     try:
-        response = requests.get(
-            f"{server_url}/api/stats",
-            params={'key': api_key},
-            timeout=10
-        )
+        response = requests.get(f"{server_url}/api/stats", params={"key": api_key}, timeout=10)
 
         if response.status_code == 200:
             stats = response.json()
 
-            if output_format == 'json':
+            if output_format == "json":
                 cli_ui.print_json(stats)
                 return
 
             cli_ui.print_message("\nServer Statistics:")
 
-            cli_ui.print_kv_section("Jobs:", [
-                ("Total", stats['jobs']['total']),
-                ("Pending", stats['jobs']['pending']),
-                ("Processing", stats['jobs']['processing']),
-                ("Completed", stats['jobs']['completed']),
-                ("Failed", stats['jobs']['failed']),
-                ("Cancelled", stats['jobs']['cancelled']),
-            ], indent=2)
+            cli_ui.print_kv_section(
+                "Jobs:",
+                [
+                    ("Total", stats["jobs"]["total"]),
+                    ("Pending", stats["jobs"]["pending"]),
+                    ("Processing", stats["jobs"]["processing"]),
+                    ("Completed", stats["jobs"]["completed"]),
+                    ("Failed", stats["jobs"]["failed"]),
+                    ("Cancelled", stats["jobs"]["cancelled"]),
+                ],
+                indent=2,
+            )
 
-            cli_ui.print_kv_section("Performance:", [
-                ("Average execution time", stats['performance']['average_execution_time'] or 'N/A'),
-            ], indent=2)
+            cli_ui.print_kv_section(
+                "Performance:",
+                [
+                    (
+                        "Average execution time",
+                        stats["performance"]["average_execution_time"] or "N/A",
+                    ),
+                ],
+                indent=2,
+            )
 
-            cli_ui.print_kv_section("Queue:", [
-                ("Backend", stats['queue']['backend']),
-                ("Depth", stats['queue']['depth']),
-            ], indent=2)
+            cli_ui.print_kv_section(
+                "Queue:",
+                [
+                    ("Backend", stats["queue"]["backend"]),
+                    ("Depth", stats["queue"]["depth"]),
+                ],
+                indent=2,
+            )
 
-            cli_ui.print_kv_section("Worker:", [
-                ("Status", stats['worker']['status']),
-                ("Last job completed", stats['worker']['last_job_completed'] or 'never'),
-            ], indent=2)
+            cli_ui.print_kv_section(
+                "Worker:",
+                [
+                    ("Status", stats["worker"]["status"]),
+                    ("Last job completed", stats["worker"]["last_job_completed"] or "never"),
+                ],
+                indent=2,
+            )
 
         else:
             logger.error(f"Server error: {response.status_code}")
@@ -790,6 +884,7 @@ def main():
 
     # Handle utility arguments (--validate, --list-rules)
     from qbt_rules.arguments import handle_utility_args
+
     utility_exit_code = handle_utility_args(args, config)
     if utility_exit_code is not None:
         sys.exit(utility_exit_code)
@@ -817,5 +912,5 @@ def main():
     sys.exit(0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

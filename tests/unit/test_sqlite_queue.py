@@ -27,6 +27,7 @@ from qbt_rules.queue_manager import JobStatus, QueueManager
 # Initialization and Database Setup Tests
 # ============================================================================
 
+
 class TestSQLiteQueueInitialization:
     """Test SQLite queue initialization"""
 
@@ -61,9 +62,9 @@ class TestSQLiteQueueInitialization:
         """)
         tables = [row[0] for row in cursor.fetchall()]
 
-        assert 'jobs' in tables
-        assert 'queue' in tables
-        assert 'schema_version' in tables
+        assert "jobs" in tables
+        assert "queue" in tables
+        assert "schema_version" in tables
 
         conn.close()
         queue.close()
@@ -81,11 +82,11 @@ class TestSQLiteQueueInitialization:
         """)
         indexes = [row[0] for row in cursor.fetchall()]
 
-        assert 'idx_jobs_status' in indexes
-        assert 'idx_jobs_created_at' in indexes
-        assert 'idx_jobs_context' in indexes
-        assert 'idx_jobs_completed_at' in indexes
-        assert 'idx_queue_priority' in indexes
+        assert "idx_jobs_status" in indexes
+        assert "idx_jobs_created_at" in indexes
+        assert "idx_jobs_context" in indexes
+        assert "idx_jobs_completed_at" in indexes
+        assert "idx_queue_priority" in indexes
 
         conn.close()
         queue.close()
@@ -96,7 +97,7 @@ class TestSQLiteQueueInitialization:
         queue = SQLiteQueue(db_path=str(db_path))
 
         conn = sqlite3.connect(str(db_path))
-        cursor = conn.execute('SELECT MAX(version) FROM schema_version')
+        cursor = conn.execute("SELECT MAX(version) FROM schema_version")
         version = cursor.fetchone()[0]
 
         assert version == SQLiteQueue.SCHEMA_VERSION
@@ -119,7 +120,7 @@ class TestSQLiteQueueInitialization:
         job = queue2.get_job(job_id)
 
         assert job is not None
-        assert job['job_id'] == job_id
+        assert job["job_id"] == job_id
         queue2.close()
 
     def test_init_enables_wal_mode(self, tmp_path):
@@ -128,10 +129,10 @@ class TestSQLiteQueueInitialization:
         queue = SQLiteQueue(db_path=str(db_path))
 
         conn = sqlite3.connect(str(db_path))
-        cursor = conn.execute('PRAGMA journal_mode')
+        cursor = conn.execute("PRAGMA journal_mode")
         mode = cursor.fetchone()[0]
 
-        assert mode.upper() == 'WAL'
+        assert mode.upper() == "WAL"
 
         conn.close()
         queue.close()
@@ -142,7 +143,7 @@ class TestSQLiteQueueInitialization:
         queue = SQLiteQueue(db_path=str(db_path))
 
         conn = queue._get_connection()
-        cursor = conn.execute('PRAGMA foreign_keys')
+        cursor = conn.execute("PRAGMA foreign_keys")
         enabled = cursor.fetchone()[0]
 
         assert enabled == 1
@@ -168,6 +169,7 @@ class TestSQLiteQueueInitialization:
     def test_schema_migration_from_old_version(self, tmp_path, caplog):
         """Schema migration runs when database has old version"""
         import logging
+
         db_path = tmp_path / "test.db"
 
         # Create database with proper schema structure but version 0
@@ -175,19 +177,19 @@ class TestSQLiteQueueInitialization:
         conn = sqlite3.connect(str(db_path))
 
         # Create schema_version table with proper structure
-        conn.execute('''
+        conn.execute("""
             CREATE TABLE schema_version (
                 version INTEGER PRIMARY KEY,
                 applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-        ''')
+        """)
 
         # Insert old version (0) to trigger migration path
-        conn.execute('INSERT INTO schema_version (version) VALUES (0)')
+        conn.execute("INSERT INTO schema_version (version) VALUES (0)")
 
         # Also need to create the main tables so it's a valid old schema
         # (otherwise it might be treated as corrupted)
-        conn.execute('''
+        conn.execute("""
             CREATE TABLE jobs (
                 id TEXT PRIMARY KEY,
                 context TEXT,
@@ -199,14 +201,14 @@ class TestSQLiteQueueInitialization:
                 result TEXT,
                 error TEXT
             )
-        ''')
-        conn.execute('''
+        """)
+        conn.execute("""
             CREATE TABLE queue (
                 job_id TEXT PRIMARY KEY,
                 priority INTEGER NOT NULL DEFAULT 0,
                 enqueued_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-        ''')
+        """)
         conn.commit()
         conn.close()
 
@@ -214,34 +216,40 @@ class TestSQLiteQueueInitialization:
         with caplog.at_level(logging.INFO):
             queue = SQLiteQueue(db_path=str(db_path))
 
-        assert any(f"Schema migration from v0 to v{SQLiteQueue.SCHEMA_VERSION} completed"
-                   in record.message for record in caplog.records)
+        assert any(
+            f"Schema migration from v0 to v{SQLiteQueue.SCHEMA_VERSION} completed" in record.message
+            for record in caplog.records
+        )
         queue.close()
 
     def test_v1_database_migrates_to_v2_keeping_jobs(self, tmp_path):
         """A v1 database (before per-job dry-run) gains jobs.dry_run, existing jobs default to False"""
         db_path = tmp_path / "test.db"
         conn = sqlite3.connect(str(db_path))
-        conn.execute('CREATE TABLE schema_version (version INTEGER PRIMARY KEY, '
-                     'applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)')
-        conn.execute('INSERT INTO schema_version (version) VALUES (1)')
-        conn.execute('''CREATE TABLE jobs (id TEXT PRIMARY KEY, context TEXT, hash TEXT,
+        conn.execute(
+            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY, "
+            "applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+        )
+        conn.execute("INSERT INTO schema_version (version) VALUES (1)")
+        conn.execute("""CREATE TABLE jobs (id TEXT PRIMARY KEY, context TEXT, hash TEXT,
                         status TEXT NOT NULL, created_at TIMESTAMP NOT NULL, started_at TIMESTAMP,
-                        completed_at TIMESTAMP, result TEXT, error TEXT)''')
-        conn.execute('''CREATE TABLE queue (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        job_id TEXT NOT NULL UNIQUE, priority INTEGER DEFAULT 0)''')
-        conn.execute("INSERT INTO jobs (id, context, status, created_at) "
-                     "VALUES ('old-job', 'nightly', 'completed', '2026-10-01T00:00:00+00:00')")
+                        completed_at TIMESTAMP, result TEXT, error TEXT)""")
+        conn.execute("""CREATE TABLE queue (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        job_id TEXT NOT NULL UNIQUE, priority INTEGER DEFAULT 0)""")
+        conn.execute(
+            "INSERT INTO jobs (id, context, status, created_at) "
+            "VALUES ('old-job', 'nightly', 'completed', '2026-10-01T00:00:00+00:00')"
+        )
         conn.commit()
         conn.close()
 
         queue = SQLiteQueue(db_path=str(db_path))
 
-        assert queue.get_job('old-job')['dry_run'] is False
-        new_id = queue.enqueue(context='manual', dry_run=True)
-        assert queue.get_job(new_id)['dry_run'] is True
+        assert queue.get_job("old-job")["dry_run"] is False
+        new_id = queue.enqueue(context="manual", dry_run=True)
+        assert queue.get_job(new_id)["dry_run"] is True
         conn = sqlite3.connect(str(db_path))
-        assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == 2
+        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 2
         conn.close()
         queue.close()
 
@@ -250,12 +258,12 @@ class TestSQLiteQueueInitialization:
         db_path = tmp_path / "test.db"
         SQLiteQueue(db_path=str(db_path)).close()
         queue = SQLiteQueue(db_path=str(db_path))
-        assert queue.get_job(queue.enqueue(dry_run=True))['dry_run'] is True
+        assert queue.get_job(queue.enqueue(dry_run=True))["dry_run"] is True
         queue.close()
 
     def test_enqueue_defaults_to_not_dry_run(self, tmp_path):
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
-        assert queue.get_job(queue.enqueue(context='manual'))['dry_run'] is False
+        assert queue.get_job(queue.enqueue(context="manual"))["dry_run"] is False
         queue.close()
 
         queue.close()
@@ -264,6 +272,7 @@ class TestSQLiteQueueInitialization:
 # ============================================================================
 # Enqueue Operation Tests
 # ============================================================================
+
 
 class TestSQLiteQueueEnqueue:
     """Test job enqueueing"""
@@ -275,7 +284,7 @@ class TestSQLiteQueueEnqueue:
 
         job = queue.get_job(job_id)
         assert job is not None
-        assert job['job_id'] == job_id
+        assert job["job_id"] == job_id
         queue.close()
 
     def test_enqueue_returns_job_id(self, tmp_path):
@@ -293,7 +302,7 @@ class TestSQLiteQueueEnqueue:
         job_id = queue.enqueue(context="torrent-imported")
 
         job = queue.get_job(job_id)
-        assert job['context'] == "torrent-imported"
+        assert job["context"] == "torrent-imported"
         queue.close()
 
     def test_enqueue_with_hash_filter(self, tmp_path):
@@ -302,7 +311,7 @@ class TestSQLiteQueueEnqueue:
         job_id = queue.enqueue(hash_filter="abc123def456")
 
         job = queue.get_job(job_id)
-        assert job['hash'] == "abc123def456"
+        assert job["hash"] == "abc123def456"
         queue.close()
 
     def test_enqueue_with_both_params(self, tmp_path):
@@ -311,8 +320,8 @@ class TestSQLiteQueueEnqueue:
         job_id = queue.enqueue(context="weekly-cleanup", hash_filter="abc123")
 
         job = queue.get_job(job_id)
-        assert job['context'] == "weekly-cleanup"
-        assert job['hash'] == "abc123"
+        assert job["context"] == "weekly-cleanup"
+        assert job["hash"] == "abc123"
         queue.close()
 
     def test_enqueue_sets_pending_status(self, tmp_path):
@@ -321,7 +330,7 @@ class TestSQLiteQueueEnqueue:
         job_id = queue.enqueue()
 
         job = queue.get_job(job_id)
-        assert job['status'] == JobStatus.PENDING
+        assert job["status"] == JobStatus.PENDING
         queue.close()
 
     def test_enqueue_sets_created_at(self, tmp_path):
@@ -332,11 +341,11 @@ class TestSQLiteQueueEnqueue:
         after = datetime.now(timezone.utc)
 
         job = queue.get_job(job_id)
-        created_str = job['created_at']
+        created_str = job["created_at"]
 
         # Parse ISO timestamp (SQLite stores as string)
         if isinstance(created_str, str):
-            created_dt = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
+            created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
         else:
             created_dt = created_str
 
@@ -350,10 +359,10 @@ class TestSQLiteQueueEnqueue:
         job_id = queue.enqueue()
 
         job = queue.get_job(job_id)
-        assert job['started_at'] is None
-        assert job['completed_at'] is None
-        assert job['result'] is None
-        assert job['error'] is None
+        assert job["started_at"] is None
+        assert job["completed_at"] is None
+        assert job["result"] is None
+        assert job["error"] is None
         queue.close()
 
     def test_enqueue_multiple_jobs(self, tmp_path):
@@ -378,7 +387,7 @@ class TestSQLiteQueueEnqueue:
         job_id = queue.enqueue()
 
         conn = sqlite3.connect(str(tmp_path / "test.db"))
-        cursor = conn.execute('SELECT job_id FROM queue WHERE job_id = ?', (job_id,))
+        cursor = conn.execute("SELECT job_id FROM queue WHERE job_id = ?", (job_id,))
         row = cursor.fetchone()
 
         assert row is not None
@@ -400,6 +409,7 @@ class TestSQLiteQueueEnqueue:
 # Dequeue Operation Tests
 # ============================================================================
 
+
 class TestSQLiteQueueDequeue:
     """Test job dequeueing"""
 
@@ -410,7 +420,7 @@ class TestSQLiteQueueDequeue:
 
         job = queue.dequeue()
         assert job is not None
-        assert job['job_id'] == job_id
+        assert job["job_id"] == job_id
         queue.close()
 
     def test_dequeue_empty_queue_returns_none(self, tmp_path):
@@ -435,7 +445,7 @@ class TestSQLiteQueueDequeue:
         # Dequeue should return in same order
         for expected_id in job_ids:
             job = queue.dequeue()
-            assert job['job_id'] == expected_id
+            assert job["job_id"] == expected_id
 
         queue.close()
 
@@ -445,7 +455,7 @@ class TestSQLiteQueueDequeue:
         job_id = queue.enqueue()
 
         job = queue.dequeue()
-        assert job['status'] == JobStatus.PROCESSING
+        assert job["status"] == JobStatus.PROCESSING
         queue.close()
 
     def test_dequeue_sets_started_at(self, tmp_path):
@@ -457,9 +467,9 @@ class TestSQLiteQueueDequeue:
         job = queue.dequeue()
         after = datetime.now(timezone.utc)
 
-        started_str = job['started_at']
+        started_str = job["started_at"]
         if isinstance(started_str, str):
-            started_dt = datetime.fromisoformat(started_str.replace('Z', '+00:00'))
+            started_dt = datetime.fromisoformat(started_str.replace("Z", "+00:00"))
         else:
             started_dt = started_str
 
@@ -475,7 +485,7 @@ class TestSQLiteQueueDequeue:
 
         # Should not be in queue table anymore
         conn = sqlite3.connect(str(tmp_path / "test.db"))
-        cursor = conn.execute('SELECT COUNT(*) FROM queue WHERE job_id = ?', (job_id,))
+        cursor = conn.execute("SELECT COUNT(*) FROM queue WHERE job_id = ?", (job_id,))
         count = cursor.fetchone()[0]
 
         assert count == 0
@@ -508,6 +518,7 @@ class TestSQLiteQueueDequeue:
         # Simulate concurrent dequeue attempts
         results = []
         errors = []
+
         def dequeue_worker():
             try:
                 job = queue.dequeue()
@@ -535,15 +546,15 @@ class TestSQLiteQueueDequeue:
 
         job = queue.dequeue()
 
-        assert 'job_id' in job
-        assert 'context' in job
-        assert 'hash' in job
-        assert 'status' in job
-        assert 'created_at' in job
-        assert 'started_at' in job
-        assert 'completed_at' in job
-        assert 'result' in job
-        assert 'error' in job
+        assert "job_id" in job
+        assert "context" in job
+        assert "hash" in job
+        assert "status" in job
+        assert "created_at" in job
+        assert "started_at" in job
+        assert "completed_at" in job
+        assert "result" in job
+        assert "error" in job
         queue.close()
 
     def test_dequeue_only_pending_jobs(self, tmp_path):
@@ -560,7 +571,7 @@ class TestSQLiteQueueDequeue:
 
         # Should get second job (first is no longer in queue)
         job = queue.dequeue()
-        assert job['job_id'] == job2_id
+        assert job["job_id"] == job2_id
         queue.close()
 
     def test_dequeue_race_condition_job_deleted(self, tmp_path):
@@ -573,7 +584,7 @@ class TestSQLiteQueueDequeue:
         # Manually delete job from jobs table (simulating race condition)
         # This creates scenario where job_id is in queue but not in jobs table
         conn = sqlite3.connect(str(tmp_path / "test.db"))
-        conn.execute('DELETE FROM jobs WHERE id = ?', (job_id,))
+        conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
         conn.commit()
         conn.close()
 
@@ -588,6 +599,7 @@ class TestSQLiteQueueDequeue:
 # Get Job Operation Tests
 # ============================================================================
 
+
 class TestSQLiteQueueGetJob:
     """Test get_job() method"""
 
@@ -598,8 +610,8 @@ class TestSQLiteQueueGetJob:
 
         job = queue.get_job(job_id)
         assert job is not None
-        assert job['job_id'] == job_id
-        assert job['context'] == "test"
+        assert job["job_id"] == job_id
+        assert job["context"] == "test"
         queue.close()
 
     def test_get_job_nonexistent_returns_none(self, tmp_path):
@@ -626,8 +638,17 @@ class TestSQLiteQueueGetJob:
 
         job = queue.get_job(job_id)
 
-        required_fields = ['job_id', 'context', 'hash', 'status', 'created_at',
-                          'started_at', 'completed_at', 'result', 'error']
+        required_fields = [
+            "job_id",
+            "context",
+            "hash",
+            "status",
+            "created_at",
+            "started_at",
+            "completed_at",
+            "result",
+            "error",
+        ]
         for field in required_fields:
             assert field in job
         queue.close()
@@ -637,13 +658,13 @@ class TestSQLiteQueueGetJob:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
         job_id = queue.enqueue()
 
-        result_data = {'torrents': 10, 'matched': 5}
-        queue.update_status(job_id, JobStatus.COMPLETED,
-                          completed_at=datetime.now(timezone.utc),
-                          result=result_data)
+        result_data = {"torrents": 10, "matched": 5}
+        queue.update_status(
+            job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc), result=result_data
+        )
 
         job = queue.get_job(job_id)
-        assert job['result'] == result_data
+        assert job["result"] == result_data
         queue.close()
 
     def test_get_job_after_status_update(self, tmp_path):
@@ -652,17 +673,17 @@ class TestSQLiteQueueGetJob:
         job_id = queue.enqueue()
 
         # Update status
-        queue.update_status(job_id, JobStatus.COMPLETED,
-                          completed_at=datetime.now(timezone.utc))
+        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
 
         job = queue.get_job(job_id)
-        assert job['status'] == JobStatus.COMPLETED
+        assert job["status"] == JobStatus.COMPLETED
         queue.close()
 
 
 # ============================================================================
 # List Jobs Operation Tests
 # ============================================================================
+
 
 class TestSQLiteQueueListJobs:
     """Test list_jobs() method"""
@@ -708,8 +729,8 @@ class TestSQLiteQueueListJobs:
 
         assert len(pending_jobs) == 1
         assert len(completed_jobs) == 1
-        assert pending_jobs[0]['job_id'] == job2
-        assert completed_jobs[0]['job_id'] == job1
+        assert pending_jobs[0]["job_id"] == job2
+        assert completed_jobs[0]["job_id"] == job1
         queue.close()
 
     def test_list_jobs_filter_by_context(self, tmp_path):
@@ -757,8 +778,8 @@ class TestSQLiteQueueListJobs:
         assert len(page1) == 3
         assert len(page2) == 3
         # Pages should not overlap
-        page1_ids = {j['job_id'] for j in page1}
-        page2_ids = {j['job_id'] for j in page2}
+        page1_ids = {j["job_id"] for j in page1}
+        page2_ids = {j["job_id"] for j in page2}
         assert not page1_ids.intersection(page2_ids)
         queue.close()
 
@@ -787,8 +808,8 @@ class TestSQLiteQueueListJobs:
         jobs = queue.list_jobs()
 
         # Newest should be first
-        assert jobs[0]['job_id'] == job_ids[-1]  # Last created
-        assert jobs[-1]['job_id'] == job_ids[0]  # First created
+        assert jobs[0]["job_id"] == job_ids[-1]  # Last created
+        assert jobs[-1]["job_id"] == job_ids[0]  # First created
         queue.close()
 
     def test_list_jobs_combined_filters(self, tmp_path):
@@ -805,13 +826,14 @@ class TestSQLiteQueueListJobs:
         jobs = queue.list_jobs(status=JobStatus.PENDING, context="weekly-cleanup")
 
         assert len(jobs) == 1
-        assert jobs[0]['job_id'] == job3
+        assert jobs[0]["job_id"] == job3
         queue.close()
 
 
 # ============================================================================
 # Count Jobs Operation Tests
 # ============================================================================
+
 
 class TestSQLiteQueueCountJobs:
     """Test count_jobs() method"""
@@ -844,7 +866,9 @@ class TestSQLiteQueueCountJobs:
         job3 = queue.enqueue()
 
         queue.update_status(job1, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
-        queue.update_status(job2, JobStatus.FAILED, completed_at=datetime.now(timezone.utc), error="Test error")
+        queue.update_status(
+            job2, JobStatus.FAILED, completed_at=datetime.now(timezone.utc), error="Test error"
+        )
 
         assert queue.count_jobs(JobStatus.PENDING) == 1
         assert queue.count_jobs(JobStatus.COMPLETED) == 1
@@ -874,6 +898,7 @@ class TestSQLiteQueueCountJobs:
 # Update Status Operation Tests
 # ============================================================================
 
+
 class TestSQLiteQueueUpdateStatus:
     """Test update_status() method"""
 
@@ -882,12 +907,13 @@ class TestSQLiteQueueUpdateStatus:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
         job_id = queue.enqueue()
 
-        success = queue.update_status(job_id, JobStatus.COMPLETED,
-                                      completed_at=datetime.now(timezone.utc))
+        success = queue.update_status(
+            job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc)
+        )
 
         job = queue.get_job(job_id)
         assert success is True
-        assert job['status'] == JobStatus.COMPLETED
+        assert job["status"] == JobStatus.COMPLETED
         queue.close()
 
     def test_update_status_sets_started_at(self, tmp_path):
@@ -899,7 +925,7 @@ class TestSQLiteQueueUpdateStatus:
         queue.update_status(job_id, JobStatus.PROCESSING, started_at=started)
 
         job = queue.get_job(job_id)
-        assert job['started_at'] is not None
+        assert job["started_at"] is not None
         queue.close()
 
     def test_update_status_sets_completed_at(self, tmp_path):
@@ -911,7 +937,7 @@ class TestSQLiteQueueUpdateStatus:
         queue.update_status(job_id, JobStatus.COMPLETED, completed_at=completed)
 
         job = queue.get_job(job_id)
-        assert job['completed_at'] is not None
+        assert job["completed_at"] is not None
         queue.close()
 
     def test_update_status_sets_result(self, tmp_path):
@@ -919,13 +945,13 @@ class TestSQLiteQueueUpdateStatus:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
         job_id = queue.enqueue()
 
-        result_data = {'torrents': 10, 'actions': 5}
-        queue.update_status(job_id, JobStatus.COMPLETED,
-                          completed_at=datetime.now(timezone.utc),
-                          result=result_data)
+        result_data = {"torrents": 10, "actions": 5}
+        queue.update_status(
+            job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc), result=result_data
+        )
 
         job = queue.get_job(job_id)
-        assert job['result'] == result_data
+        assert job["result"] == result_data
         queue.close()
 
     def test_update_status_sets_error(self, tmp_path):
@@ -934,12 +960,12 @@ class TestSQLiteQueueUpdateStatus:
         job_id = queue.enqueue()
 
         error_msg = "Connection failed"
-        queue.update_status(job_id, JobStatus.FAILED,
-                          completed_at=datetime.now(timezone.utc),
-                          error=error_msg)
+        queue.update_status(
+            job_id, JobStatus.FAILED, completed_at=datetime.now(timezone.utc), error=error_msg
+        )
 
         job = queue.get_job(job_id)
-        assert job['error'] == error_msg
+        assert job["error"] == error_msg
         queue.close()
 
     def test_update_status_invalid_status_raises_error(self, tmp_path):
@@ -957,8 +983,9 @@ class TestSQLiteQueueUpdateStatus:
         """update_status() returns False for nonexistent job"""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
-        success = queue.update_status("nonexistent", JobStatus.COMPLETED,
-                                     completed_at=datetime.now(timezone.utc))
+        success = queue.update_status(
+            "nonexistent", JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc)
+        )
 
         assert success is False
         queue.close()
@@ -970,27 +997,24 @@ class TestSQLiteQueueUpdateStatus:
 
         started = datetime.now(timezone.utc)
         completed = datetime.now(timezone.utc)
-        result = {'count': 42}
+        result = {"count": 42}
 
         queue.update_status(
-            job_id,
-            JobStatus.COMPLETED,
-            started_at=started,
-            completed_at=completed,
-            result=result
+            job_id, JobStatus.COMPLETED, started_at=started, completed_at=completed, result=result
         )
 
         job = queue.get_job(job_id)
-        assert job['status'] == JobStatus.COMPLETED
-        assert job['started_at'] is not None
-        assert job['completed_at'] is not None
-        assert job['result'] == result
+        assert job["status"] == JobStatus.COMPLETED
+        assert job["started_at"] is not None
+        assert job["completed_at"] is not None
+        assert job["result"] == result
         queue.close()
 
 
 # ============================================================================
 # Cancel Job Operation Tests
 # ============================================================================
+
 
 class TestSQLiteQueueCancelJob:
     """Test cancel_job() method"""
@@ -1004,7 +1028,7 @@ class TestSQLiteQueueCancelJob:
 
         job = queue.get_job(job_id)
         assert success is True
-        assert job['status'] == JobStatus.CANCELLED
+        assert job["status"] == JobStatus.CANCELLED
         queue.close()
 
     def test_cancel_job_removes_from_queue(self, tmp_path):
@@ -1044,8 +1068,7 @@ class TestSQLiteQueueCancelJob:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
         job_id = queue.enqueue()
 
-        queue.update_status(job_id, JobStatus.COMPLETED,
-                          completed_at=datetime.now(timezone.utc))
+        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
 
         success = queue.cancel_job(job_id)
         assert success is False
@@ -1062,6 +1085,7 @@ class TestSQLiteQueueCancelJob:
         # Simulate concurrent cancellation
         results = []
         errors = []
+
         def cancel_worker():
             try:
                 success = queue.cancel_job(job_id)
@@ -1085,6 +1109,7 @@ class TestSQLiteQueueCancelJob:
 # ============================================================================
 # Cleanup Old Jobs Tests
 # ============================================================================
+
 
 class TestSQLiteQueueCleanup:
     """Test cleanup_old_jobs() method"""
@@ -1110,8 +1135,7 @@ class TestSQLiteQueueCleanup:
 
         job_id = queue.enqueue()
         old_time = datetime.now(timezone.utc) - timedelta(days=10)
-        queue.update_status(job_id, JobStatus.FAILED,
-                          completed_at=old_time, error="Test")
+        queue.update_status(job_id, JobStatus.FAILED, completed_at=old_time, error="Test")
 
         deleted = queue.cleanup_old_jobs(retention_period=7 * 86400)
 
@@ -1127,8 +1151,9 @@ class TestSQLiteQueueCleanup:
         queue.cancel_job(job_id)
         old_time = datetime.now(timezone.utc) - timedelta(days=10)
         conn = queue._get_connection()
-        conn.execute('UPDATE jobs SET completed_at = ? WHERE id = ?',
-                    (old_time.isoformat(), job_id))
+        conn.execute(
+            "UPDATE jobs SET completed_at = ? WHERE id = ?", (old_time.isoformat(), job_id)
+        )
 
         deleted = queue.cleanup_old_jobs(retention_period=7 * 86400)
 
@@ -1193,6 +1218,7 @@ class TestSQLiteQueueCleanup:
 # Queue Depth Tests
 # ============================================================================
 
+
 class TestSQLiteQueueDepth:
     """Test get_queue_depth() method"""
 
@@ -1234,8 +1260,7 @@ class TestSQLiteQueueDepth:
         job_id = queue.enqueue()
         queue.enqueue()
 
-        queue.update_status(job_id, JobStatus.COMPLETED,
-                          completed_at=datetime.now(timezone.utc))
+        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
 
         depth = queue.get_queue_depth()
         assert depth == 1
@@ -1245,6 +1270,7 @@ class TestSQLiteQueueDepth:
 # ============================================================================
 # Statistics Tests
 # ============================================================================
+
 
 class TestSQLiteQueueStats:
     """Test get_stats() method"""
@@ -1265,7 +1291,7 @@ class TestSQLiteQueueStats:
             queue.enqueue()
 
         stats = queue.get_stats()
-        assert stats['total_jobs'] == 10
+        assert stats["total_jobs"] == 10
         queue.close()
 
     def test_get_stats_counts_by_status(self, tmp_path):
@@ -1278,16 +1304,18 @@ class TestSQLiteQueueStats:
         job4 = queue.enqueue()
 
         queue.update_status(job1, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
-        queue.update_status(job2, JobStatus.FAILED, completed_at=datetime.now(timezone.utc), error="Test")
+        queue.update_status(
+            job2, JobStatus.FAILED, completed_at=datetime.now(timezone.utc), error="Test"
+        )
         queue.cancel_job(job3)
         # job4 stays pending
 
         stats = queue.get_stats()
-        assert stats['pending'] == 1
-        assert stats['processing'] == 0
-        assert stats['completed'] == 1
-        assert stats['failed'] == 1
-        assert stats['cancelled'] == 1
+        assert stats["pending"] == 1
+        assert stats["processing"] == 0
+        assert stats["completed"] == 1
+        assert stats["failed"] == 1
+        assert stats["cancelled"] == 1
         queue.close()
 
     def test_get_stats_average_execution_time(self, tmp_path):
@@ -1298,13 +1326,11 @@ class TestSQLiteQueueStats:
         started = datetime.now(timezone.utc)
         completed = started + timedelta(seconds=10)
 
-        queue.update_status(job_id, JobStatus.COMPLETED,
-                          started_at=started,
-                          completed_at=completed)
+        queue.update_status(job_id, JobStatus.COMPLETED, started_at=started, completed_at=completed)
 
         stats = queue.get_stats()
-        assert stats['average_execution_time'] is not None
-        assert 9 <= stats['average_execution_time'] <= 11  # ~10 seconds
+        assert stats["average_execution_time"] is not None
+        assert 9 <= stats["average_execution_time"] <= 11  # ~10 seconds
         queue.close()
 
     def test_get_stats_average_execution_time_none_when_no_completed(self, tmp_path):
@@ -1314,13 +1340,14 @@ class TestSQLiteQueueStats:
         queue.enqueue()
 
         stats = queue.get_stats()
-        assert stats['average_execution_time'] is None
+        assert stats["average_execution_time"] is None
         queue.close()
 
 
 # ============================================================================
 # Health Check Tests
 # ============================================================================
+
 
 class TestSQLiteQueueHealthCheck:
     """Test health_check() method"""
@@ -1344,10 +1371,13 @@ class TestSQLiteQueueHealthCheck:
     def test_health_check_returns_false_on_database_error(self, tmp_path, mocker, caplog):
         """health_check() returns False and logs error when database fails"""
         import logging
+
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
         # Mock _get_connection to raise an exception
-        mocker.patch.object(queue, '_get_connection', side_effect=Exception("Database connection failed"))
+        mocker.patch.object(
+            queue, "_get_connection", side_effect=Exception("Database connection failed")
+        )
 
         # Run health check
         with caplog.at_level(logging.ERROR):
@@ -1357,9 +1387,11 @@ class TestSQLiteQueueHealthCheck:
         assert is_healthy is False
 
         # Should log error
-        assert any("Queue health check failed" in record.message and
-                   "Database connection failed" in record.message
-                   for record in caplog.records)
+        assert any(
+            "Queue health check failed" in record.message
+            and "Database connection failed" in record.message
+            for record in caplog.records
+        )
 
         queue.close()
 
@@ -1367,6 +1399,7 @@ class TestSQLiteQueueHealthCheck:
 # ============================================================================
 # Thread Safety Tests
 # ============================================================================
+
 
 class TestSQLiteQueueThreadSafety:
     """Test thread-safety of SQLite queue"""
@@ -1376,6 +1409,7 @@ class TestSQLiteQueueThreadSafety:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
         job_ids = []
+
         def enqueue_worker():
             for i in range(10):
                 job_id = queue.enqueue(context="concurrent")
@@ -1405,6 +1439,7 @@ class TestSQLiteQueueThreadSafety:
 
         dequeued_jobs = []
         errors = []
+
         def dequeue_worker():
             while True:
                 try:
@@ -1428,7 +1463,7 @@ class TestSQLiteQueueThreadSafety:
 
         # All jobs should be dequeued exactly once
         assert len(dequeued_jobs) == 10
-        job_ids = [j['job_id'] for j in dequeued_jobs]
+        job_ids = [j["job_id"] for j in dequeued_jobs]
         assert len(job_ids) == len(set(job_ids))  # No duplicates
         queue.close()
 
@@ -1437,6 +1472,7 @@ class TestSQLiteQueueThreadSafety:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
         conn_ids = []
+
         def get_connection_id():
             conn = queue._get_connection()
             conn_ids.append(id(conn))
@@ -1456,6 +1492,7 @@ class TestSQLiteQueueThreadSafety:
 # Transaction Tests
 # ============================================================================
 
+
 class TestSQLiteQueueTransactions:
     """Test transaction management"""
 
@@ -1466,8 +1503,8 @@ class TestSQLiteQueueTransactions:
         with queue._transaction() as conn:
             job_id = queue.generate_job_id()
             conn.execute(
-                'INSERT INTO jobs (id, context, hash, status, created_at) VALUES (?, ?, ?, ?, ?)',
-                (job_id, "test", None, JobStatus.PENDING, datetime.now(timezone.utc).isoformat())
+                "INSERT INTO jobs (id, context, hash, status, created_at) VALUES (?, ?, ?, ?, ?)",
+                (job_id, "test", None, JobStatus.PENDING, datetime.now(timezone.utc).isoformat()),
             )
 
         # Job should exist
@@ -1484,8 +1521,14 @@ class TestSQLiteQueueTransactions:
         with pytest.raises(Exception):
             with queue._transaction() as conn:
                 conn.execute(
-                    'INSERT INTO jobs (id, context, hash, status, created_at) VALUES (?, ?, ?, ?, ?)',
-                    (job_id, "test", None, JobStatus.PENDING, datetime.now(timezone.utc).isoformat())
+                    "INSERT INTO jobs (id, context, hash, status, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (
+                        job_id,
+                        "test",
+                        None,
+                        JobStatus.PENDING,
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
                 )
                 raise Exception("Simulated error")
 
@@ -1499,6 +1542,7 @@ class TestSQLiteQueueTransactions:
 # Helper Method Tests
 # ============================================================================
 
+
 class TestSQLiteQueueHelpers:
     """Test helper methods"""
 
@@ -1506,20 +1550,20 @@ class TestSQLiteQueueHelpers:
         """_row_to_dict() converts SQLite row to dict correctly"""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
-        result_data = {'key': 'value', 'count': 42}
+        result_data = {"key": "value", "count": 42}
         job_id = queue.enqueue(context="test", hash_filter="abc123")
-        queue.update_status(job_id, JobStatus.COMPLETED,
-                          completed_at=datetime.now(timezone.utc),
-                          result=result_data)
+        queue.update_status(
+            job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc), result=result_data
+        )
 
         job = queue.get_job(job_id)
 
         # Should be a plain dict
         assert isinstance(job, dict)
-        assert job['job_id'] == job_id
-        assert job['context'] == "test"
-        assert job['hash'] == "abc123"
-        assert job['result'] == result_data
+        assert job["job_id"] == job_id
+        assert job["context"] == "test"
+        assert job["hash"] == "abc123"
+        assert job["result"] == result_data
         queue.close()
 
     def test_close_method(self, tmp_path):
@@ -1532,7 +1576,7 @@ class TestSQLiteQueueHelpers:
         queue.close()
 
         # Connection should be closed
-        assert not hasattr(queue.local, 'conn')
+        assert not hasattr(queue.local, "conn")
 
 
 # ============================================================================
@@ -1548,9 +1592,9 @@ class TestSQLiteQueueCleanup:
         """Backdate a job's created_at/completed_at (completed_at only if set)"""
         old = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         queue._get_connection().execute(
-            'UPDATE jobs SET created_at = ?, '
-            'completed_at = CASE WHEN completed_at IS NULL THEN NULL ELSE ? END '
-            'WHERE id = ?',
+            "UPDATE jobs SET created_at = ?, "
+            "completed_at = CASE WHEN completed_at IS NULL THEN NULL ELSE ? END "
+            "WHERE id = ?",
             (old, old, job_id),
         )
 
@@ -1569,12 +1613,12 @@ class TestSQLiteQueueCleanup:
         for job_id in (completed, failed, cancelled):
             self._age(queue, job_id, days=10)
 
-        with caplog.at_level('INFO', logger='qbt_rules.queue_backends.sqlite_queue'):
+        with caplog.at_level("INFO", logger="qbt_rules.queue_backends.sqlite_queue"):
             deleted = queue.cleanup_old_jobs(retention_period=7 * 86400)
 
         assert deleted == 3
         assert queue.count_jobs() == 0
-        assert 'Cleaned up 3 old jobs' in caplog.text
+        assert "Cleaned up 3 old jobs" in caplog.text
         queue.close()
 
     def test_keeps_old_pending_and_processing_jobs(self, tmp_path):
@@ -1586,9 +1630,9 @@ class TestSQLiteQueueCleanup:
         self._age(queue, pending, days=10)
 
         assert queue.cleanup_old_jobs(retention_period=7 * 86400) == 0
-        assert queue.get_job(processing)['status'] == JobStatus.PROCESSING
-        assert queue.get_job(pending)['status'] == JobStatus.PENDING
-        assert queue.dequeue()['job_id'] == pending  # still queued
+        assert queue.get_job(processing)["status"] == JobStatus.PROCESSING
+        assert queue.get_job(pending)["status"] == JobStatus.PENDING
+        assert queue.dequeue()["job_id"] == pending  # still queued
         queue.close()
 
     def test_keeps_recent_finished_jobs(self, tmp_path, caplog):
@@ -1597,10 +1641,10 @@ class TestSQLiteQueueCleanup:
         cancelled = queue.enqueue()
         queue.cancel_job(cancelled)
 
-        with caplog.at_level('INFO', logger='qbt_rules.queue_backends.sqlite_queue'):
+        with caplog.at_level("INFO", logger="qbt_rules.queue_backends.sqlite_queue"):
             assert queue.cleanup_old_jobs(retention_period=7 * 86400) == 0
 
         assert queue.get_job(recent) is not None
         assert queue.get_job(cancelled) is not None
-        assert 'Cleaned up' not in caplog.text
+        assert "Cleaned up" not in caplog.text
         queue.close()

@@ -37,8 +37,7 @@ class TestAdvancedExampleRule9(object):
     ):
         refs = advanced_example_doc["refs"]
         rule9 = next(
-            r for r in advanced_example_doc["rules"]
-            if r["id"] == "special-handling-private-hd-tv"
+            r for r in advanced_example_doc["rules"] if r["id"] == "special-handling-private-hd-tv"
         )
         resolved = RuleResolver(refs=refs).resolve_rule(rule9)
 
@@ -52,16 +51,14 @@ class TestAdvancedExampleRule9(object):
         torrent = {
             "hash": "h1",
             "name": "Some.Show.Name.S01E02.1080p.WEB-DL.x264",
-            "size": 3 * 1024 ** 3,  # 3 GB, over the rule's 2 GB threshold
+            "size": 3 * 1024**3,  # 3 GB, over the rule's 2 GB threshold
             "state": "downloading",
             "tags": "",
             "category": "",
             "ratio": 0.1,
         }
         mock_api.torrents_data = {torrent["hash"]: torrent}
-        mock_api.trackers_data = {
-            torrent["hash"]: [{"url": "https://privatehd.to/announce"}]
-        }
+        mock_api.trackers_data = {torrent["hash"]: [{"url": "https://privatehd.to/announce"}]}
         mock_config.get_rules.return_value = [resolved]
 
         engine = RulesEngine(mock_api, mock_config)
@@ -83,22 +80,19 @@ class TestAdvancedExampleRule9(object):
         assert mock_api.calls["add_tags"][2]["tags"] == ["premium-tv", "auto-managed"]
         assert mock_api.calls["set_category"][1]["category"] == "tv-premium"
 
-    def test_rule9_does_not_match_public_tracker(
-        self, advanced_example_doc, mock_api, mock_config
-    ):
+    def test_rule9_does_not_match_public_tracker(self, advanced_example_doc, mock_api, mock_config):
         """Sanity check the negative case: a torrent that fails the
         private-tracker condition shouldn't match at all."""
         refs = advanced_example_doc["refs"]
         rule9 = next(
-            r for r in advanced_example_doc["rules"]
-            if r["id"] == "special-handling-private-hd-tv"
+            r for r in advanced_example_doc["rules"] if r["id"] == "special-handling-private-hd-tv"
         )
         resolved = RuleResolver(refs=refs).resolve_rule(rule9)
 
         torrent = {
             "hash": "h2",
             "name": "Some.Show.Name.S01E02.1080p.WEB-DL.x264",
-            "size": 3 * 1024 ** 3,
+            "size": 3 * 1024**3,
             "state": "downloading",
             "tags": "",
             "category": "",

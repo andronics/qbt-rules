@@ -707,8 +707,8 @@ ZSET: qbt_rules:jobs:by_time
 4. Create constant mapping
    ```python
    ENV_VARS = {
-       'server.host': 'QBT_RULES_SERVER_HOST',
-       'server.port': 'QBT_RULES_SERVER_PORT',
+       "server.host": "QBT_RULES_SERVER_HOST",
+       "server.port": "QBT_RULES_SERVER_PORT",
        # ... all settings
    }
    ```
@@ -780,10 +780,10 @@ ZSET: qbt_rules:jobs:by_time
 
 3. **Queue Factory**:
    ```python
-   def create_queue(backend='sqlite', **kwargs) -> QueueManager:
-       if backend == 'sqlite':
+   def create_queue(backend="sqlite", **kwargs) -> QueueManager:
+       if backend == "sqlite":
            return SQLiteQueue(**kwargs)
-       elif backend == 'redis':
+       elif backend == "redis":
            return RedisQueue(**kwargs)
        raise ValueError(f"Unknown backend: {backend}")
    ```
@@ -880,9 +880,9 @@ ZSET: qbt_rules:jobs:by_time
    ```python
    @app.before_request
    def authenticate():
-       api_key = request.args.get('key') or request.headers.get('X-API-Key')
-       expected_key = config['server']['api_key']
-       if not secrets.compare_digest(api_key or '', expected_key):
+       api_key = request.args.get("key") or request.headers.get("X-API-Key")
+       expected_key = config["server"]["api_key"]
+       if not secrets.compare_digest(api_key or "", expected_key):
            return jsonify({"error": "Unauthorized"}), 401
    ```
 
@@ -914,10 +914,10 @@ ZSET: qbt_rules:jobs:by_time
                return self.application
 
        options = {
-           'bind': f'{host}:{port}',
-           'workers': workers,
-           'worker_class': 'sync',
-           'timeout': 120,
+           "bind": f"{host}:{port}",
+           "workers": workers,
+           "worker_class": "sync",
+           "timeout": 120,
        }
 
        StandaloneApplication(app, options).run()
@@ -964,14 +964,13 @@ ZSET: qbt_rules:jobs:by_time
    ```python
    def execute_via_api(server_url, api_key, context, hash):
        response = requests.post(
-           f"{server_url}/api/execute",
-           params={'context': context, 'hash': hash, 'key': api_key}
+           f"{server_url}/api/execute", params={"context": context, "hash": hash, "key": api_key}
        )
        job = response.json()
        print(f"✓ Job queued: {job['job_id']}")
 
        if args.wait:
-           poll_until_complete(server_url, api_key, job['job_id'])
+           poll_until_complete(server_url, api_key, job["job_id"])
    ```
 
 4. **Job Management Commands**:
@@ -1013,20 +1012,13 @@ ZSET: qbt_rules:jobs:by_time
    ```python
    import qbittorrentapi
 
+
    class QBittorrentAPI:
        def __init__(self, host: str, username: str, password: str):
-           self.client = qbittorrentapi.Client(
-               host=host,
-               username=username,
-               password=password
-           )
+           self.client = qbittorrentapi.Client(host=host, username=username, password=password)
 
        def get_torrents(self, filter_type=None, category=None, tag=None):
-           return self.client.torrents_info(
-               filter=filter_type,
-               category=category,
-               tag=tag
-           )
+           return self.client.torrents_info(filter=filter_type, category=category, tag=tag)
 
        def get_properties(self, torrent_hash: str):
            return self.client.torrents_properties(torrent_hash=torrent_hash)
