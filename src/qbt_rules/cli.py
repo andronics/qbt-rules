@@ -20,10 +20,18 @@ from pathlib import Path
 from typing import Annotated, Any, NoReturn
 
 import typer
+from interpose.secret import MASK
 
 from qbt_rules import __description__, __version__, cli_ui
 from qbt_rules.api_client import Client, ClientError, validate_torrent_hash
-from qbt_rules.config import CONFIG_ENV, SETTINGS, Config, ConfigError, load_config
+from qbt_rules.config import (
+    CONFIG_ENV,
+    PLACEHOLDER_SOURCE,
+    SETTINGS,
+    Config,
+    ConfigError,
+    load_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,10 +97,15 @@ def version() -> None:
 
 @app.command("config")
 def show_config(config: ConfigOption = None) -> None:
-    """Print the effective configuration and where each value came from. Secrets are masked."""
+    """Print the effective configuration and where each value came from. Secrets: set or unset."""
     cfg = _load(config)
     for setting in SETTINGS:
-        shown = "********" if setting.secret else cfg.values.get(setting.key)
+        shown = cfg.values.get(setting.key)
+        if setting.secret:
+            # Whether it is set, never its value (template-python v2.4.3). The 0.10.x
+            # placeholder key counts as unset, as the server treats it.
+            unset = not shown or PLACEHOLDER_SOURCE in cfg.sources[setting.key]
+            shown = "(unset)" if unset else f"{MASK} (set)"
         typer.echo(f"{setting.key} = {shown}  ({cfg.sources[setting.key]})")
     for i, entry in enumerate(cfg.schedule):
         typer.echo(f"schedule[{i}] = {entry.cron} -> {entry.context}")
