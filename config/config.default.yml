@@ -74,7 +74,8 @@ queue:
   # Job retention period - how long to keep completed/failed jobs
   # Env: QBT_RULES_QUEUE_CLEANUP_AFTER or QBT_RULES_QUEUE_CLEANUP_AFTER_FILE
   # Format: Xd (days), Xw (weeks), or integer (seconds)
-  # Examples: '7d', '2w', '30 days', 604800
+  # Examples: '7d', '2w', '30 days', 604800. 0 disables cleanup.
+  # Finished jobs older than this are removed once at startup and then hourly.
   cleanup_after: 7d
 
 # ============================================================================

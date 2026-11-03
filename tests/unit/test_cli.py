@@ -571,6 +571,17 @@ class TestGetQueueConfig:
         assert config['backend'] == 'sqlite'
         assert config['sqlite_path'] == '/config/qbt-rules.db'
         assert config['redis_url'] == 'redis://localhost:6379/0'
+        assert config['cleanup_after'] == 7 * 86400
+
+    def test_cleanup_after_from_config_file(self):
+        """queue.cleanup_after is parsed to seconds, and 0 disables cleanup"""
+        args = Namespace()
+
+        config = get_queue_config(args, Mock(config={'queue': {'cleanup_after': '2w'}}))
+        assert config['cleanup_after'] == 14 * 86400
+
+        config = get_queue_config(args, Mock(config={'queue': {'cleanup_after': 0}}))
+        assert config['cleanup_after'] is None
 
     def test_uses_args_values(self):
         """Should use CLI argument values when provided"""
@@ -664,7 +675,8 @@ class TestRunServerMode:
                 'sonarr': {'url': None, 'api_key': None},
                 'radarr': {'url': None, 'api_key': None},
                 'trackie': {'url': None, 'max_age': None, 'timeout': None},
-            }
+            },
+            cleanup_after=7 * 86400  # queue.cleanup_after default (7d)
         )
         mock_worker.start.assert_called_once()
 

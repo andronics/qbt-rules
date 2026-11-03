@@ -17,7 +17,9 @@ from pathlib import Path
 from typing import Optional
 
 from qbt_rules.arguments import create_parser, process_args, validate_torrent_hash
-from qbt_rules.config import load_config, resolve_config, parse_int, parse_bool, ENV_VAR_MAP
+from qbt_rules.config import (
+    load_config, resolve_config, parse_int, parse_bool, parse_retention, ENV_VAR_MAP
+)
 from qbt_rules.api import QBittorrentAPI
 from qbt_rules.errors import handle_errors
 from qbt_rules.logging import setup_logging, get_logger
@@ -188,7 +190,8 @@ def get_queue_config(args, config_obj) -> dict:
         'backend': 'sqlite',
         'sqlite_path': '/config/qbt-rules.db',
         'redis_url': 'redis://localhost:6379/0',
-    })
+        'cleanup_after': '7d',
+    }, parsers={'cleanup_after': parse_retention})
 
 
 def get_notifications_config(args, config_obj) -> dict:
@@ -345,7 +348,8 @@ def run_server_mode(args, config_obj, logging_config):
         api=api,
         config=config_obj,
         notifications_config=notifications_config,
-        integrations_config=integrations_config
+        integrations_config=integrations_config,
+        cleanup_after=queue_config['cleanup_after']
     )
     worker.start()
     logger.info("Worker started")

@@ -375,11 +375,12 @@ class SQLiteQueue(QueueManager):
         """Remove old completed/failed/cancelled jobs"""
         cutoff_date = datetime.now(timezone.utc) - timedelta(seconds=retention_period)
 
+        # Cancelled jobs never get a completed_at, so fall back to created_at
         conn = self._get_connection()
         cursor = conn.execute('''
             DELETE FROM jobs
             WHERE status IN (?, ?, ?)
-            AND completed_at < ?
+            AND COALESCE(completed_at, created_at) < ?
         ''', (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED, cutoff_date.isoformat()))
 
         deleted = cursor.rowcount
