@@ -16,8 +16,7 @@ on:
     branches: [main, 'dev/**', 'feat/**']
     paths-ignore: ['**.md', 'docs/**', 'LICENSE']
   pull_request:
-    # TODO(migrate/templates): the integration branch's PRs; remove when it merges to main
-    branches: [main, migrate/templates]
+    branches: [main]
     paths-ignore: ['**.md', 'docs/**', 'LICENSE']
   workflow_dispatch:
     inputs:
