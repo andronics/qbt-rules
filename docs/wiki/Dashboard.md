@@ -1,4 +1,4 @@
-A server-rendered web UI for glancing at what qbt-rules is doing — worker/queue status, job history, and the currently-loaded rules — without needing `--list-jobs`/`--stats` or hitting the JSON API directly, plus an in-browser `rules.yml` editor. It's served on the same port as the API, at the site root.
+A server-rendered web UI for glancing at what qbt-rules is doing — worker/queue status, job history, and the currently-loaded rules — without needing `qbt-rules jobs list`/`stats` or hitting the JSON API directly, plus an in-browser `rules.yml` editor. It's served on the same port as the API, at the site root.
 
 ![qbt-rules dashboard](https://raw.githubusercontent.com/andronics/qbt-rules/main/docs/images/dashboard.png)
 
@@ -43,7 +43,7 @@ The rules pages need the running rules config, which `qbt-rules serve` always pr
 
 This is intentionally minimal:
 
-- **No job control.** No canceling jobs from the UI — use the [HTTP API](HTTP-API-Reference) or CLI client (`--cancel-job`, `qbt-rules --context ...`) for that. Saving rules from the editor can be turned off with `server.editor_enabled: false`.
+- **No job control.** No canceling jobs from the UI — use the [HTTP API](HTTP-API-Reference) or CLI client (`qbt-rules jobs cancel`, `qbt-rules execute`) for that. Saving rules from the editor can be turned off with `server.editor_enabled: false`.
 - **No auto-refresh.** Reload the page to see new data; there's no polling/websocket layer.
 - **No historical charts/graphs.** Job counts are current totals, not a time series.
 

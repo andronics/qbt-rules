@@ -192,7 +192,7 @@ class SQLiteQueue(QueueManager):
             from_version: Current schema version
         """
         if from_version < 2:
-            # v2: per-job dry-run, so `qbt-rules --dry-run --context ...` (and
+            # v2: per-job dry-run, so `qbt-rules execute --dry-run ...` (and
             # /api/execute?dry_run=true) dry-run that job on a live server
             conn.execute("ALTER TABLE jobs ADD COLUMN dry_run INTEGER NOT NULL DEFAULT 0")
             conn.execute("INSERT INTO schema_version (version) VALUES (2)")

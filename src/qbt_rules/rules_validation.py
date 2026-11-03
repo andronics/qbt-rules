@@ -903,9 +903,13 @@ def _summary(raw: dict[str, Any], locator: Locator) -> dict[str, Any]:
     return {"rules": rules, "refs": ref_names, "contexts": sorted(str(c) for c in contexts)}
 
 
-def validate_rules_text(text: str) -> dict[str, Any]:
+def validate_rules_text(text: str, notifications: dict[str, Any] | None = None) -> dict[str, Any]:
     """
     Validate a candidate rules.yml
+
+    `notifications` (webhook_url, service) are the notify action's configured defaults.
+    Given (`qbt-rules validate` passes them), a notify action is checked against them: one
+    with no params.url when no webhook_url is configured is an error.
 
     Returns {'valid': bool, 'issues': [...], 'counts': {...}, 'summary': {...}}.
     valid is True when there are no errors -- i.e. the server would load it,
@@ -941,7 +945,7 @@ def validate_rules_text(text: str) -> dict[str, Any]:
     if isinstance(raw, dict):
         if not structural:
             issues.extend(check_resolution(raw, locator))
-        issues.extend(lint_rules(raw))
+        issues.extend(lint_rules(raw, notifications))
         summary = _summary(raw, locator)
 
     for issue in issues:

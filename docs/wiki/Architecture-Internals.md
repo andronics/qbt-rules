@@ -21,10 +21,10 @@ flowchart LR
 
 ### Process boundaries
 
-There's one binary (`qbt-rules`) with two roles, chosen by how it's invoked:
+There's one binary (`qbt-rules`, `cli.py`'s Typer app) with two roles, chosen by its command:
 
-- **Server mode** (`qbt-rules serve` / `--serve`): `server.py` runs `api.py`'s FastAPI app under uvicorn, one process. The app's lifespan starts `worker.py` and `scheduler.py` as background threads and, on SIGTERM or SIGINT, stops and joins them before the process exits. This is what runs continuously inside the Docker container.
-- **Client mode** (the default, no `serve`): submits a job to a running server over HTTP and, if given a `--client-server-url`/`--client-api-key`, optionally waits for and prints the result (`--wait`). This is what runs when you `docker exec qbt-rules qbt-rules --context X --wait`, or when a script hits the HTTP API with `curl` directly instead.
+- **Server mode** (`qbt-rules serve`): `server.py` runs `api.py`'s FastAPI app under uvicorn, one process. The app's lifespan starts `worker.py` and `scheduler.py` as background threads and, on SIGTERM or SIGINT, stops and joins them before the process exits. This is what runs continuously inside the Docker container.
+- **Client mode** (`qbt-rules execute`, `jobs`, `stats`): submits a job to a running server over HTTP (`client.server_url`, `client.api_key`) and, with `--wait`, waits for and prints the result. This is what runs when you `docker exec qbt-rules qbt-rules execute --context X --wait`, or when a script hits the HTTP API with `curl` directly instead. `validate`, `rules list` and `config` read the local configuration and need no server.
 
 Nothing in client mode touches qBittorrent directly — it only talks to the server's HTTP API. All qBittorrent access happens inside the server process, via the worker.
 
@@ -34,8 +34,8 @@ Because the server is one process, the scheduler fires once per cron tick and ev
 
 | Module | Responsibility |
 |--------|-----------------|
-| `legacy_cli.py` | The `qbt-rules` entry point today. Parses args and dispatches to either server mode (`serve`/`--serve`) or client mode (default); job-management commands (`--list-jobs`, `--job-status`, `--cancel-job`, `--stats`) |
-| `arguments.py` | Centralized `argparse` setup shared by both CLI modes; `--validate`/`--list-rules`; picks the config directory |
+| `cli.py` | The `qbt-rules` command (Typer): `serve`, `execute`, `jobs list/status/cancel`, `stats`, `validate`, `rules list`, `config`, `version`; the hint for the 0.10.x flags-only form. The [CLI Reference](CLI-Reference) is generated from it |
+| `api_client.py` | The client commands' calls to a running server's JSON API, and their error messages |
 | `cli_ui.py` | Table/JSON rendering for the data-display commands; the only place that prints |
 | `api.py`, `api_rules.py`, `api_models.py` | The FastAPI app: the JSON API (jobs, health, stats, version, the rules editor's `/api/rules/*` and `/api/config/source`), `/healthz` and `/readyz`, API-key and session auth (see [HTTP API Reference](HTTP-API-Reference)), the `{"error", "message"}` error bodies, and the lifespan that runs the worker and scheduler threads. `api_models.py` describes the responses for the OpenAPI schema |
 | `server.py` | Runs the app under uvicorn; the access-log filter (hides polling requests, redacts `key=`) |
@@ -43,7 +43,7 @@ Because the server is one process, the scheduler fires once per cron tick and ev
 | `web.py` | The [Dashboard](Dashboard) pages (`/`, `/jobs`, `/rules`, `/rules/edit`, `/login`), `/static` and, when enabled, `/metrics` (see [Metrics](Metrics)): FastAPI routes on the API's app, rendered with Jinja2, sharing its login session (`sessions.py`) |
 | `templates/`, `static/` | Jinja2 templates for the dashboard — server-rendered HTML, no frontend build step — and the rules editor's script |
 | `config_store.py` | Reads and writes `rules.yml` for the editor: ETags, conflict detection, the `.history/` of previous versions, a file lock so concurrent saves can't interleave |
-| `rules_validation.py` | `rules.yml` validation for the editor and `--validate`: YAML syntax, structure, then the engine's vocabulary |
+| `rules_validation.py` | `rules.yml` validation for the editor and `qbt-rules validate`: YAML syntax, structure, then the engine's vocabulary |
 | `schema.py` | Catalogue of every field namespace, operator and action type the engine implements, shared by the validator and the editor's autocomplete |
 | `metrics.py` | Optional Prometheus instrumentation (see [Metrics](Metrics)) — always safe to import even when `prometheus_client` isn't installed, since the actual dependency is only ever imported lazily, deferred until `metrics.init()` runs |
 | `worker.py` | Background thread that dequeues jobs and executes them via the engine; graceful shutdown handling |
@@ -73,7 +73,7 @@ The template's skeleton modules `cli.py` (Typer) and `api.py` (FastAPI) are in t
 2. Either way, the job (context, optional hash) reaches `queue_manager.py`, which persists it through whichever backend is configured (`queue_backends/sqlite_queue.py` or `redis_queue.py`) with status `pending`.
 3. `worker.py`'s background thread dequeues the job, marks it `processing`, and loads `rules.yml` through `config_loader.py` — which also initializes `resolver.py`'s `RuleResolver` if a `refs:` block is present.
 4. For each rule, the resolver expands any `$ref:`/`${vars.x}` before the rule reaches `engine.py`. The engine's `ConditionEvaluator` checks `enabled`, then context, then evaluates `conditions:` per torrent (fetched via `qbittorrent.py`); matches are handed to `ActionExecutor`, which calls back into `qbittorrent.py` to actually act on qBittorrent.
-5. The worker updates the job's status (`completed`/`failed`) and result summary back through `queue_manager.py`, which is what `--job-status`/`--list-jobs` (via the client) or `GET /api/jobs` read back.
+5. The worker updates the job's status (`completed`/`failed`) and result summary back through `queue_manager.py`, which is what `qbt-rules jobs status`/`jobs list` or `GET /api/jobs` read back.
 
 **Where state lives:** jobs and their results in the queue (`qbt-rules.db` in the state directory, or Redis); `config.yaml` and `rules.yml` in `/etc/qbt-rules`, the editor's `.history/` in the state directory, the log on the console (see [In-Depth Configuration](In-Depth-Configuration#where-configuration-comes-from)). Nothing else is persisted: torrent fields are fetched fresh from qBittorrent for every job, and trackie's snapshot once per job that uses `tracker.*`.
 

@@ -2,9 +2,9 @@
 
 ## Diagnostics
 
-- **Configuration check:** `docker exec qbt-rules qbt-rules --validate` checks `config.yaml` and `rules.yml` without running anything.
+- **Configuration check:** `docker exec qbt-rules qbt-rules validate` checks the settings and `rules.yml` without running anything, with the line and column of every problem; `qbt-rules config` prints each setting's effective value and where it came from (secrets masked).
 - **What the container resolved:** `docker exec qbt-rules env | grep QBT_RULES_`, and the files in the state directory (`/var/lib/qbt-rules`).
-- **More logging:** `QBT_RULES_LOGGING_LEVEL=DEBUG` on the server, or `--log-level DEBUG --trace` on a single client run.
+- **More logging:** `QBT_RULES_LOGGING_LEVEL=DEBUG` and `QBT_RULES_LOGGING_TRACE_MODE=true` on the server (the rules run in its worker, so the CLI's own output never shows them).
 - **Health:** `curl http://127.0.0.1:5000/api/health`: `200` and `"status": "healthy"`, or `503` with an `errors` array naming what's wrong.
 - **Container:** `docker logs qbt-rules`, and `docker inspect --format '{{json .State.Health}}' qbt-rules`. The image's healthcheck polls `/healthz`, which only says the process answers HTTP; `/readyz` says whether the worker and scheduler threads are running, and `/api/health` gives the detail.
 
@@ -29,8 +29,8 @@ curl -X GET "http://localhost:8080/api/v2/torrents/properties?hash=TORRENT_HASH"
 #### Test config file syntax
 
 ```bash
-# Use the built-in validator (checks both config.yaml and rules.yml)
-docker exec qbt-rules qbt-rules --validate
+# Use the built-in validator (checks both the settings and rules.yml)
+docker exec qbt-rules qbt-rules validate
 ```
 
 #### Test the server is healthy
@@ -40,7 +40,7 @@ docker exec qbt-rules qbt-rules --validate
 curl http://localhost:5000/api/health
 
 # Reported version
-docker exec qbt-rules qbt-rules --version
+docker exec qbt-rules qbt-rules version
 
 # Which image tag is actually running
 docker inspect qbt-rules --format '{{.Config.Image}}'
@@ -49,11 +49,10 @@ docker inspect qbt-rules --format '{{.Config.Image}}'
 #### Run with maximum verbosity
 
 ```bash
-# Enable all logging for a single job
-docker exec qbt-rules qbt-rules --trace --dry-run --context manual --wait
-
-# Or with DEBUG log level
-docker exec qbt-rules qbt-rules --trace --log-level DEBUG --dry-run --context manual --wait
+# On the server: QBT_RULES_LOGGING_TRACE_MODE=true (and QBT_RULES_LOGGING_LEVEL=DEBUG), then restart it
+# Run a job, and read the server's log
+docker exec qbt-rules qbt-rules execute --dry-run --context manual --wait
+docker logs qbt-rules
 ```
 
 #### Check the container environment
@@ -78,7 +77,7 @@ docker logs -f qbt-rules
 [INFO]   # Normal operation messages
 [WARNING]  # Potential issues that don't stop execution
 [ERROR]  # Errors that prevent specific actions
-[TRACE]  # Detailed execution flow (--trace flag required)
+[TRACE]  # Detailed execution flow (logging.trace_mode required)
 ```
 
 #### Common log messages
@@ -193,10 +192,10 @@ ConnectionError: Failed to connect to qBittorrent at http://localhost:8080
 
 **Debugging steps:**
 
-1. **Enable trace mode:**
+1. **Enable trace mode** (`QBT_RULES_LOGGING_TRACE_MODE=true` on the server, then restart), and run a job:
 
    ```bash
-   docker exec qbt-rules qbt-rules --dry-run --context manual --trace --wait
+   docker exec qbt-rules qbt-rules execute --dry-run --context manual --wait
    ```
 
 2. **Check condition evaluation:**
@@ -235,7 +234,7 @@ ConnectionError: Failed to connect to qBittorrent at http://localhost:8080
 
    ```bash
    # Remove --dry-run to apply changes
-   docker exec qbt-rules qbt-rules --context manual --wait
+   docker exec qbt-rules qbt-rules execute --context manual --wait
    ```
 
 2. **Idempotent action already applied:**
@@ -370,5 +369,5 @@ ConnectionError: Failed to connect to qBittorrent at http://localhost:8080
 The engine already evaluates torrents one at a time rather than loading everything into memory for batch processing, so memory use should stay flat regardless of library size. If you're still seeing high memory:
 
 1. **Check the queue backend** — a very large backlog of completed jobs in SQLite/Redis can grow the queue database over time; confirm `queue.cleanup_after` (in `config.yaml`) is set to prune old job records
-2. **Check for a stuck/looping job** via `--list-jobs` — a job retried indefinitely will keep accumulating log data
+2. **Check for a stuck/looping job** via `qbt-rules jobs list` — a job retried indefinitely will keep accumulating log data
 3. **Check the log level** — `DEBUG` keeps a lot of per-torrent detail in flight; `INFO` is enough day to day

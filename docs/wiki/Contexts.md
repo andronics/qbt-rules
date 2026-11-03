@@ -54,13 +54,14 @@ curl -X POST "http://localhost:5000/api/execute?context=weekly-cleanup&key=YOUR_
 **CLI client** (talking to a running server):
 
 ```bash
-qbt-rules --context weekly-cleanup --client-server-url http://localhost:5000 --client-api-key YOUR_KEY --wait
+QBT_RULES_CLIENT_SERVER_URL=http://localhost:5000 QBT_RULES_CLIENT_API_KEY=YOUR_KEY \
+  qbt-rules execute --context weekly-cleanup --wait
 ```
 
 **From inside the server's own container** (common in Docker deployments, no separate client install needed):
 
 ```bash
-docker exec qbt-rules qbt-rules --context weekly-cleanup --wait
+docker exec qbt-rules qbt-rules execute --context weekly-cleanup --wait
 ```
 
 See [HTTP API Reference](HTTP-API-Reference) for every endpoint (job status, cancellation, health, stats), not just `/api/execute`.
@@ -90,6 +91,18 @@ curl -X POST "http://qbt-rules:5000/api/execute?context=torrent-imported&hash=%I
 curl -X POST "http://qbt-rules:5000/api/execute?context=download-finished&hash=%I&key=YOUR_API_KEY"
 ```
 
+Or with the CLI, where `qbt-rules` is installed beside qBittorrent (it reads `client.server_url` and `client.api_key`):
+
+```bash
+# On torrent added
+qbt-rules execute --context torrent-imported --hash "%I"
+
+# On torrent completed
+qbt-rules execute --context download-finished --hash "%I"
+```
+
+0.10.x's `qbt-rules --context torrent-imported --hash %I` is refused since 0.11 (it exits 2, naming the new command): update the hook. See [CLI Reference](CLI-Reference#the-qbittorrent-hook).
+
 When `&hash=%I` is included, only that single torrent is evaluated against the rules — the job doesn't process your entire library.
 
 **Important:** rules that inspect `files.*` — like the content-safety filters in [Security](Security#known-limitation-magnet-link-metadata-timing) — can silently miss magnet-link torrents if they're only allowed to run in the `torrent-imported` context, since the file list isn't known yet at that instant. See that page for why, and how to design around it.
@@ -111,7 +124,9 @@ Or from the host via systemd timer, using the CLI client:
 Description=qbt-rules weekly cleanup
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/qbt-rules --context weekly-cleanup --client-server-url http://localhost:5000 --client-api-key YOUR_KEY
+Environment=QBT_RULES_CLIENT_SERVER_URL=http://localhost:5000
+Environment=QBT_RULES_CLIENT_API_KEY_FILE=/etc/qbt-rules/api_key
+ExecStart=/usr/local/bin/qbt-rules execute --context weekly-cleanup
 ```
 
 ```ini
@@ -130,7 +145,7 @@ WantedBy=timers.target
 Run with `--dry-run` and no `--context` to see what every context-agnostic rule would do, without needing to pick a specific context:
 
 ```bash
-qbt-rules --dry-run --context adhoc-run --client-server-url http://localhost:5000 --client-api-key YOUR_KEY
+qbt-rules execute --dry-run --wait
 ```
 
 ### Checking Job Status
@@ -139,8 +154,8 @@ Every submitted job is tracked and queryable regardless of context:
 
 ```bash
 # List recent jobs
-qbt-rules --list-jobs --client-server-url http://localhost:5000 --client-api-key YOUR_KEY
+qbt-rules jobs list
 
 # Check a specific job
-qbt-rules --job-status <job-id> --client-server-url http://localhost:5000 --client-api-key YOUR_KEY
+qbt-rules jobs status <job-id>
 ```

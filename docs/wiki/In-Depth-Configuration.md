@@ -11,7 +11,7 @@ Every setting can be given in four places, and the first one that has it wins:
 3. the YAML config file: `QBT_RULES_CONFIG` or `--config`, default `/etc/qbt-rules/config.yaml`. A missing file is fine.
 4. the built-in default
 
-`<KEY>` is the setting's key in upper case, with the dots as underscores: `qbittorrent.host` is `QBT_RULES_QBITTORRENT_HOST`. A CLI flag (`--server-port`, `--dry-run`, ...) beats all four for its setting.
+`<KEY>` is the setting's key in upper case, with the dots as underscores: `qbittorrent.host` is `QBT_RULES_QBITTORRENT_HOST`. There are no per-setting CLI flags: `--config` picks the file, and `qbt-rules config` prints every setting's effective value and which of these it came from.
 A value of the wrong type, such as `0.5` or `true` for an integer or a list for a string, is an error that names the setting, and the server doesn't start.
 The engine is [interpose](https://github.com/metalayerlab/interpose)'s settings loader; `src/qbt_rules/config.py` declares the settings.
 

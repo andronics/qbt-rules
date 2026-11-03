@@ -4,7 +4,7 @@ This section provides real-world rule examples organised by common use cases. Fo
 
 - **Human-readable sizes**: Use `larger_than` and `smaller_than` with values like `"50GB"`, `"100MB"`, `"1TB"`
 - **Contexts are free-form**: Define your own context names (e.g., `context: hourly`, `context: weekend`) — see [Contexts](Contexts)
-- **Context-agnostic rules**: A rule with no `context:` field runs regardless of what context the job was submitted with. To run only those rules, submit a job with no `--context` flag at all (not `--context none` — that would be treated as the literal context string `"none"`, not "no context")
+- **Context-agnostic rules**: A rule with no `context:` field runs regardless of what context the job was submitted with. To run only those rules, submit a job with no `--context` option at all (`qbt-rules execute`) (not `--context none` — that would be treated as the literal context string `"none"`, not "no context")
 
 ### Content Organisation
 

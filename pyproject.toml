@@ -29,9 +29,7 @@ redis = ["redis>=5.0"]
 metrics = ["prometheus-client>=0.20"]
 
 [project.scripts]
-# TODO(4f): the Typer CLI in qbt_rules.cli takes over; until then the legacy argparse CLI
-# answers, and takes `serve` as a synonym of `--serve` (uvicorn and the FastAPI app).
-qbt-rules = "qbt_rules.legacy_cli:main"
+qbt-rules = "qbt_rules.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/andronics/qbt-rules"
@@ -91,7 +89,6 @@ module = [
     "tests.conftest",
     "tests.golden.test_api_goldens",
     "tests.unit.test_advanced_example",
-    "tests.unit.test_arguments",
     "tests.unit.test_cli_ui",
     "tests.unit.test_config_store",
     "tests.unit.test_engine.test_action_executor",
@@ -103,7 +100,6 @@ module = [
     "tests.unit.test_engine.test_tracker_fields",
     "tests.unit.test_errors",
     "tests.unit.test_full_stack",
-    "tests.unit.test_legacy_cli",
     "tests.unit.test_log_setup",
     "tests.unit.test_metrics",
     "tests.unit.test_qbittorrent",

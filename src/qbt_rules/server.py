@@ -72,7 +72,11 @@ def install_access_log_filter(quiet: bool) -> AccessLogFilter:
 
 
 def check_one_process(config: Config) -> None:
-    """A --server-workers flag skips config.py's check: refuse it here too."""
+    """Refuse server.workers above 1 at the last moment before serving.
+
+    config.load_config already refuses it; this catches a Config built any other way
+    (``dataclasses.replace``, a test, an embedding caller).
+    """
     if config.workers != 1:
         raise ConfigError(
             f"server.workers is {config.workers}: qbt-rules runs one process now (uvicorn, no "

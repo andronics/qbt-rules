@@ -7,8 +7,8 @@ v0.4.0 architecture notes that were in `PLAN.md` are in the git history.
 ## Open
 
 - [ ] Finish the template migration on `migrate/templates`: metrics and logging (4e: interpose's
-  Registry replaces prometheus_client, `web.py`'s `/metrics` route and `api.HttpMetrics`; #28 item 4),
-  the Typer CLI (4f). Then drop the `migrate/templates` branch from the
+  Registry replaces prometheus_client, `web.py`'s `/metrics` route and `api.HttpMetrics`; #28 item 4).
+  Then drop the `migrate/templates` branch from the
   `pull_request` triggers in base-ci.yml, container-build.yml and python-wiki.yml (each marked
   `TODO(migrate/templates)`).
 - [ ] #28 item 7 (Redis queue depth counts only the pending list) is still open.

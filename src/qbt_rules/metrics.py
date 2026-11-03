@@ -20,7 +20,7 @@ prometheus_client is first imported anywhere in the process; every process
 (master and every forked child) then writes its own per-PID metric file into
 that directory, and /metrics is served by aggregating across every file via
 multiprocess.MultiProcessCollector. Because init() defers the actual import
-until it's explicitly called (from legacy_cli.py's run_server_mode(), immediately
+until it's explicitly called (from `qbt-rules serve`, cli.py's _init_metrics(), immediately
 after setting the env var), this ordering constraint is satisfied without
 requiring every module that records a metric to know or care about it.
 """
