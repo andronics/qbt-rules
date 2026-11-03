@@ -496,7 +496,9 @@ class TestEditor:
             "server:\n  api_key: hunter2\nqbittorrent:\n  host: http://localhost:8080\n"
             "schedule:\n  - {cron: '0 * * * *', context: hourly}\n"
         )
-        (tmp_path / "rules.yml").write_text(self.RULES)
+        # rules.yml lives in the state directory, which the editor writes
+        (tmp_path / "state").mkdir()
+        (tmp_path / "state" / "rules.yml").write_text(self.RULES)
         return tmp_path
 
     @pytest.fixture
@@ -544,7 +546,7 @@ class TestEditor:
         assert response.headers["ETag"] == f'"{data["etag"]}"'
         assert response.headers["Cache-Control"] == "no-store"
         assert data["editable"] is True
-        assert data["path"] == str(config_dir / "rules.yml")
+        assert data["path"] == str(config_dir / "state" / "rules.yml")
 
     def test_validate(self, client: TestClient) -> None:
         response = client.post(
@@ -600,7 +602,7 @@ class TestEditor:
         data = _json(response)
         assert data["saved"] is True
         assert response.headers["ETag"] == f'"{data["etag"]}"'
-        assert (config_dir / "rules.yml").read_text() == new
+        assert (config_dir / "state" / "rules.yml").read_text() == new
         assert rules.get_rules()[0]["id"] == "renamed"
 
         versions = _json(client.get("/api/rules/history", headers=KEY))["versions"]
@@ -643,7 +645,7 @@ class TestEditor:
         self, client: TestClient, config_dir: Path
     ) -> None:
         etag = self.etag(client)
-        (config_dir / "rules.yml").write_text(self.RULES + "# edited elsewhere\n")
+        (config_dir / "state" / "rules.yml").write_text(self.RULES + "# edited elsewhere\n")
         response = self.put(client, self.RULES.replace("id: a", "id: b"), etag, **KEY)
         assert response.status_code == 412
         assert _json(response)["current"]["content"].endswith("# edited elsewhere\n")
@@ -656,7 +658,7 @@ class TestEditor:
         response = self.put(client, bad, self.etag(client), **KEY)
         assert response.status_code == 422
         assert _json(response)["validation"]["counts"]["error"] == 1
-        assert (config_dir / "rules.yml").read_text() == self.RULES
+        assert (config_dir / "state" / "rules.yml").read_text() == self.RULES
 
     def test_editor_disabled_is_read_only(
         self, rules: RulesConfig, queue: MagicMock, worker: StubWorker, config_dir: Path
@@ -666,12 +668,12 @@ class TestEditor:
         assert source["editable"] is False
         assert "editor_enabled" in source["readonly_reason"]
         assert self.put(client, self.RULES + "\n", source["etag"], **KEY).status_code == 403
-        assert (config_dir / "rules.yml").read_text() == self.RULES
+        assert (config_dir / "state" / "rules.yml").read_text() == self.RULES
 
     def test_read_only_file_is_403(self, client: TestClient, config_dir: Path) -> None:
         if os.geteuid() == 0:
             pytest.skip("root ignores file permissions")
-        (config_dir / "rules.yml").chmod(0o444)
+        (config_dir / "state" / "rules.yml").chmod(0o444)
         source = _json(client.get("/api/rules/source", headers=KEY))
         assert source["editable"] is False
         assert self.put(client, self.RULES + "\n", source["etag"], **KEY).status_code == 403
@@ -728,13 +730,13 @@ class TestEditor:
             response = self.put(client, self.RULES + "\n", etag, **headers)
             assert response.status_code == 403
             assert "CSRF" in _json(response)["message"]
-        assert (config_dir / "rules.yml").read_text() == self.RULES
+        assert (config_dir / "state" / "rules.yml").read_text() == self.RULES
 
     def test_session_write_with_the_csrf_token(self, client: TestClient, config_dir: Path) -> None:
         token = self.login(client)
         response = self.put(client, self.RULES + "\n", self.etag(client), **{"X-CSRF-Token": token})
         assert response.status_code == 200
-        assert (config_dir / "rules.yml").read_text() == self.RULES + "\n"
+        assert (config_dir / "state" / "rules.yml").read_text() == self.RULES + "\n"
 
     def test_execute_with_the_session(self, client: TestClient, queue: MagicMock) -> None:
         token = self.login(client)

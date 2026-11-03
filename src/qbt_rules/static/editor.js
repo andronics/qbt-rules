@@ -9,7 +9,7 @@
  * with If-Match set to the ETag it was loaded with, so a save can never
  * silently overwrite a change made elsewhere (412 -> conflict dialog).
  *
- * Anything that came out of rules.yml/config.yml or the server is rendered
+ * Anything that came out of rules.yml/config.yaml or the server is rendered
  * with textContent, never innerHTML.
  */
 (function () {
@@ -370,7 +370,7 @@
     root.textContent = '';
     var summary = state.summary;
     if (state.tab === 'config') {
-      root.appendChild(el('div', 'ed-problem-empty', 'No outline for config.yml.'));
+      root.appendChild(el('div', 'ed-problem-empty', 'No outline for config.yaml.'));
       return;
     }
     if (!summary) return;
@@ -964,7 +964,7 @@
     editor.setSession(tab === 'rules' ? rulesSession : configSession);
     if (tab === 'config' && !state.config) {
       api(CFG.urls.config).then(function (r) {
-        if (!r.ok) { toast(r.data.message || 'Could not load config.yml', 'err'); return; }
+        if (!r.ok) { toast(r.data.message || 'Could not load config.yaml', 'err'); return; }
         state.config = r.data;
         configSession.setValue(r.data.content);
         renderDiagnostics();

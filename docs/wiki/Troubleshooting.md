@@ -85,7 +85,7 @@ docker logs -f qbt-rules
 **Normal operation:**
 
 ```text
-[INFO] Loaded 5 rules from config/rules.yml
+[INFO] Loaded 5 rules from /var/lib/qbt-rules/rules.yml
 [INFO] Processing 42 torrents
 [INFO] Rule "Remove old torrents" matched torrent "Example.Torrent"
 [INFO] Executing action: delete_torrent
@@ -122,11 +122,11 @@ docker logs -f qbt-rules
 
 ### Settings, rules or jobs gone after upgrading
 
-0.11 no longer reads `/config`, with no fallback: config is in `/etc/qbt-rules` (`config.yaml`, `rules.yml`) and state in `/var/lib/qbt-rules` (`qbt-rules.db`, `.history/`). A container that still mounts only `/config` starts with no rules, no API key and an empty queue. Copy each file to its new place: see [In-Depth Configuration](In-Depth-Configuration#migrating-from-010x). A setting left pointing under `/config`, `engine.dry_run`, `CONFIG_DIR` or `QBT_RULES_CONFIG_DIR` stops the server at startup with a message naming the fix.
+0.11 no longer reads `/config`, with no fallback: `config.yaml` is in `/etc/qbt-rules`, and state in `/var/lib/qbt-rules` (`rules.yml`, `qbt-rules.db`, `.history/`). A container that still mounts only `/config` starts with no rules, no API key and an empty queue. Copy each file to its new place: see [In-Depth Configuration](In-Depth-Configuration#migrating-from-010x). A setting left pointing under `/config`, `engine.dry_run`, `CONFIG_DIR`, `QBT_RULES_CONFIG_DIR` or a `rules.yml` left in `/etc/qbt-rules` stops the server at startup; one error lists every one of them, each with its fix.
 
 ### Container shows "unhealthy" after changing the port
 
-The image's healthcheck polls `/healthz` on `QBT_RULES_LISTEN_PORT` (default `5000`). `QBT_RULES_SERVER_PORT` is an alias the server accepts but the healthcheck doesn't read: set `QBT_RULES_LISTEN_PORT` instead.
+The image's healthcheck polls `/healthz` on `QBT_RULES_LISTEN_PORT` (default `5000`). `QBT_RULES_SERVER_PORT` is a deprecated alias the server accepts (with a warning at startup) but the healthcheck doesn't read: set `QBT_RULES_LISTEN_PORT` instead.
 
 ### Logged out after upgrading to 0.11
 

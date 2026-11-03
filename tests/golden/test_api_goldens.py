@@ -38,8 +38,9 @@ Determinism
 Masked -- the only values not captured as-is (each listed in the golden's
 "masked" field):
 - ``python_version`` in /api/version: the interpreter running the tests.
-- The temporary config directory in ``path`` fields (and anywhere else it
-  appears) is replaced with ``<config_dir>``.
+- The temporary config and state directories in ``path`` fields (and
+  anywhere else they appear) are replaced with ``<config_dir>`` and
+  ``<state_dir>``. rules.yml is in the state directory.
 - /metrics in metrics_200: only the state gauges (STATE_METRICS) are kept,
   the part the 0.10.x prometheus_client golden could pin (its multiprocess
   counters aggregated the whole pytest session). Each app has its own
@@ -300,15 +301,16 @@ class Env:
         self.config_dir = tmp_path / "config"
         self.config_dir.mkdir()
         (self.config_dir / "config.yaml").write_text(CONFIG)
-        # The editor's history (.history/) goes in the state directory
+        # rules.yml and the editor's history (.history/) go in the state directory
         self.state_dir = tmp_path / "state"
+        self.state_dir.mkdir()
         self.write_rules(RULES)
 
         self.queue = _make_queue(backend, tmp_path)
         self.worker = StubWorker()
 
     def write_rules(self, text: str):
-        path = self.config_dir / "rules.yml"
+        path = self.state_dir / "rules.yml"
         path.write_text(text)
         ts = self.clock.value.timestamp()
         os.utime(path, (ts, ts))
@@ -934,6 +936,10 @@ def _mask(env: Env, body: str, content_type: str) -> "tuple[str, list[str]]":
     if config_dir in body:
         body = body.replace(config_dir, "<config_dir>")
         masked.append("config directory -> <config_dir>")
+    state_dir = str(env.state_dir)
+    if state_dir in body:
+        body = body.replace(state_dir, "<state_dir>")
+        masked.append("state directory -> <state_dir>")
 
     python_version = f'"python_version":"{sys.version.split()[0]}"'
     if python_version in body:

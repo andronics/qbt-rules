@@ -1,7 +1,8 @@
 """
 Reading and writing the config files the web editor works on
 
-EditableFile wraps one file (rules.yml) with what a browser editor needs:
+EditableFile wraps one file (rules.yml, in the state directory, /var/lib/qbt-rules, so the
+config directory can stay read-only) with what a browser editor needs:
 
 - An ETag (sha256 of the bytes on disk) handed out with every read, and
   required back with every write -- a write whose ETag no longer matches
@@ -16,8 +17,8 @@ EditableFile wraps one file (rules.yml) with what a browser editor needs:
 - A backup of the previous content in the history directory (.history/
   in the state directory, /var/lib/qbt-rules) on every save that changes
   anything, keeping the newest HISTORY_KEEP.
-- A missing file reads as empty, and the first save creates it -- so the
-  editor works on a fresh install with no rules.yml yet.
+- A missing file reads as empty, and the first save creates it (and its
+  directory) -- so the editor works on a fresh install with no rules.yml yet.
 - A file the user made read-only (chmod 444) stays read-only: writable()
   reports it and write() refuses, rather than replace() quietly swapping
   in a new writable file (which a writable directory would allow).
@@ -131,19 +132,22 @@ class EditableFile:
         """(can save, why not) -- checked before every write, and shown in
         the editor up front so it opens read-only instead of failing on save"""
         if not self.path.exists():
-            if not os.access(self.path.parent, os.W_OK | os.X_OK):
+            # The first save creates the file, and its directory if need be (mkdir -p)
+            parent = _nearest_existing(self.path.parent)
+            if not os.access(parent, os.W_OK | os.X_OK):
                 return (
                     False,
-                    f"{self.path.name} does not exist and {self.path.parent} is not writable, so "
-                    "it can't be created here",
+                    f"{self.path} does not exist and {parent} is not writable, so it "
+                    "can't be created -- its directory (by default the state directory, "
+                    "/var/lib/qbt-rules) must be writable by the server",
                 )
         elif not os.access(self.path, os.W_OK):
             try:
                 mode = stat.S_IMODE(self.path.stat().st_mode)
                 return (
                     False,
-                    f"{self.path.name} is read-only on disk (mode {mode:04o}) -- make it writable "
-                    "to edit here",
+                    f"{self.path} is read-only on disk (mode {mode:04o}) -- make it writable by "
+                    "the server to edit here",
                 )
             except OSError as e:
                 return False, f"{self.path.name} cannot be read: {e.strerror}"
@@ -209,6 +213,7 @@ class EditableFile:
 
     def _create(self, data: bytes) -> None:
         """Write a new file: exclusive, so a file that appeared meanwhile isn't overwritten"""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with open(self.path, "xb") as f:
                 f.write(data)

@@ -766,7 +766,9 @@ class _Linter:
                 self.add(
                     ERROR,
                     f"delete_torrent has no '{name}' param, so it is ignored and the files ARE "
-                    f"deleted (delete_files defaults to true) -- use delete_files: false",
+                    "deleted (delete_files defaults to true); 0.10.1 ignored it too, and deleted "
+                    "the files. Use delete_files: true|false instead -- true deletes the files "
+                    "(what this rule has been doing), false keeps them",
                     (*path, "params", name),
                     on_key=True,
                 )

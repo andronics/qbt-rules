@@ -25,7 +25,7 @@ Before you push:
 sh scripts/checks.sh                     # everything CI's checks job runs
 uv run pytest -m "not redis"             # skip the tests that need a live Redis server
 uv run ruff check && uv run ruff format --check && uv run mypy
-uv run qbt-rules validate --config config/config.yaml   # validate a real config.yaml and the rules.yml beside it
+QBT_RULES_STATE_DIR=state uv run qbt-rules validate --config config/config.yaml   # a real config.yaml, and state/rules.yml
 uv run qbt-rules execute --dry-run --context manual --config config/config.yaml --wait   # against a running dev server
 ```
 

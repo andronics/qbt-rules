@@ -209,7 +209,48 @@ def test_serve_warns_about_the_port_alias(
     result = runner.invoke(app, ["serve", "-c", str(write_config(""))])
     assert result.exit_code == 0
     assert served[0].port == 9200
-    assert any("set QBT_RULES_LISTEN_PORT instead" in r.getMessage() for r in caplog.records)
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any("set QBT_RULES_LISTEN_PORT instead" in w for w in warnings)
+
+
+def test_serve_warns_about_the_aliased_file_keys(
+    served: list[Any], write_config: Callable[..., Path], caplog: pytest.LogCaptureFixture
+) -> None:
+    path = write_config("server:\n  host: 127.0.0.1\n  port: 9201\n")
+    result = runner.invoke(app, ["serve", "-c", str(path)])
+    assert result.exit_code == 0
+    assert (served[0].host, served[0].port) == ("127.0.0.1", 9201)
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any(
+        "server.host is deprecated" in w and "Rename it to listen.host" in w for w in warnings
+    )
+    assert any(
+        "server.port is deprecated" in w and "Rename it to listen.port" in w for w in warnings
+    )
+
+
+def test_config_and_validate_show_the_alias_warnings(
+    write_config: Callable[..., Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QBT_RULES_STATE_DIR", str(tmp_path))
+    path = write_config("server: {port: 9202}\n")
+    result = runner.invoke(app, ["config", "-c", str(path)])
+    assert "warning: " in result.stderr and "server.port is deprecated" in result.stderr
+    result = runner.invoke(app, ["validate", "-c", str(path)])
+    assert "warning: " in result.stdout and "server.port is deprecated" in result.stdout
+
+
+def test_serve_lists_every_refused_setting(
+    served: list[Any], write_config: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CONFIG_DIR", "/config")
+    path = write_config("engine: {dry_run: true}\nlogging: {file: /config/qbt-rules.log}\n")
+    result = runner.invoke(app, ["serve", "-c", str(path)])
+    assert result.exit_code == 2
+    assert not served
+    assert "the configuration has 3 problems" in result.stderr
+    for part in ("CONFIG_DIR is no longer read", "engine.dry_run is now dry_run", "logging.file"):
+        assert part in result.stderr
 
 
 def test_serve_with_metrics_on_starts(served: list[Any], write_config: Callable[..., Path]) -> None:
@@ -250,8 +291,10 @@ def test_serve_refusal_exits_2(
 
 
 @pytest.fixture
-def rules_dir(tmp_path: Path) -> Path:
-    """A config directory: config.yaml with a qBittorrent password, and rules.yml beside it"""
+def rules_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The config and the state directory in one: config.yaml with a qBittorrent password, and
+    rules.yml (which lives in the state directory)"""
+    monkeypatch.setenv("QBT_RULES_STATE_DIR", str(tmp_path))
     (tmp_path / "config.yaml").write_text(
         "qbittorrent: {password: secret}\nserver: {api_key: abc}\n", encoding="utf-8"
     )

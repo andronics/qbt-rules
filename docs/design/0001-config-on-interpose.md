@@ -1,6 +1,6 @@
 # 0001: Configuration on interpose, config in /etc/qbt-rules, state in /var/lib/qbt-rules
 
-Status: Accepted
+Status: Accepted (amended 2026-11-03: rules.yml moved to the state directory; see the end)
 Date: 2026-11-03
 Authors: Stephen Cox (the path and CLI decisions), the apps coordinator and Claude (the rest, following
 template-python's conventions)
@@ -27,7 +27,7 @@ with no configuration) and was chosen in review.
   it is). Seven are secrets (`Secret`, revealed only where the legacy server's dicts are built).
 - **Paths (new paths only, no `/config` fallback, no detection of an old directory):**
   `/etc/qbt-rules/config.yaml` (the template's name; `QBT_RULES_CONFIG`, `--config`), `rules.yml` beside it
-  (writable: the editor saves it), and `state_dir` `/var/lib/qbt-rules` holding `qbt-rules.db` and the
+  (writable: the editor saves it; **amended:** now in `state_dir`, see below), and `state_dir` `/var/lib/qbt-rules` holding `qbt-rules.db` and the
   editor's `.history/`. The log goes to the console (the template's convention); `logging.file` adds a
   rotated file. A path setting under `/config` is refused.
 - **First start:** nothing is copied. No `config.yaml` means defaults; no `rules.yml` means no rules, and
@@ -64,3 +64,29 @@ Troubleshooting, FAQ, HTTP-API-Reference, Architecture-Internals.
 ## Open questions
 
 None.
+
+## Amended 2026-11-03: rules.yml in the state directory
+
+Stephen moved `rules.yml` to the state directory, after the side-by-side run of 0.10.1 and the new image.
+`rules.yml` beside `config.yaml` made `/etc/qbt-rules` writable only for the editor's sake, which would
+have needed a template change (a `writable_config` answer: a read-write config mount plus a chown). The
+editor writes `rules.yml`, so it is state.
+
+- The default rules file is `/var/lib/qbt-rules/rules.yml` (`state_dir`/`rules.yml`), writable.
+  `/etc/qbt-rules` holds only `config.yaml` and stays read-only. `rules.file` / `QBT_RULES_RULES_FILE`
+  still override it; a relative `rules.file` is now relative to `state_dir`, like `queue.sqlite_path` and
+  `logging.file`. A missing `rules.yml` still means no rules, and the editor's first save creates it (and
+  the state directory, if need be).
+- A `rules.yml` left beside `config.yaml` (`/etc/qbt-rules/rules.yml`, where this record first put it)
+  while the configured rules file is missing is refused at startup, with where to move it: the same rule
+  as a `config.yml` left beside a missing `config.yaml`. No release read that path, but the 0.11
+  development line and the first migration notes did, and ignoring the copy would silently run with no
+  rules.
+- Every refusal (removed or renamed variables and keys, paths under `/config`, a misplaced `config.yml` or
+  `rules.yml`, conflicting aliases) is collected and reported in one error, so one run lists everything to
+  change. The side-by-side run needed four runs to find production's four.
+- The `server.host` / `server.port` aliases, in the file and as variables, now log the deprecation warning
+  this record promised, naming the canonical key or variable. The side-by-side run found none for the file
+  keys. `qbt-rules config` and `qbt-rules validate` print the same warnings.
+- Kubernetes: `/etc/qbt-rules` gets `config.yaml`; `/var/lib/qbt-rules` gets `rules.yml`, `qbt-rules.db`
+  (with its `-wal` and `-shm`) and `.history/`, as a directory mount.

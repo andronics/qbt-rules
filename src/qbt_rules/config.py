@@ -23,10 +23,16 @@ templates and other deployments set those. What interpose doesn't do, load_confi
 - ``${VAR}`` and ``${VAR:-default}`` in the YAML file are expanded from the environment.
 - ``schedule`` (a list of ``{cron, context}``) comes from the file, or from the indexed
   ``QBT_RULES_SCHEDULE_<N>_CRON`` / ``_CONTEXT`` variables, which replace it.
-- ``server.host`` and ``server.port`` (key and variable) are aliases of ``listen.host`` and
-  ``listen.port``, the names the image's HEALTHCHECK reads.
+- ``server.host`` and ``server.port`` (key and variable) are deprecated aliases of
+  ``listen.host`` and ``listen.port``, the names the image's HEALTHCHECK reads. Using one adds
+  a warning to ``Config.warnings``, which the server logs at startup.
 - What was removed or renamed is refused with its replacement (REFUSED_VARIABLES,
-  RENAMED_KEYS, REMOVED_KEYS), and so is a path under the old ``/config`` volume.
+  RENAMED_KEYS, REMOVED_KEYS), and so is a path under the old ``/config`` volume, and a
+  rules.yml left beside config.yaml (its 0.11 development location) when the configured one is
+  missing. Every refusal is collected first and reported in one ConfigError, so one run lists
+  everything to change.
+- rules.yml lives in the state directory (``/var/lib/qbt-rules/rules.yml``), not beside the
+  read-only config file: the dashboard's editor writes it.
 - A missing setting the server can start without (the API key) is listed in
   ``Config.problems``, for ``/api/health`` and the startup log, rather than refused. The
   placeholder key the 0.10.x default config.yml shipped with counts as missing: it is public.
@@ -90,8 +96,9 @@ PLACEHOLDER_SOURCE = "the 0.10.x placeholder, ignored"
 LEGACY_DIR = PurePosixPath("/config")
 
 _MOVED = (
-    "qbt-rules 0.11 keeps its config in /etc/qbt-rules (config.yaml, rules.yml) and its state "
-    "in /var/lib/qbt-rules (see the wiki's In-Depth-Configuration page, Migrating from 0.10.x)"
+    "qbt-rules 0.11 reads config.yaml from /etc/qbt-rules and keeps rules.yml, the job database "
+    "and the editor's history in /var/lib/qbt-rules (see the wiki's In-Depth-Configuration "
+    "page, Migrating from 0.10.x)"
 )
 _NO_MULTIPROC = (
     "is no longer read: qbt-rules 0.11 is one process, and its metrics live in memory "
@@ -102,11 +109,13 @@ _NO_MULTIPROC = (
 REFUSED_VARIABLES = {
     "CONFIG_DIR": (
         f"CONFIG_DIR is no longer read: {_MOVED}. Remove it; to use another config file, "
-        "set QBT_RULES_CONFIG (rules.yml is read beside it) and QBT_RULES_STATE_DIR"
+        "set QBT_RULES_CONFIG (the config file) and QBT_RULES_STATE_DIR (rules.yml and the "
+        "database)"
     ),
     "QBT_RULES_CONFIG_DIR": (
         f"QBT_RULES_CONFIG_DIR is no longer read: {_MOVED}. Remove it; to use another config "
-        "file, set QBT_RULES_CONFIG (rules.yml is read beside it) and QBT_RULES_STATE_DIR"
+        "file, set QBT_RULES_CONFIG (the config file) and QBT_RULES_STATE_DIR (rules.yml and the "
+        "database)"
     ),
     "QBT_RULES_LOG_LEVEL": (
         "QBT_RULES_LOG_LEVEL is not a qbt-rules setting: use QBT_RULES_LOGGING_LEVEL"
@@ -118,7 +127,7 @@ REFUSED_VARIABLES = {
 RENAMED_KEYS = {"engine.dry_run": "dry_run"}
 # Config-file keys that were removed, and why. Each is refused at startup.
 REMOVED_KEYS = {"metrics.multiproc_dir": f"metrics.multiproc_dir {_NO_MULTIPROC}"}
-# Old key -> the key it is an alias of, in the file and as a variable
+# Old key -> the key it is a deprecated alias of, in the file and as a variable
 ALIASES = {"server.host": "listen.host", "server.port": "listen.port"}
 
 _ENV_REF = re.compile(r"\$\{([^}:]+)(?::-([^}]*))?\}")
@@ -165,39 +174,28 @@ def _decimal(value: Value) -> None:
         raise ValueError(f"must be greater than 0, got {value!r}")
 
 
-def _not_legacy_path(value: Value) -> None:
-    """Refuse a path on the 0.10.x /config volume: it would silently point at nothing."""
-    path = PurePosixPath(str(value))
-    if path == LEGACY_DIR or LEGACY_DIR in path.parents:
-        raise ValueError(
-            f"{value} is under /config, which is no longer used: {_MOVED}. Remove the setting "
-            "to use its default"
-        )
-
-
 SETTINGS = Settings(
     ENV_PREFIX,
     (
         Setting(
             "listen.host",
             "0.0.0.0",  # noqa: S104  container default; the image sets it too
-            "Address the HTTP server binds to. `server.host` (`QBT_RULES_SERVER_HOST`) is an "
-            "alias.",
+            "Address the HTTP server binds to. `server.host` (`QBT_RULES_SERVER_HOST`) is a "
+            "deprecated alias.",
         ),
         Setting(
             "listen.port",
             5000,
             "Port the HTTP server listens on, and the one the image's healthcheck polls. "
-            "`server.port` (`QBT_RULES_SERVER_PORT`) is an alias, which the healthcheck doesn't "
-            "read.",
+            "`server.port` (`QBT_RULES_SERVER_PORT`) is a deprecated alias, which the "
+            "healthcheck doesn't read.",
             check=port,
         ),
         Setting(
             "state_dir",
             str(DEFAULT_STATE_DIR),
-            "Directory for state: the SQLite job database and the rules editor's history "
-            "(`.history/`).",
-            check=_not_legacy_path,
+            "Directory for state: `rules.yml`, the SQLite job database and the rules editor's "
+            "history (`.history/`). Must be writable.",
         ),
         Setting(
             "dry_run",
@@ -207,10 +205,9 @@ SETTINGS = Settings(
         Setting(
             "rules.file",
             "",
-            "The rules file. Empty: `rules.yml` beside the config file "
-            "(`/etc/qbt-rules/rules.yml`). A relative path is relative to the config file's "
-            "directory. It must be writable for the dashboard's editor to save it.",
-            check=_not_legacy_path,
+            "The rules file. Empty: `rules.yml` in `state_dir` (`/var/lib/qbt-rules/rules.yml`). "
+            "A relative path is relative to `state_dir`. It must be writable for the dashboard's "
+            "editor to save it.",
         ),
         Setting(
             "server.api_key",
@@ -255,7 +252,6 @@ SETTINGS = Settings(
             "",
             "SQLite job database. Empty: `qbt-rules.db` in `state_dir`. A relative path is "
             "relative to `state_dir`.",
-            check=_not_legacy_path,
         ),
         Setting(
             "queue.redis_url",
@@ -330,7 +326,6 @@ SETTINGS = Settings(
             "",
             "Also log to this file, rotated by size. Empty: the console only (`docker logs`). A "
             "relative path is relative to `state_dir`.",
-            check=_not_legacy_path,
         ),
         Setting(
             "logging.max_bytes",
@@ -405,6 +400,8 @@ class Config:
     trace_mode: bool
     http_access: bool
     schedule: tuple[ScheduleEntry, ...] = ()
+    # Deprecated spellings in use (the server.* aliases): the server logs each at startup.
+    warnings: tuple[str, ...] = ()
     # Setting key -> where its value came from ("default", "file", an env var name).
     sources: Mapping[str, str] = field(default_factory=dict)
     # Setting key -> its value, for `qbt-rules config` (a secret stays a Secret).
@@ -430,16 +427,28 @@ class Config:
 def load_config(path: Path | None = None, environ: Mapping[str, str] | None = None) -> Config:
     """Load the configuration. A missing config file is not an error: defaults apply."""
     env = dict(os.environ if environ is None else environ)
-    _refuse_variables(env)
     if path is None:
         path = Path(env.get(CONFIG_ENV, str(DEFAULT_CONFIG_PATH)))
-    _refuse_misnamed_file(path)
-
     raw = _read_yaml(path)
-    _refuse_renamed_keys(raw, path)
     data = _expand(raw, env)
-    alias_sources = _apply_variable_aliases(env)
-    _apply_key_aliases(data, path)
+
+    # Everything refused, collected so one run reports all of it
+    refused = _refused_variables(env)
+    refused += _refused_misnamed_file(path)
+    refused += _refused_keys(raw, path)
+    refused += _refused_legacy_paths(data, env)
+    refused += _refused_old_rules_location(data, env, path)
+    warnings: list[str] = []
+    alias_sources = _apply_variable_aliases(env, refused, warnings)
+    _apply_key_aliases(data, path, refused, warnings)
+    if len(refused) == 1:
+        raise ConfigError(refused[0])
+    if refused:
+        listed = "\n".join(f"  - {problem}" for problem in refused)
+        raise ConfigError(
+            f"the configuration has {len(refused)} problems to fix before qbt-rules starts:\n"
+            f"{listed}"
+        )
 
     # interpose reads the file itself, so a value this module changed (an expanded ${VAR}, or an
     # aliased key) reaches it as its variable, unless a real variable already overrides it.
@@ -468,7 +477,7 @@ def load_config(path: Path | None = None, environ: Mapping[str, str] | None = No
             values[key] = str(resolved)
         return resolved
 
-    rules_file = under(path.parent, "rules.file", RULES_FILENAME)
+    rules_file = under(state_dir, "rules.file", RULES_FILENAME)
     sqlite_path = under(state_dir, "queue.sqlite_path", DB_FILENAME)
     log_name = r.str("logging.file")
     log_file = state_dir / log_name if log_name else None
@@ -522,6 +531,7 @@ def load_config(path: Path | None = None, environ: Mapping[str, str] | None = No
         trace_mode=r.bool("logging.trace_mode"),
         http_access=r.bool("logging.http_access"),
         schedule=_load_schedule(data, env, path),
+        warnings=tuple(warnings),
         sources=sources,
         values=values,
     )
@@ -530,30 +540,104 @@ def load_config(path: Path | None = None, environ: Mapping[str, str] | None = No
 # -- what interpose doesn't do ------------------------------------------------------------------
 
 
-def _refuse_variables(env: Mapping[str, str]) -> None:
+def _refused_variables(env: Mapping[str, str]) -> list[str]:
+    refused = []
     for name, message in REFUSED_VARIABLES.items():
         forms = (name, f"{name}_FILE") if name.startswith(ENV_PREFIX) else (name,)
         if any(form in env for form in forms):
-            raise ConfigError(message)
+            refused.append(message)
+    return refused
 
 
-def _refuse_misnamed_file(path: Path) -> None:
+def _refused_misnamed_file(path: Path) -> list[str]:
     """A config.yml beside a missing config.yaml was meant to be read: say so, don't ignore it."""
     old = path.with_name("config.yml")
     if path.name == "config.yaml" and not path.exists() and old.is_file():
-        raise ConfigError(
+        return [
             f"{old} is not read: the config file is now {path}. Rename it (and check the wiki's "
             "In-Depth-Configuration page, Migrating from 0.10.x, for the keys that changed)"
-        )
+        ]
+    return []
 
 
-def _refuse_renamed_keys(data: Mapping[str, Any], path: Path) -> None:
+def _refused_keys(data: Mapping[str, Any], path: Path) -> list[str]:
+    refused = []
     for old, new in RENAMED_KEYS.items():
         if _lookup(data, old) is not None:
-            raise ConfigError(f"{path}: {old} is now {new}")
+            refused.append(f"{path}: {old} is now {new}")
     for key, message in REMOVED_KEYS.items():
         if _lookup(data, key) is not None:
-            raise ConfigError(f"{path}: {message}")
+            refused.append(f"{path}: {message}")
+    return refused
+
+
+def _effective(key: str, data: Mapping[str, Any], env: Mapping[str, str]) -> tuple[str, str]:
+    """(value, source) of a plain setting, in interpose's order, before interpose checks it.
+
+    A _FILE variable that can't be read counts as unset here: resolving reports it.
+    """
+    setting = _BY_KEY[key]
+    file_var = f"{setting.env}_FILE"
+    if file_var in env:
+        try:
+            return Path(env[file_var]).read_text(encoding="utf-8").rstrip(), file_var
+        except (OSError, UnicodeDecodeError):
+            pass
+    elif setting.env in env:
+        return env[setting.env], setting.env
+    value = _lookup(data, key)
+    if value is not None:
+        return _as_text(value), "in the config file"
+    return str(setting.default), "default"
+
+
+def _is_legacy(value: str) -> bool:
+    path = PurePosixPath(value)
+    return path == LEGACY_DIR or LEGACY_DIR in path.parents
+
+
+_PATH_SETTINGS = ("state_dir", "rules.file", "queue.sqlite_path", "logging.file")
+
+
+def _refused_legacy_paths(data: Mapping[str, Any], env: Mapping[str, str]) -> list[str]:
+    """Every path setting under the 0.10.x /config volume: it would silently point at nothing.
+
+    Checked here rather than with interpose's check=, which stops at the first bad value.
+    """
+    refused = []
+    for key in _PATH_SETTINGS:
+        value, source = _effective(key, data, env)
+        if value and _is_legacy(value):
+            refused.append(
+                f"{key}: {value} is under /config, which is no longer used: {_MOVED}. Remove "
+                f"the setting ({source}) to use its default"
+            )
+    return refused
+
+
+def _refused_old_rules_location(
+    data: Mapping[str, Any], env: Mapping[str, str], path: Path
+) -> list[str]:
+    """A rules.yml beside config.yaml while the configured one is missing: refused.
+
+    Until 2026-11-03 the 0.11 development line read rules.yml beside config.yaml
+    (/etc/qbt-rules/rules.yml), and early migration notes said to copy it there. It now lives
+    in the state directory; ignoring the old copy would silently run with no rules, and the
+    editor would then start an empty file in the new place.
+    """
+    state_dir, _ = _effective("state_dir", data, env)
+    if _is_legacy(state_dir):
+        state_dir = str(DEFAULT_STATE_DIR)
+    given, _ = _effective("rules.file", data, env)
+    target = Path(state_dir) / (given if given and not _is_legacy(given) else RULES_FILENAME)
+    old = path.parent / RULES_FILENAME
+    if target.exists() or not old.is_file() or old.resolve() == target.resolve():
+        return []
+    return [
+        f"{old} is not read: rules.yml now lives in the state directory, so the rules file is "
+        f"{target}. Move it there (writable by the server, for the rules editor), or point "
+        "rules.file (QBT_RULES_RULES_FILE) at it"
+    ]
 
 
 def _read_yaml(path: Path) -> Mapping[str, Any]:
@@ -576,7 +660,12 @@ def _expand(value: Any, env: Mapping[str, str]) -> Any:
     return value
 
 
-def _apply_variable_aliases(env: dict[str, str]) -> dict[str, str]:
+_HEALTHCHECK_NOTE = {"listen.port": ", the variable the image's healthcheck polls"}
+
+
+def _apply_variable_aliases(
+    env: dict[str, str], refused: list[str], warnings: list[str]
+) -> dict[str, str]:
     """QBT_RULES_SERVER_PORT feeds listen.port, unless QBT_RULES_LISTEN_PORT is set too."""
     sources: dict[str, str] = {}
     for old, new in ALIASES.items():
@@ -584,31 +673,40 @@ def _apply_variable_aliases(env: dict[str, str]) -> dict[str, str]:
         for suffix in ("", "_FILE"):
             if f"{old_env}{suffix}" not in env:
                 continue
+            warnings.append(
+                f"{old_env}{suffix} is deprecated: it is an alias of {new_env}{suffix}"
+                f"{_HEALTHCHECK_NOTE.get(new, '')}: set {new_env}{suffix} instead"
+            )
             value = env[f"{old_env}{suffix}"]
             others = {env[n] for n in (new_env, f"{new_env}_FILE") if n in env}
             if others and others != {value}:
-                raise ConfigError(
+                refused.append(
                     f"{old_env}{suffix} and {new_env} are both set, to different values: "
                     f"{old_env} is an alias of {new_env}, so set only {new_env}"
                 )
+                continue
             if not others:
                 env[f"{new_env}{suffix}"] = value
                 sources[new] = f"{old_env}{suffix} (alias of {new_env})"
     return sources
 
 
-def _apply_key_aliases(data: dict[str, Any], path: Path) -> None:
+def _apply_key_aliases(
+    data: dict[str, Any], path: Path, refused: list[str], warnings: list[str]
+) -> None:
     """server.port in the file is listen.port, unless listen.port is there too."""
     for old, new in ALIASES.items():
         value = _lookup(data, old)
         if value is None:
             continue
+        warnings.append(f"{path}: {old} is deprecated: it is an alias of {new}. Rename it to {new}")
         current = _lookup(data, new)
         if current is not None and current != value:
-            raise ConfigError(
+            refused.append(
                 f"{path}: {old} and {new} are both set, to different values: {old} is an alias "
                 f"of {new}, so set only {new}"
             )
+            continue
         section, name = new.split(".")
         if isinstance(data.get(section), dict):
             data[section].setdefault(name, value)

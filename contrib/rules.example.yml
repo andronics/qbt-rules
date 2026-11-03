@@ -3,8 +3,9 @@
 # Rules define conditions and actions to automate torrent management.
 # All field references use dot notation with API prefix: info.*, trackers.*, files.*, etc.
 #
-# Copy to /etc/qbt-rules/rules.yml (beside config.yaml), or start from an empty
-# file in the dashboard's rules editor, which creates it on its first save.
+# Copy to /var/lib/qbt-rules/rules.yml (the state directory, writable, so the
+# dashboard's rules editor can save it), or start from an empty file in the
+# editor, which creates it on its first save.
 # For settings, see config.yaml (contrib/qbt-rules.example.yaml).
 
 # Schema marker for this file, read via Config.rules_version (defaults to 1

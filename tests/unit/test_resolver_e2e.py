@@ -1,11 +1,17 @@
 """End-to-end tests simulating real-world resolver usage"""
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 
 from qbt_rules.config_loader import load_config
+
+
+def state_in(directory: Path) -> dict[str, str]:
+    """rules.yml lives in the state directory: these tests keep everything in one directory"""
+    return {"QBT_RULES_STATE_DIR": str(directory)}
 
 
 class TestResolverRealWorldScenarios:
@@ -201,7 +207,7 @@ class TestResolverRealWorldScenarios:
             yaml.dump(rules_content, f)
 
         # Load config
-        config = load_config(config_dir / "config.yaml", environ={})
+        config = load_config(config_dir / "config.yaml", environ=state_in(config_dir))
 
         # Get resolved rules
         resolved_rules = config.get_rules(resolved=True)
@@ -327,7 +333,7 @@ class TestResolverRealWorldScenarios:
         with open(config_dir / "rules.yml", "w") as f:
             yaml.dump(rules_content, f)
 
-        config = load_config(config_dir / "config.yaml", environ={})
+        config = load_config(config_dir / "config.yaml", environ=state_in(config_dir))
         resolved = config.get_rules()[0]
 
         # Verify types are preserved
@@ -380,7 +386,7 @@ class TestResolverRealWorldScenarios:
         with open(rules_file, "w") as f:
             yaml.dump(rules_content, f)
 
-        config = load_config(config_dir / "config.yaml", environ={})
+        config = load_config(config_dir / "config.yaml", environ=state_in(config_dir))
 
         # First call - should resolve and cache
         rules1 = config.get_rules()
@@ -436,7 +442,7 @@ class TestResolverRealWorldScenarios:
         with open(config_dir / "rules.yml", "w") as f:
             yaml.dump(rules_content, f)
 
-        config = load_config(config_dir / "config.yaml", environ={})
+        config = load_config(config_dir / "config.yaml", environ=state_in(config_dir))
         from qbt_rules.errors import UnknownVariableError
 
         with pytest.raises(UnknownVariableError) as exc_info:
@@ -459,7 +465,7 @@ class TestResolverRealWorldScenarios:
         with open(config_dir / "rules.yml", "w") as f:
             yaml.dump(rules_content, f)
 
-        config = load_config(config_dir / "config.yaml", environ={})
+        config = load_config(config_dir / "config.yaml", environ=state_in(config_dir))
         from qbt_rules.errors import UnknownRefError
 
         with pytest.raises(UnknownRefError) as ref_exc_info:
@@ -484,7 +490,7 @@ class TestResolverRealWorldScenarios:
         with open(config_dir / "rules.yml", "w") as f:
             yaml.dump(rules_content, f)
 
-        config = load_config(config_dir / "config.yaml", environ={})
+        config = load_config(config_dir / "config.yaml", environ=state_in(config_dir))
         from qbt_rules.errors import InvalidRefError
 
         with pytest.raises(InvalidRefError) as invalid_exc_info:
