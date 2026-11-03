@@ -87,7 +87,7 @@ chmod 600 ./config/config.yaml
 
 ### Log Hygiene
 
-`--trace` (or `logging.trace_mode: true`) logs every field access and API response, which can include tracker URLs with embedded passkeys, torrent names, and tag contents. Before sharing trace logs — in a bug report, a support channel, or a GitHub issue — scrub anything that looks like a tracker announce URL or credential, the same way you'd sanitize `config.yaml` before sharing it (see [Contributing](Contributing)'s issue-reporting guidance).
+`logging.trace_mode: true` (`QBT_RULES_LOGGING_TRACE_MODE=true`) logs every field access and API response, which can include tracker URLs with embedded passkeys, torrent names, and tag contents. Before sharing trace logs — in a bug report, a support channel, or a GitHub issue — scrub anything that looks like a tracker announce URL or credential, the same way you'd sanitize `config.yaml` before sharing it (see [Contributing](Contributing)'s issue-reporting guidance).
 
 ## Hardening
 

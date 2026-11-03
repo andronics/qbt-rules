@@ -7,7 +7,7 @@ qbt-rules ships as one container image, `ghcr.io/andronics/qbt-rules` (`linux/am
 The container runs `qbt-rules serve`: **one uvicorn process** serving the HTTP API, with the background worker thread that runs jobs and the internal [scheduler](Scheduling) beside it.
 
 - **One server per qBittorrent instance.** Jobs queue up and are worked off in order; separate workloads are separate contexts on the same server, not separate containers (see [Advanced Topics](Advanced-Topics)).
-- **One process, one replica.** There are no worker processes: `server.workers` must be `1` (any other value, or `--server-workers`, is refused at startup and says to drop it). The scheduler runs in that process, so it fires once per cron tick; a second replica would fire every entry twice. In Kubernetes keep `replicas: 1` with the `Recreate` strategy (template-python decision 0008).
+- **One process, one replica.** There are no worker processes: `server.workers` must be `1` (any other value is refused at startup and says to drop it). The scheduler runs in that process, so it fires once per cron tick; a second replica would fire every entry twice. In Kubernetes keep `replicas: 1` with the `Recreate` strategy (template-python decision 0008).
 - **Stopping.** `docker stop` (SIGTERM) stops the server cleanly: it stops taking requests, the worker finishes its current poll (a running job gets a few seconds), and the worker and scheduler threads are joined before the process exits.
 - **The queue is the state.** With the default SQLite backend the queue is a file in the state directory; with Redis it's in Redis. Either way, queued jobs survive a restart.
 
@@ -42,7 +42,8 @@ openssl rand -hex 32 > secrets/api_key
 printf '%s' 'your-qbittorrent-password' > secrets/qbt_password
 docker compose -f contrib/docker/compose.yml up -d
 docker compose -f contrib/docker/compose.yml logs -f
-docker exec qbt-rules qbt-rules --validate     # config.yaml and rules.yml
+docker exec qbt-rules qbt-rules validate     # config.yaml and rules.yml
+docker exec qbt-rules qbt-rules config       # the effective settings and where each came from
 ```
 
 - The port binds to `127.0.0.1` only: put a reverse proxy (Traefik) in front for TLS and remote access (see [Security](Security#network-exposure)).
@@ -187,7 +188,7 @@ volumes:
   redis-data:
 ```
 
-Older examples ran a second "cron" container looping `qbt-rules --context scheduled; sleep 300`: the internal scheduler above replaces it (see [Scheduling](Scheduling)).
+Older examples ran a second "cron" container looping `qbt-rules execute --context scheduled; sleep 300`: the internal scheduler above replaces it (see [Scheduling](Scheduling)).
 
 ### Image tags
 
@@ -212,7 +213,7 @@ Read the [CHANGELOG](https://github.com/andronics/qbt-rules/blob/main/CHANGELOG.
 1. Stop the container: `docker compose down`.
 2. Copy, don't move, so the old directory still works with the old image: `mkdir -p config state`, then `cp -p old/config.yml config/config.yaml` (optional), `cp -p old/rules.yml config/`, `cp -p old/qbt-rules.db state/` and `cp -pr old/.history state/` (both optional).
 3. In `config/config.yaml`, delete every path under `/config` (`queue.sqlite_path`, `rules.file`, `logging.file`) and rename `engine.dry_run` to a top-level `dry_run`. Drop `CONFIG_DIR` and `QBT_RULES_CONFIG_DIR` from the environment, and rename `QBT_RULES_SERVER_PORT` to `QBT_RULES_LISTEN_PORT`. The server refuses to start, naming the fix, if any of these is left.
-4. Mount `./config:/etc/qbt-rules` and `./state:/var/lib/qbt-rules` (as [contrib/docker/compose.yml](https://github.com/andronics/qbt-rules/blob/main/contrib/docker/compose.yml) does), start it, then check: `docker exec qbt-rules qbt-rules --validate` and `docker exec qbt-rules qbt-rules --list-jobs`.
+4. Mount `./config:/etc/qbt-rules` and `./state:/var/lib/qbt-rules` (as [contrib/docker/compose.yml](https://github.com/andronics/qbt-rules/blob/main/contrib/docker/compose.yml) does), start it, then check: `docker exec qbt-rules qbt-rules validate` and `docker exec qbt-rules qbt-rules jobs list`.
 
 The container `chown`s the state directory to `PUID:PGID` on start; the config directory is yours, so give it to `PUID:PGID` if the rules editor should save `rules.yml`.
 

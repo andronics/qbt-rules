@@ -143,10 +143,10 @@ Run the CLI client from inside the server's container — no separate install ne
 
 ```bash
 # Dry-run mode (see what would happen without making changes)
-docker exec qbt-rules qbt-rules --dry-run --context torrent-imported --wait
+docker exec qbt-rules qbt-rules execute --dry-run --context torrent-imported --wait
 ```
 
-> **Before v0.10.0, `--dry-run` on a client command was ignored and the job ran for real.** On an older version, preview with `QBT_RULES_DRY_RUN: "true"` on the server instead, or upgrade.
+> **0.11 changed the CLI:** commands come first (`qbt-rules execute --context ...`, not 0.10.x's `qbt-rules --context ...`). See [CLI Reference](CLI-Reference#migrating-from-010x).
 
 **Expected output (job runs, then reports results):**
 
@@ -163,7 +163,7 @@ docker exec qbt-rules qbt-rules --dry-run --context torrent-imported --wait
 **Run for real** (remove `--dry-run`):
 
 ```bash
-docker exec qbt-rules qbt-rules --context torrent-imported --wait
+docker exec qbt-rules qbt-rules execute --context torrent-imported --wait
 ```
 
 **Using the HTTP API instead of the CLI client:**
@@ -181,17 +181,18 @@ Open `http://localhost:5000` for the [dashboard](Dashboard) and log in with the 
 **Other useful commands:**
 
 ```bash
-# Validate rules syntax
-docker exec qbt-rules qbt-rules --validate
+# Validate the settings and rules.yml (line numbers for every problem)
+docker exec qbt-rules qbt-rules validate
 
-# List all enabled rules
-docker exec qbt-rules qbt-rules --list-rules
+# List the rules in the order they run
+docker exec qbt-rules qbt-rules rules list
 
-# Debug with trace logging
-docker exec qbt-rules qbt-rules --dry-run --context torrent-imported --trace --wait
+# The effective settings, and where each came from
+docker exec qbt-rules qbt-rules config
 
-# Override log level
-docker exec qbt-rules qbt-rules --dry-run --context torrent-imported --log-level DEBUG --wait
+# Recent jobs, and one job's result
+docker exec qbt-rules qbt-rules jobs list
+docker exec qbt-rules qbt-rules jobs status <job-id>
 ```
 
 Congratulations! You've created your first automation rule.

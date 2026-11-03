@@ -152,17 +152,18 @@ A: Currently, the system loads a single rules file. However, you can organize ru
 
 ### Q: What happens if qBittorrent is unreachable?
 
-A: The job fails and the error is recorded in that job's status — check it with `--job-status <id>` or `--list-jobs`. For scheduled context jobs submitted via cron, make sure whatever submits them (curl, or the CLI client) logs or alerts on a non-2xx/failed response. See [Troubleshooting](Troubleshooting#issue-connection-refused-to-qbittorrent) if the connection is failing consistently rather than intermittently.
+A: The job fails and the error is recorded in that job's status — check it with `qbt-rules jobs status <id>` or `qbt-rules jobs list`. For scheduled context jobs submitted via cron, make sure whatever submits them (curl, or the CLI client) logs or alerts on a non-2xx/failed response. See [Troubleshooting](Troubleshooting#issue-connection-refused-to-qbittorrent) if the connection is failing consistently rather than intermittently.
 
 ### Q: How do I enable trace logging?
 
-A: Use the `--trace` flag when submitting a job via the CLI client:
+A: Turn on trace mode on the **server** (the rules run in its worker, not in the CLI): set `QBT_RULES_LOGGING_TRACE_MODE=true` (or `logging.trace_mode: true` in `config.yaml`), restart, and run a job:
 
 ```bash
-docker exec qbt-rules qbt-rules --dry-run --context manual --trace --wait
+docker exec qbt-rules qbt-rules execute --dry-run --context manual --wait
+docker logs qbt-rules
 ```
 
-This logs all API calls, field accesses, and condition evaluations. You can also set `logging.trace_mode: true` (or `QBT_RULES_LOGGING_TRACE_MODE=true`) in `config.yaml` to trace every job by default. Trace output can include tracker URLs and tag contents — see [Security](Security#log-hygiene) before sharing a trace log with anyone.
+This logs all API calls, field accesses, and condition evaluations, for every job until you turn it off. Trace output can include tracker URLs and tag contents — see [Security](Security#log-hygiene) before sharing a trace log with anyone.
 
 ## Field & Condition Questions
 
@@ -170,7 +171,7 @@ This logs all API calls, field accesses, and condition evaluations. You can also
 
 A: See the [Available Fields](Available-Fields) page for complete tables. You can also:
 
-1. Enable `--trace` mode to see all field accesses
+1. Enable trace mode (`QBT_RULES_LOGGING_TRACE_MODE=true` on the server) to see all field accesses
 2. Check qBittorrent Web API documentation
 3. Use `/api/v2/torrents/info` to see raw torrent data
 
@@ -271,7 +272,7 @@ See [Contexts](Contexts#scheduledrecurring-contexts) for the cron and systemd-ti
 A: Yes! Submit a job with `--dry-run` right now instead of waiting for cron:
 
 ```bash
-docker exec qbt-rules qbt-rules --dry-run --context hourly --wait
+docker exec qbt-rules qbt-rules execute --dry-run --context hourly --wait
 ```
 
 This evaluates every rule whose `context:` matches (or that has no `context:` at all) immediately.
@@ -418,7 +419,7 @@ A: Yes — the engine evaluates torrents one at a time rather than loading every
 
 ### Q: How long does execution take?
 
-A: There's no fixed number — it depends on torrent count, how many rules touch expensive fields (`trackers.*`/`files.*`/`peers.*`/`webseeds.*`, each an API call per torrent), and network latency to qBittorrent. Rules that only touch `info.*` are effectively instant regardless of library size, since that data is already loaded; anything checking expensive fields scales roughly linearly with the number of torrents that reach that check. Use `--trace` to see actual timing for your own setup rather than relying on a generic benchmark that won't reflect your rule set or hardware.
+A: There's no fixed number — it depends on torrent count, how many rules touch expensive fields (`trackers.*`/`files.*`/`peers.*`/`webseeds.*`, each an API call per torrent), and network latency to qBittorrent. Rules that only touch `info.*` are effectively instant regardless of library size, since that data is already loaded; anything checking expensive fields scales roughly linearly with the number of torrents that reach that check. Use trace mode (`QBT_RULES_LOGGING_TRACE_MODE=true` on the server) to see actual timing for your own setup rather than relying on a generic benchmark that won't reflect your rule set or hardware.
 
 ## Error & Troubleshooting Questions
 
@@ -426,14 +427,14 @@ A: There's no fixed number — it depends on torrent count, how many rules touch
 
 A: An HTTP `401` from qbt-rules' own API is **always** a `server.api_key` mismatch — the server checks the key before touching qBittorrent at all. Confirm the `key=`/`X-API-KEY` value you're sending matches `QBT_RULES_SERVER_API_KEY` (or its `_FILE` equivalent).
 
-A *wrong qBittorrent password* is a different failure entirely — it doesn't produce an HTTP 401 to you, since it happens later, inside the worker, while the job is running. The job just fails; check `--job-status <id>` for an authentication error, and verify `QBT_RULES_QBITTORRENT_USERNAME`/`QBT_RULES_QBITTORRENT_PASSWORD` (or `config.yaml`'s `qbittorrent:` block) against what qBittorrent's Web UI actually expects.
+A *wrong qBittorrent password* is a different failure entirely — it doesn't produce an HTTP 401 to you, since it happens later, inside the worker, while the job is running. The job just fails; check `qbt-rules jobs status <id>` for an authentication error, and verify `QBT_RULES_QBITTORRENT_USERNAME`/`QBT_RULES_QBITTORRENT_PASSWORD` (or `config.yaml`'s `qbittorrent:` block) against what qBittorrent's Web UI actually expects.
 
 ### Q: Rules aren't matching torrents I expect
 
-A: Enable `--trace` mode to see condition evaluation:
+A: Enable trace mode on the server (`QBT_RULES_LOGGING_TRACE_MODE=true`, then restart) to see condition evaluation, and run a job:
 
 ```bash
-docker exec qbt-rules qbt-rules --dry-run --context manual --trace --wait
+docker exec qbt-rules qbt-rules execute --dry-run --context manual --wait
 ```
 
 Look for lines like:
@@ -445,7 +446,7 @@ Look for lines like:
 
 ### Q: Getting unexpected `False` results when accessing fields
 
-A: Not all fields exist for all torrents. Missing fields resolve to `None`, and the engine treats `None` as automatically satisfying `!=`/`not_in`/`not_contains` and failing every other operator — so a condition on a missing field quietly evaluates to `False` rather than raising an error. Check that you're using correct field names from the [Available Fields](Available-Fields) table, and use `--trace` to confirm what value was actually read.
+A: Not all fields exist for all torrents. Missing fields resolve to `None`, and the engine treats `None` as automatically satisfying `!=`/`not_in`/`not_contains` and failing every other operator — so a condition on a missing field quietly evaluates to `False` rather than raising an error. Check that you're using correct field names from the [Available Fields](Available-Fields) table, and use trace mode to confirm what value was actually read.
 
 ### Q: My scheduled context job isn't running
 
@@ -457,7 +458,7 @@ A: Context jobs don't run themselves - either list them in `config.yaml`'s `sche
 0 * * * * curl -s -X POST -H "X-API-KEY: $QBT_RULES_API_KEY" "http://qbt-rules:5000/api/execute?context=hourly" >> /var/log/qbt-rules-cron.log 2>&1
 ```
 
-Confirm the job actually landed in the queue with `--list-jobs`.
+Confirm the job actually landed in the queue with `qbt-rules jobs list`.
 
 ### Q: Webhooks aren't triggering
 
@@ -470,7 +471,7 @@ A: Verify qBittorrent webhook configuration:
    curl -X POST "http://qbt-rules:5000/api/execute?context=torrent-imported&hash=<actual_torrent_hash>&key=YOUR_API_KEY"
    ```
 
-3. If you're using the CLI client via `docker exec` instead, confirm the container name is correct and the server is reachable from inside it.
+3. If you're using the CLI client (`qbt-rules execute --context torrent-imported --hash "%I"`, perhaps via `docker exec`) instead, run the exact line by hand, confirm the container name is correct and the server is reachable from inside it. A hook still on 0.10.x's `qbt-rules --context ...` form exits 2: add `execute` after `qbt-rules`.
 4. Confirm `QBT_RULES_SERVER_API_KEY` matches the `key=`/`X-API-KEY` value you're sending.
 
 ### Q: Changes aren't applying to torrents
@@ -479,7 +480,7 @@ A: Check:
 
 1. **Dry-run mode**: Are you using `--dry-run`? Remove it to apply changes.
 2. **Idempotency**: Action may be skipped if torrent already in desired state (check logs)
-3. **Conditions**: Rule may not be matching (use `--trace`)
+3. **Conditions**: Rule may not be matching (use trace mode)
 4. **stop_on_match**: Earlier rule may have matched first
 5. **Context**: The job's context may not match the rule's `context:` field at all — a mismatched context means the rule is silently skipped, not evaluated-and-failed
 

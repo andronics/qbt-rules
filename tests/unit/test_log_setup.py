@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 from qbt_rules.log_setup import (
-    CONSOLE_FORMAT_BARE,
     DEFAULT_BACKUP_COUNT,
     DEFAULT_MAX_BYTES,
     LOG_FORMAT_DETAILED,
@@ -20,18 +19,14 @@ def _logging_config(
     level="INFO",
     file=None,
     trace_mode=False,
-    http_access=False,
-    client_mode=False,
     max_bytes=DEFAULT_MAX_BYTES,
     backup_count=DEFAULT_BACKUP_COUNT,
 ):
-    """Build a resolved logging_config dict, matching legacy_cli.py's get_logging_config() shape."""
+    """The logging_config dict `qbt-rules serve` (cli.py) passes."""
     return {
         "level": level,
         "file": file,
         "trace_mode": trace_mode,
-        "http_access": http_access,
-        "client_mode": client_mode,
         "max_bytes": max_bytes,
         "backup_count": backup_count,
     }
@@ -108,46 +103,18 @@ class TestSetupLogging:
         root_logger = logging.getLogger()
         return next(h for h in root_logger.handlers if isinstance(h, logging.FileHandler))
 
-    def test_client_mode_console_is_bare(self, tmp_path):
-        """Client mode (any invocation other than --serve) prints bare
-        messages to console, with no timestamp/level prefix -- someone
-        running a CLI command interactively shouldn't see logging
-        machinery on every line."""
-        log_file = tmp_path / "test.log"
-
-        setup_logging(_logging_config(level="INFO", file=log_file, client_mode=True))
-
-        assert self._console_handler().formatter._fmt == CONSOLE_FORMAT_BARE
-
-    def test_client_mode_file_still_gets_full_format(self, tmp_path):
-        """Client mode's console may be bare, but the file record keeps
-        full diagnostic detail for later review."""
-        log_file = tmp_path / "test.log"
-
-        setup_logging(_logging_config(level="INFO", file=log_file, client_mode=True))
-
-        assert self._file_handler().formatter._fmt == LOG_FORMAT_SIMPLE
-
-    def test_server_mode_console_keeps_full_format(self, tmp_path):
-        """Server mode (--serve) keeps the full timestamped format on
-        console, since that's what `docker logs` captures for live
-        monitoring."""
-        log_file = tmp_path / "test.log"
-
-        setup_logging(_logging_config(level="INFO", file=log_file, client_mode=False))
+    def test_console_and_file_share_the_timestamped_format(self, tmp_path):
+        """The console is what `docker logs` keeps, so it has the file's format."""
+        setup_logging(_logging_config(level="INFO", file=tmp_path / "test.log"))
 
         assert self._console_handler().formatter._fmt == LOG_FORMAT_SIMPLE
+        assert self._file_handler().formatter._fmt == LOG_FORMAT_SIMPLE
 
-    def test_trace_mode_overrides_client_mode_bare_console(self, tmp_path):
-        """--trace is an explicit request for verbose detail, so it wins
-        over client mode's normally-bare console format."""
-        log_file = tmp_path / "test.log"
-
-        setup_logging(
-            _logging_config(level="DEBUG", file=log_file, trace_mode=True, client_mode=True)
-        )
+    def test_trace_mode_adds_function_and_line_everywhere(self, tmp_path):
+        setup_logging(_logging_config(level="DEBUG", file=tmp_path / "test.log", trace_mode=True))
 
         assert self._console_handler().formatter._fmt == LOG_FORMAT_DETAILED
+        assert self._file_handler().formatter._fmt == LOG_FORMAT_DETAILED
 
     def test_file_permission_error_fallback(self, capsys):
         """File permission error falls back to console only."""

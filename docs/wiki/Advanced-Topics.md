@@ -128,7 +128,7 @@ This section covers auto-*categorizing* torrents Sonarr/Radarr already added —
    Or, if you'd rather use the CLI client from inside the server's container:
 
    ```bash
-   docker exec qbt-rules qbt-rules --context on_added --hash "%I" --wait
+   docker exec qbt-rules qbt-rules execute --context on_added --hash "%I"
    ```
 
 2. **Create categorization rules:**

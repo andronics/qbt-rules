@@ -57,7 +57,7 @@ rejected at load time (a silent collision would merge two different rules'
 
 For the human-readable text `id` intentionally isn't good at, set the
 optional `meta.description` on the rule. It's used in logs, the read-only
-dashboard, and CLI output (`--list-rules`) whenever present, falling back to
+dashboard, and CLI output (`qbt-rules rules list`) whenever present, falling back to
 `id` when it isn't:
 
 ```yaml

@@ -40,7 +40,7 @@ It's also **not hot-reloaded**: unlike `rules.yml`, changes require a server res
 
 ### What Happens When It Fires
 
-Firing a scheduled entry is identical to a job submitted any other way — same queue, same worker, same job lifecycle (`pending` → `processing` → `completed`/`failed`), visible via `--list-jobs`/`--job-status` or the [HTTP API Reference](HTTP-API-Reference)'s `/api/jobs` endpoints. There's no separate "scheduled job" concept to track.
+Firing a scheduled entry is identical to a job submitted any other way — same queue, same worker, same job lifecycle (`pending` → `processing` → `completed`/`failed`), visible via `qbt-rules jobs list`/`jobs status` or the [HTTP API Reference](HTTP-API-Reference)'s `/api/jobs` endpoints. There's no separate "scheduled job" concept to track.
 
 There's no misfire catch-up: if the server was down when a fire time passed, that occurrence is simply skipped — the same behavior an external cron job would have had.
 
@@ -64,4 +64,4 @@ schedule:
     context: cron
 ```
 
-You can remove the external cron job (or sidecar container) once this is in place and confirmed working — check `--list-jobs` after the first expected fire time to confirm.
+You can remove the external cron job (or sidecar container) once this is in place and confirmed working — check `qbt-rules jobs list` after the first expected fire time to confirm.

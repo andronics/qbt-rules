@@ -188,7 +188,7 @@ No authentication required.
 
 ### Polling for Completion
 
-`/api/execute` returns immediately (`202`) with a `pending` job — it doesn't wait for the rules to actually run. To get the result synchronously, either use the CLI client's `--wait` flag, or poll:
+`/api/execute` returns immediately (`202`) with a `pending` job — it doesn't wait for the rules to actually run. To get the result synchronously, either use `qbt-rules execute --wait`, or poll:
 
 ```bash
 JOB_ID=$(curl -s -X POST "http://localhost:5000/api/execute?context=nightly&key=$KEY" | jq -r .job_id)

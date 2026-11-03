@@ -65,7 +65,7 @@ services:
 ```sh
 docker compose up -d
 curl http://127.0.0.1:5000/api/health
-docker exec qbt-rules qbt-rules --context torrent-imported --wait   # run the torrent-imported rules now
+docker exec qbt-rules qbt-rules execute --context torrent-imported --wait   # run the torrent-imported rules now
 ```
 
 Rules live in `./config/rules.yml` (start from [contrib/rules.example.yml](contrib/rules.example.yml), or
