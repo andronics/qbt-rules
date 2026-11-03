@@ -7,6 +7,17 @@ or PR title instead. See the wiki's Release-Process page.
 Releases up to 0.10.2 were written by the old tag-push release workflow, in the
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
 
+## [0.11.1](https://github.com/andronics/qbt-rules/compare/v0.11.0...v0.11.1) (2026-11-03)
+
+
+### 🐛 Bug Fixes
+
+* give qBittorrent requests an explicit timeout and a clear timeout error ([#58](https://github.com/andronics/qbt-rules/issues/58)) ([7aa2de9](https://github.com/andronics/qbt-rules/commit/7aa2de940b35cb77e8ec25cec91a0be8097aafce))
+* give the SQLite queue's space back after job cleanup ([#54](https://github.com/andronics/qbt-rules/issues/54)) ([3ced765](https://github.com/andronics/qbt-rules/commit/3ced7651f94b0fa7af41e459670168e4323acaa1))
+* logging.http_access=false logs no request at all, the CLI's included ([#56](https://github.com/andronics/qbt-rules/issues/56)) ([3b8af5e](https://github.com/andronics/qbt-rules/commit/3b8af5eb47894c044601690e0e8b2b34b47003bd))
+* name the action in the desired-state skip line, and summarise skips per run ([#55](https://github.com/andronics/qbt-rules/issues/55)) ([e34fc37](https://github.com/andronics/qbt-rules/commit/e34fc373d3b81e218c5b2f18091e09d1e465d2e0))
+* qbt-rules config shows a secret as set only when the user set it ([#57](https://github.com/andronics/qbt-rules/issues/57)) ([ba9c109](https://github.com/andronics/qbt-rules/commit/ba9c10980ada2a442bce0d00f711f255f3c25cee))
+
 ## [0.11.0](https://github.com/andronics/qbt-rules/compare/v0.10.2...v0.11.0) (2026-11-03)
 
 
