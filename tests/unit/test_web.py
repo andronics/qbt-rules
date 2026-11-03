@@ -1,7 +1,6 @@
 """The dashboard (web.py): the pages, the login form, /static and /metrics, through TestClient.
 
-The JSON API's tests are tests/unit/test_api_routes.py and tests/golden. TODO(4e): /metrics
-moves onto interpose's Registry.
+The JSON API's tests are tests/unit/test_api_routes.py and tests/golden.
 """
 
 import dataclasses
@@ -725,7 +724,6 @@ class TestMetricsRoutes:
     def client_with_metrics(
         self, settings: Config, queue: MagicMock, worker: StubWorker, rules: MagicMock
     ) -> TestClient:
-        metrics.init(enabled=True)
         return make_client(settings, queue, worker, rules, metrics_enabled=True)
 
     def test_not_there_when_disabled(self, client: TestClient) -> None:
@@ -741,7 +739,6 @@ class TestMetricsRoutes:
     def test_no_api_key_configured(
         self, settings: Config, queue: MagicMock, worker: StubWorker
     ) -> None:
-        metrics.init(enabled=True)
         client = make_client(settings, queue, worker, metrics_enabled=True, api_key=Secret(""))
         assert client.get("/metrics", headers={"X-API-Key": ""}).status_code == 503
 
@@ -749,10 +746,25 @@ class TestMetricsRoutes:
         assert client_with_metrics.get(f"/metrics?key={API_KEY}").status_code == 200
         assert client_with_metrics.get("/metrics", headers=KEY).status_code == 200
 
-    def test_content_type_unchanged(self, client_with_metrics: TestClient) -> None:
-        """Flask's, charset and all (#28 item 4 is 4e's)"""
+    def test_not_there_when_disabled_whatever_the_key(self, client: TestClient) -> None:
+        assert client.get("/metrics").status_code == 404
+
+    def test_content_type(self, client_with_metrics: TestClient) -> None:
+        """interpose's, with one charset (#28 item 4: 0.10.x sent it twice)"""
         response = client_with_metrics.get("/metrics", headers=KEY)
-        assert response.headers["content-type"] == f"{metrics.content_type()}; charset=utf-8"
+        assert response.headers["content-type"] == "text/plain; version=0.0.4; charset=utf-8"
+        assert response.headers["content-type"] == metrics.CONTENT_TYPE
+
+    def test_build_info(self, client_with_metrics: TestClient) -> None:
+        body = client_with_metrics.get("/metrics", headers=KEY).text
+        assert f'qbt_rules_build_info{{version="{__version__}"}} 1\n' in body
+
+    def test_on_the_apps_registry(self, client_with_metrics: TestClient) -> None:
+        """template-python decision 0007: app.state.metrics is what /metrics renders."""
+        app = cast(Any, client_with_metrics.app)
+        body = client_with_metrics.get("/metrics", headers=KEY).text
+        assert body.startswith(app.state.metrics.render().split("\n", 1)[0])
+        assert {m.name for m in app.state.metrics} >= {"qbt_rules_build_info"}
 
     def test_state_gauges(
         self, client_with_metrics: TestClient, queue: MagicMock, worker: StubWorker
@@ -760,15 +772,16 @@ class TestMetricsRoutes:
         queue.get_queue_depth.return_value = 5
         worker.status = {"running": True, "last_job_completed": None}
         body = client_with_metrics.get("/metrics", headers=KEY).text
-        assert 'qbt_rules_queue_depth{backend="SQLiteQueue"} 5.0' in body
-        assert "qbt_rules_worker_running 1.0" in body
-        assert "qbt_rules_scheduler_entries 2.0" in body
+        assert 'qbt_rules_queue_depth{backend="SQLiteQueue"} 5\n' in body
+        assert "qbt_rules_worker_running 1\n" in body
+        assert "qbt_rules_scheduler_entries 2\n" in body
 
     def test_http_requests_are_counted_by_route_name(self, client_with_metrics: TestClient) -> None:
         client_with_metrics.get("/login")
         log_in(client_with_metrics)
         client_with_metrics.get("/jobs")
         client_with_metrics.get("/static/editor.js")
+        client_with_metrics.get("/api/stats", headers=KEY)  # an included router's route
         client_with_metrics.get("/metrics", headers=KEY)
         body = client_with_metrics.get("/metrics", headers=KEY).text
         for endpoint, method, status in [
@@ -776,6 +789,7 @@ class TestMetricsRoutes:
             ("login", "POST", 302),
             ("dashboard_jobs", "GET", 200),
             ("static", "GET", 200),
+            ("stats", "GET", 200),
         ]:
             line = f'endpoint="{endpoint}",method="{method}",status="{status}"'
             assert f"qbt_rules_http_requests_total{{{line}}}" in body

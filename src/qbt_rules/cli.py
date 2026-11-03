@@ -11,7 +11,6 @@ be loaded (an unknown command or option, a bad value, the 0.10.x flags-only form
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -116,7 +115,8 @@ def serve(config: ConfigOption = None) -> None:
             "backup_count": cfg.log_backup_count,
         }
     )
-    _init_metrics(cfg)
+    if cfg.metrics_enabled:
+        logger.info("Metrics enabled: /metrics (needs the API key)")
     # What it starts without but can't fully work without (no API key): it starts anyway,
     # so /api/health can say what's missing
     for problem in cfg.problems:
@@ -130,22 +130,6 @@ def serve(config: ConfigOption = None) -> None:
         server.serve(cfg)
     except ConfigError as e:
         _fail(str(e), EXIT_USAGE)
-
-
-def _init_metrics(cfg: Config) -> None:
-    """Point prometheus_client at a clean multiprocess directory before anything imports it.
-
-    TODO(4e): interpose's metrics replace prometheus_client and this.
-    """
-    from qbt_rules import metrics
-
-    if cfg.metrics_enabled:
-        cfg.metrics_multiproc_dir.mkdir(parents=True, exist_ok=True)
-        for stale in cfg.metrics_multiproc_dir.glob("*.db"):
-            stale.unlink()
-        os.environ["PROMETHEUS_MULTIPROC_DIR"] = str(cfg.metrics_multiproc_dir)
-        logger.info(f"Metrics enabled (multiproc dir: {cfg.metrics_multiproc_dir})")
-    metrics.init(enabled=cfg.metrics_enabled)
 
 
 # -- rules -------------------------------------------------------------------------------------

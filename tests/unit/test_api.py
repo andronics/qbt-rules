@@ -12,7 +12,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from qbt_rules import api
+from qbt_rules import api, metrics
 from qbt_rules.config import Config, load_config
 from qbt_rules.queue_manager import QueueManager
 from qbt_rules.worker import Worker
@@ -217,12 +217,16 @@ def test_openapi_documents_the_routes(settings: Config) -> None:
         "/api/rules/history/{version_id}",
         "/api/rules/catalog",
         "/api/config/source",
+        "/metrics",
     }
     # Every operation has a summary (the wiki's table) and a documented success body
-    for ops in paths.values():
+    for path, ops in paths.items():
         for op in ops.values():
             assert op["summary"]
             success = next(v for k, v in op["responses"].items() if k.startswith("2"))
+            if path == "/metrics":  # Prometheus text, not JSON
+                assert set(success["content"]) == {metrics.CONTENT_TYPE}
+                continue
             assert success["content"]["application/json"]["schema"]
     put = paths["/api/rules/source"]["put"]
     assert "requestBody" in put

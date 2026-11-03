@@ -25,8 +25,6 @@ dependencies = [
 [project.optional-dependencies]
 # The Redis queue backend (the image installs it: Copier answer image_extras)
 redis = ["redis>=5.0"]
-# TODO(4e): interpose's metrics replace prometheus_client
-metrics = ["prometheus-client>=0.20"]
 
 [project.scripts]
 qbt-rules = "qbt_rules.cli:main"
@@ -48,7 +46,6 @@ dev = [
     "fakeredis[lua]>=2.20",
     "requests-mock>=1.11",
     "redis>=5.0",
-    "prometheus-client>=0.20",
     "types-requests>=2.31",
     "types-croniter",
 ]
@@ -101,7 +98,6 @@ module = [
     "tests.unit.test_errors",
     "tests.unit.test_full_stack",
     "tests.unit.test_log_setup",
-    "tests.unit.test_metrics",
     "tests.unit.test_qbittorrent",
     "tests.unit.test_queue_manager",
     "tests.unit.test_redis_queue",

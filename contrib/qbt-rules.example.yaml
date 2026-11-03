@@ -87,9 +87,8 @@ integrations:
     timeout: "10"
 
 metrics:
-  # /metrics for Prometheus (needs the metrics extra)
+  # /metrics for Prometheus; it needs the API key (X-API-Key header or ?key=)
   enabled: false
-  multiproc_dir: /tmp/qbt-rules-metrics
 
 logging:
   # DEBUG, INFO, WARNING or ERROR
