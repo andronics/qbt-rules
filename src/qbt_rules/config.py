@@ -347,7 +347,7 @@ SETTINGS = Settings(
         Setting(
             "logging.http_access",
             False,
-            "Log every HTTP request, health checks included.",
+            "Log every HTTP request (uvicorn's access log); off, none is logged.",
         ),
     ),
     default_path=DEFAULT_CONFIG_PATH,

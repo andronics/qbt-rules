@@ -5,8 +5,8 @@ stops the worker and scheduler threads (api.BackgroundThreads) before the proces
 
 uvicorn's loggers propagate to the root logger that log_setup configured (the console, and
 logging.file when set, rotated by size). Its access log goes through AccessLogFilter, which
-removes the API key from every logged URL and, unless logging.http_access is on, leaves out
-the requests that only poll (health checks, readiness and metrics scrapes, static files).
+leaves out every request unless logging.http_access is on, and then removes the API key from
+every logged URL.
 """
 
 from __future__ import annotations
@@ -19,9 +19,6 @@ from qbt_rules.config import Config, ConfigError
 logger = logging.getLogger(__name__)
 
 ACCESS_LOGGER = "uvicorn.access"
-# Polled by Docker, Kubernetes and Prometheus: one line each every few seconds
-QUIET_PATHS = frozenset({"/healthz", "/readyz", "/api/health", "/metrics"})
-QUIET_PREFIXES = ("/static/",)
 REDACTED = "[REDACTED]"
 
 _KEY_PARAM = re.compile(r"(?i)([?&]key=)[^&#\s\"]*")
@@ -33,10 +30,12 @@ def redact_key(text: str) -> str:
 
 
 class AccessLogFilter(logging.Filter):
-    """uvicorn's access log, without API keys and (when quiet) without polling requests.
+    """uvicorn's access log: nothing when quiet (logging.http_access off), else without API keys.
 
-    uvicorn logs ``'%s - "%s %s HTTP/%s" %d'`` with (client, method, path and query,
-    HTTP version, status). Any other record on the logger is redacted as a whole message.
+    Quiet drops every record, not only the polling paths: the CLI's own requests (``execute
+    --wait`` polls ``/api/jobs/{id}`` every 2 s) and the dashboard's are requests like any other.
+    uvicorn logs ``'%s - "%s %s HTTP/%s" %d'`` with (client, method, path and query, HTTP
+    version, status). Any other record on the logger is redacted as a whole message.
     """
 
     def __init__(self, quiet: bool) -> None:
@@ -44,13 +43,12 @@ class AccessLogFilter(logging.Filter):
         self.quiet = quiet
 
     def filter(self, record: logging.LogRecord) -> bool:
+        if self.quiet:
+            return False
         args = record.args
         if isinstance(args, tuple) and len(args) == 5 and isinstance(args[2], str):
             client, method, _, version, status = args
             target: str = args[2]
-            path = target.split("?", 1)[0]
-            if self.quiet and (path in QUIET_PATHS or path.startswith(QUIET_PREFIXES)):
-                return False
             record.args = (client, method, redact_key(target), version, status)
             return True
         message = record.getMessage()
