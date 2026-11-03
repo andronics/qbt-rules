@@ -29,7 +29,7 @@ Generated from the code: don't edit, run `uv run scripts/gen-wiki.py`.
 <!-- generated:start cli -->
 ### `qbt-rules config`
 
-Print the effective configuration and where each value came from. Secrets are masked.
+Print the effective configuration and where each value came from. Secrets: set or unset.
 
 | Option | Environment variable | Description |
 |---|---|---|

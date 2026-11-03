@@ -262,7 +262,8 @@ _TRACEBACK_EXCEPTION_LINE = re.compile(
 def _summarize_error(error: str) -> str:
     """
     Extract the final exception's summary line(s) from a full Python
-    traceback (as stored by worker.py via traceback.format_exc())
+    traceback, as the worker stored one in a failed job's error until #41 (it
+    stores a one-line message now, which this returns unchanged)
 
     A traceback can be a chain of several exceptions ("During handling
     of the above exception..."), each contributing its own zero-indent

@@ -75,7 +75,16 @@ def test_config_shows_sources(write_config: Callable[..., Path]) -> None:
     assert result.exit_code == 0
     assert "logging.level = DEBUG  (file)" in result.stdout
     assert "rules.file = " in result.stdout
-    assert "server.api_key = ********  (default)" in result.stdout
+    assert "server.api_key = (unset)  (default)" in result.stdout
+
+
+def test_config_says_the_placeholder_key_is_unset(write_config: Callable[..., Path]) -> None:
+    from qbt_rules.config import PLACEHOLDER_API_KEY
+
+    path = write_config(f"server: {{api_key: {PLACEHOLDER_API_KEY}}}\n")
+    result = runner.invoke(app, ["config", "-c", str(path)])
+    assert "server.api_key = (unset)  (file" in result.stdout
+    assert PLACEHOLDER_API_KEY not in result.stdout
 
 
 def test_config_error_exits_2(write_config: Callable[..., Path]) -> None:
@@ -94,7 +103,7 @@ def test_secrets_are_masked(
     secret = Setting(SETTINGS[0].key, SETTINGS[0].default, SETTINGS[0].help, secret=True)
     monkeypatch.setattr(cli, "SETTINGS", (secret, *SETTINGS[1:]))
     result = runner.invoke(app, ["config", "-c", str(write_config(""))])
-    assert f"{SETTINGS[0].key} = ********" in result.stdout
+    assert f"{SETTINGS[0].key} = ******** (set)" in result.stdout
 
 
 def test_config_masks_a_set_key_and_lists_the_schedule(write_config: Callable[..., Path]) -> None:
@@ -104,7 +113,7 @@ def test_config_masks_a_set_key_and_lists_the_schedule(write_config: Callable[..
     result = runner.invoke(app, ["config", "-c", str(path)])
     assert result.exit_code == 0
     assert "hunter2" not in result.output
-    assert "server.api_key = ********  (file)" in result.stdout
+    assert "server.api_key = ******** (set)  (file)" in result.stdout
     assert "schedule[0] = 0 * * * * -> hourly" in result.stdout
     assert "warning:" not in result.stderr
 

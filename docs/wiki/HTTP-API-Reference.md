@@ -80,6 +80,8 @@ Queue a job for execution.
 
 Errors: `400` invalid parameters, `401` unauthorized, `403` a session request without its CSRF token, `500` internal error.
 
+A failed job's `error` is one line naming the exception, for example `ConnectionError: Cannot reach qBittorrent server (Host: http://qbittorrent:8080; Error: ...; Fix: Check that qBittorrent is running and the host/port are correct)`, at most 500 characters. The full traceback is in the server log (`docker logs`). *(Changed in 0.11: it used to hold the whole traceback, which `execute --wait` and `jobs status` printed.)*
+
 ### GET /api/jobs
 
 List jobs with filtering and pagination.
@@ -253,4 +255,4 @@ Every non-2xx response follows the same shape:
 | `500` | Unhandled server-side error. The body never carries the exception's text: check `docker logs` |
 | `503` | `/api/health` reporting the server itself is unhealthy, `/readyz` not ready, or, on any authenticated endpoint, no API key configured on the server (`"message": "No API key is configured on the server: ..."`) |
 
-The rules editor's endpoints add `412` (stale ETag), `422` (invalid rules), `428` (no ETag) and `503` (no config): see [above](#rules-editor-endpoints). *(Changed in 0.11: `405` used to be an HTML page, and some `500`s carried the exception's text.)*
+The rules editor's endpoints add `412` (stale ETag), `422` (invalid rules), `428` (no ETag) and `503` (no config): see [above](#rules-editor-endpoints). The `error` names are fixed, whatever Python version runs the server: `413` is `Payload Too Large` and `422` is `Unprocessable Entity`, as in 0.10.x (Python 3.13 renamed them `Content Too Large` and `Unprocessable Content`), and `414` and `416`, if they ever reach the API, are `URI Too Long` and `Requested Range Not Satisfiable`. *(Changed in 0.11: `405` used to be an HTML page, and some `500`s carried the exception's text.)*
