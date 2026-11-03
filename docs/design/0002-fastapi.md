@@ -51,7 +51,9 @@ status, headers and body byte for byte, and #28 lists the inconsistencies they f
   people and monitors.
 - **Access log:** uvicorn's, through `server.AccessLogFilter`: every logged URL has `key=` replaced by
   `[REDACTED]`, and with `logging.http_access` off the polling paths (probes, `/metrics`, `/static/`) are
-  left out. Dashboard pages are logged now, since the key no longer shows.
+  left out. Dashboard pages are logged now, since the key no longer shows. **Amended (0.11.1, #52):**
+  off now leaves out every request; the CLI's own polling of `/api/jobs/{id}` was still logged, and
+  "off" read as no access log at all. The redaction applies whenever it's on.
 - **The 2 MB body limit** is checked before routing from `Content-Length`, and while reading a body sent
   without one.
 

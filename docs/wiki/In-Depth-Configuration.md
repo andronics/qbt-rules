@@ -80,7 +80,7 @@ Generated from the code: don't edit the table, run `uv run scripts/gen-wiki.py`.
 | `logging.max_bytes` | `QBT_RULES_LOGGING_MAX_BYTES` | `10485760` | Rotate the log file at this size; `0` never rotates. |
 | `logging.backup_count` | `QBT_RULES_LOGGING_BACKUP_COUNT` | `5` | Rotated log files to keep. |
 | `logging.trace_mode` | `QBT_RULES_LOGGING_TRACE_MODE` | `False` | Add module, function and line to each log line. |
-| `logging.http_access` | `QBT_RULES_LOGGING_HTTP_ACCESS` | `False` | Log every HTTP request, health checks included. |
+| `logging.http_access` | `QBT_RULES_LOGGING_HTTP_ACCESS` | `False` | Log every HTTP request (uvicorn's access log); off, none is logged. |
 <!-- generated:end settings -->
 
 `schedule` isn't in the table: see [the schedule](#where-configuration-comes-from) above and [Scheduling](Scheduling).
@@ -92,7 +92,7 @@ A few settings need more than a line:
 - **`metrics.enabled`**: serves `/metrics`, which needs the API key. See [Metrics](Metrics) for the metrics and a Prometheus scrape config. 0.10.x's `metrics.multiproc_dir` (and `QBT_RULES_METRICS_MULTIPROC_DIR`, `PROMETHEUS_MULTIPROC_DIR`) is refused: remove it.
 - **`logging.level`**: applies to the console and the log file. `DEBUG` logs every rule evaluation per torrent.
 - **`logging.max_bytes`**: the file is renamed to `qbt-rules.log.1` (older ones shift to `.2`, `.3`, ...) and a new one started. The server is one process, so one handler writes and rotates it.
-- **`logging.http_access`**: off, the access log leaves out the requests that only poll (`/healthz`, `/readyz`, `/api/health`, `/metrics`, `/static/...`); on, every request is logged. Either way every logged URL has its `key=` value replaced with `[REDACTED]`.
+- **`logging.http_access`**: off (the default), no request is logged: not the probes and scrapes, nor the dashboard's, nor the CLI's own (`execute --wait` and `jobs status` poll `/api/jobs/{id}`). On, uvicorn logs every request, with each URL's `key=` value replaced by `[REDACTED]`. Until 0.11.1, off left out only the polling paths (`/healthz`, `/readyz`, `/api/health`, `/metrics`, `/static/...`).
 - **`server.workers`**: must be `1`. The server is one uvicorn process (no Gunicorn), so a 0.10.x config with a higher value is refused at startup; remove the setting.
 
 ### Migrating from 0.10.x
