@@ -263,7 +263,7 @@ class QueueManager(ABC):
         }
 
 
-def create_queue(backend: str = "sqlite", **kwargs) -> QueueManager:
+def create_queue(backend: str = "sqlite", **kwargs: Any) -> QueueManager:
     """
     Factory function to create queue backend
 

@@ -9,10 +9,12 @@ Supports two modes:
 Job management commands: --list-jobs, --job-status, --cancel-job, --stats
 """
 
+import argparse
 import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import requests
 
@@ -20,6 +22,7 @@ from qbt_rules import cli_ui
 from qbt_rules.arguments import create_parser, process_args, validate_torrent_hash
 from qbt_rules.config_loader import (
     ENV_VAR_MAP,
+    Config,
     load_config,
     parse_bool,
     parse_int,
@@ -30,12 +33,17 @@ from qbt_rules.errors import handle_errors
 from qbt_rules.log_setup import DEFAULT_BACKUP_COUNT, DEFAULT_MAX_BYTES, get_logger, setup_logging
 from qbt_rules.qbittorrent import QBittorrentAPI
 
-logger = None  # Set after logging is configured
+# logging.getLogger() returns the same object before and after setup_logging()
+logger = get_logger(__name__)
 
 
 def resolve_section_config(
-    args, config_obj, section: str, fields: dict, parsers: dict | None = None
-) -> dict:
+    args: argparse.Namespace,
+    config_obj: Config,
+    section: str,
+    fields: dict[str, Any],
+    parsers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Generic resolver for a config.yml section's scalar fields
 
@@ -75,7 +83,7 @@ def resolve_section_config(
     return result
 
 
-def get_logging_config(args, config_obj) -> dict:
+def get_logging_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
     Get logging configuration from CLI args, env vars, or config file
 
@@ -166,7 +174,7 @@ def get_logging_config(args, config_obj) -> dict:
     }
 
 
-def get_qbittorrent_config(args, config_obj) -> dict:
+def get_qbittorrent_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
     Get qBittorrent connection configuration from CLI args, env vars, or
     config file
@@ -186,7 +194,7 @@ def get_qbittorrent_config(args, config_obj) -> dict:
     )
 
 
-def get_server_config(args, config_obj) -> dict:
+def get_server_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
     Get server configuration from CLI args, env vars, or config file
 
@@ -212,7 +220,7 @@ def get_server_config(args, config_obj) -> dict:
 PLACEHOLDER_API_KEY = "your-secure-api-key-here-generate-a-random-key"
 
 
-def get_client_config(args, config_obj) -> dict:
+def get_client_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
     Get client configuration from CLI args, env vars, or config file
 
@@ -242,7 +250,7 @@ def get_client_config(args, config_obj) -> dict:
     return client
 
 
-def get_queue_config(args, config_obj) -> dict:
+def get_queue_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
     Get queue configuration from CLI args, env vars, or config file
 
@@ -263,7 +271,7 @@ def get_queue_config(args, config_obj) -> dict:
     )
 
 
-def get_notifications_config(args, config_obj) -> dict:
+def get_notifications_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
     Get notifications configuration from CLI args, env vars, or config file
 
@@ -286,7 +294,7 @@ def get_notifications_config(args, config_obj) -> dict:
     )
 
 
-def get_integrations_config(args, config_obj) -> dict:
+def get_integrations_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
     Get integrations configuration (Sonarr/Radarr) from CLI args, env vars,
     or config file
@@ -340,7 +348,7 @@ def get_integrations_config(args, config_obj) -> dict:
     }
 
 
-def get_metrics_config(args, config_obj) -> dict:
+def get_metrics_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
     Get Prometheus metrics configuration from CLI args, env vars, or config file
 
@@ -359,7 +367,7 @@ def get_metrics_config(args, config_obj) -> dict:
     )
 
 
-def get_schedule_config(args, config_obj) -> list:
+def get_schedule_config(args: argparse.Namespace, config_obj: Config) -> list[dict[str, Any]]:
     """
     Get the schedule configuration (list of {cron, context} entries)
 
@@ -375,7 +383,9 @@ def get_schedule_config(args, config_obj) -> list:
     return config_obj.schedule
 
 
-def run_server_mode(args, config_obj, logging_config):
+def run_server_mode(
+    args: argparse.Namespace, config_obj: Config, logging_config: dict[str, Any]
+) -> None:
     """
     Run server mode - Start HTTP API server with worker
 
@@ -501,7 +511,7 @@ def run_server_mode(args, config_obj, logging_config):
         logger.info("Server stopped")
 
 
-def run_client_mode(args, config_obj):
+def run_client_mode(args: argparse.Namespace, config_obj: Config) -> None:
     """
     Run client mode - Submit job to server via HTTP API
 
@@ -584,7 +594,7 @@ def run_client_mode(args, config_obj):
         sys.exit(1)
 
 
-def _cancel_unconfirmed_dry_run(server_url: str, api_key: str, job_id: str):
+def _cancel_unconfirmed_dry_run(server_url: str, api_key: str, job_id: str) -> None:
     """Cancel a job the server queued without the dry-run the client asked for"""
     logger.error(
         "The server didn't confirm dry-run for this job (it's older than "
@@ -609,7 +619,7 @@ def _cancel_unconfirmed_dry_run(server_url: str, api_key: str, job_id: str):
     )
 
 
-def wait_for_job(server_url: str, api_key: str, job_id: str):
+def wait_for_job(server_url: str, api_key: str, job_id: str) -> None:
     """
     Poll server until job completes
 
@@ -664,7 +674,7 @@ def wait_for_job(server_url: str, api_key: str, job_id: str):
     sys.exit(1)
 
 
-def list_jobs_command(args, config_obj):
+def list_jobs_command(args: argparse.Namespace, config_obj: Config) -> None:
     """List jobs command"""
     client_config = get_client_config(args, config_obj)
     server_url = client_config["server_url"].rstrip("/")
@@ -710,7 +720,7 @@ def list_jobs_command(args, config_obj):
         sys.exit(1)
 
 
-def job_status_command(args, config_obj):
+def job_status_command(args: argparse.Namespace, config_obj: Config) -> None:
     """Get job status command"""
     client_config = get_client_config(args, config_obj)
     server_url = client_config["server_url"].rstrip("/")
@@ -760,7 +770,7 @@ def job_status_command(args, config_obj):
         sys.exit(1)
 
 
-def cancel_job_command(args, config_obj):
+def cancel_job_command(args: argparse.Namespace, config_obj: Config) -> None:
     """Cancel job command"""
     client_config = get_client_config(args, config_obj)
     server_url = client_config["server_url"].rstrip("/")
@@ -792,7 +802,7 @@ def cancel_job_command(args, config_obj):
         sys.exit(1)
 
 
-def stats_command(args, config_obj):
+def stats_command(args: argparse.Namespace, config_obj: Config) -> None:
     """Get server stats command"""
     client_config = get_client_config(args, config_obj)
     server_url = client_config["server_url"].rstrip("/")
@@ -863,10 +873,8 @@ def stats_command(args, config_obj):
 
 
 @handle_errors
-def main():
+def main() -> None:
     """Main entry point for qbt-rules CLI"""
-    global logger
-
     # Parse arguments
     parser = create_parser()
     args = parser.parse_args()
@@ -880,7 +888,6 @@ def main():
     # Setup logging
     logging_config = get_logging_config(args, config)
     setup_logging(logging_config)
-    logger = get_logger(__name__)
 
     # Handle utility arguments (--validate, --list-rules)
     from qbt_rules.arguments import handle_utility_args

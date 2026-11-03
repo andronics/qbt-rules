@@ -54,6 +54,7 @@ dev = [
     "types-requests>=2.31.0",
     "types-PyYAML>=6.0.12",
     "types-croniter",
+    "types-gunicorn",
 ]
 
 [project.urls]
@@ -136,16 +137,3 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "S", "T20"]
 python_version = "3.11"
 strict = true
 files = ["src/qbt_rules"]
-
-# Modules not yet under strict typing. Each follow-up PR of the template-python
-# migration removes its modules from this list; it must end up empty.
-[[tool.mypy.overrides]]
-module = [
-    "qbt_rules.queue_manager",
-    "qbt_rules.queue_backends.*",
-    "qbt_rules.worker",
-    "qbt_rules.scheduler",
-    "qbt_rules.web",
-    "qbt_rules.legacy_cli",
-]
-ignore_errors = true
