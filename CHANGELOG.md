@@ -7,6 +7,39 @@ or PR title instead. See the wiki's Release-Process page.
 Releases up to 0.10.2 were written by the old tag-push release workflow, in the
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
 
+## [0.11.0](https://github.com/andronics/qbt-rules/compare/v0.10.2...v0.11.0) (2026-11-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* Upgrading from 0.10.x needs more than a new tag: read **[Upgrading to 0.11](https://github.com/andronics/qbt-rules/wiki/Upgrading-to-0.11)** first, and copy (don't move) your `/config` files.
+    * **Paths:** `/config` is no longer read, with no fallback. `config.yml` → `/etc/qbt-rules/config.yaml` (renamed; read-only is fine); `rules.yml`, `qbt-rules.db` and `.history/` → `/var/lib/qbt-rules` (writable, mounted as a directory). Nothing is created on first start.
+    * **Settings:** `engine.dry_run` is now `dry_run`; `logging.file`, `queue.sqlite_path` and `rules.file` under `/config`, `server.workers` other than 1, `metrics.multiproc_dir`, `CONFIG_DIR`, `QBT_RULES_CONFIG_DIR`, `QBT_RULES_LOG_LEVEL` (use `QBT_RULES_LOGGING_LEVEL`), `QBT_RULES_METRICS_MULTIPROC_DIR` and `PROMETHEUS_MULTIPROC_DIR` are refused at startup, all listed in one error. `server.host`/`server.port` (`QBT_RULES_SERVER_HOST`/`_PORT`) are deprecated aliases of `listen.*`, with a warning.
+    * **Server:** the image runs `qbt-rules serve`, one uvicorn process; Gunicorn and `server.workers` are gone, and jobs run one at a time. Probes: `/healthz` (liveness) and `/readyz` (readiness) on port 5000.
+    * **CLI:** commands first, no flags-only form and no alias. qBittorrent's "Run external program" becomes `qbt-rules execute --context torrent-imported --hash "%I"` (in Docker: `docker exec qbt-rules qbt-rules execute …`).
+    * **API:** every timestamp is ISO 8601 (SQLite used RFC 822 dates).
+    * **Dashboard:** everyone is logged out once (new session cookie); `?key=` redirects without the key; the login form needs its CSRF token.
+    * **Logs** go to the console only, unless `logging.file` is set.
+    * **The first start deletes finished jobs older than `queue.cleanup_after`** (default 7d), which 0.10.x never applied: about 80% of one production history.
+    * Python 3.13 or later; the `metrics` extra is gone.
+
+### ✨ Features
+
+* qbt-rules on the templates, FastAPI and the Typer CLI (0.11) ([fa3ea20](https://github.com/andronics/qbt-rules/commit/fa3ea200670285c99c5c81e5dafdba6dce55c6fe))
+
+
+### ♻️ Refactoring
+
+* adopt template-python's ruff rules and fix the findings ([#31](https://github.com/andronics/qbt-rules/issues/31)) ([00e9be8](https://github.com/andronics/qbt-rules/commit/00e9be885cf88124ec11cecf64bf53efdaad1937))
+* rename modules that clash with the template skeleton ([#29](https://github.com/andronics/qbt-rules/issues/29)) ([487a948](https://github.com/andronics/qbt-rules/commit/487a948a73f8471f8ae4a55a2e8acd95a335183b))
+* strict mypy for the engine, resolver, config and support modules ([#32](https://github.com/andronics/qbt-rules/issues/32)) ([ee326bb](https://github.com/andronics/qbt-rules/commit/ee326bbfbac8009122a9386354ef72efac45ee0d))
+* strict mypy for the queue, worker, scheduler, web and legacy CLI ([#33](https://github.com/andronics/qbt-rules/issues/33)) ([c0f7df8](https://github.com/andronics/qbt-rules/commit/c0f7df87d2be5cc38b654e40c82644fe7655ba5c))
+
+
+### 📚 Documentation
+
+* update CHANGELOG.md for v0.10.2 [skip ci] ([2786727](https://github.com/andronics/qbt-rules/commit/27867276d4cdf0d066629a6f8764c7056e95e049))
+
 ## [0.10.2] - 2026-11-03
 
 ### ✨ New Features
