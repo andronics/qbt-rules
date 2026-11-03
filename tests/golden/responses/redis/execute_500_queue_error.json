@@ -1,0 +1,11 @@
+{
+  "case": "execute_500_queue_error",
+  "backend": "redis",
+  "request": "POST /api/execute",
+  "status": 500,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Internal Server Error\",\"message\":\"queue backend unavailable\"}\n"
+}

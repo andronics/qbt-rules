@@ -1,0 +1,13 @@
+{
+  "case": "rules_save_412_stale_etag",
+  "backend": "redis",
+  "request": "PUT /api/rules/source",
+  "status": 412,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [
+    "current.modified_at"
+  ],
+  "masked": [],
+  "body": "{\"current\":{\"content\":\"version: 1\\nrules:\\n  - id: pause-stalled  # keep this comment\\n    conditions:\\n      all:\\n        - field: info.state\\n          operator: ==\\n          value: stalledDL\\n    actions:\\n      - type: stop\\n# edited elsewhere\\n\",\"etag\":\"9af84aa72c3c34f63fe0c9303869b179d59b18e024acabbbeac6d62bb20538dc\",\"modified_at\":\"2026-11-03T12:30:00+00:00\",\"size\":217},\"error\":\"Precondition Failed\",\"message\":\"rules.yml changed since you opened it\"}\n"
+}

@@ -1,0 +1,11 @@
+{
+  "case": "rules_validate_413_oversized",
+  "backend": "sqlite",
+  "request": "POST /api/rules/validate",
+  "status": 413,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Payload Too Large\",\"message\":\"Request body exceeds 2 MB\"}\n"
+}

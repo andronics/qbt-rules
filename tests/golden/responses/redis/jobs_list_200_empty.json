@@ -1,0 +1,11 @@
+{
+  "case": "jobs_list_200_empty",
+  "backend": "redis",
+  "request": "GET /api/jobs",
+  "status": 200,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"jobs\":[],\"limit\":50,\"offset\":0,\"total\":0}\n"
+}

@@ -1,0 +1,13 @@
+{
+  "case": "health_503_worker_dead",
+  "backend": "redis",
+  "request": "GET /api/health",
+  "status": 503,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [
+    "timestamp"
+  ],
+  "masked": [],
+  "body": "{\"errors\":[\"Worker thread not running\"],\"status\":\"unhealthy\",\"timestamp\":\"2026-11-03T12:30:00+00:00\"}\n"
+}

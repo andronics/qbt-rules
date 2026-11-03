@@ -6,7 +6,7 @@ handlers) is driven through the Flask test client against a real queue --
 SQLite and fakeredis -- and its status, Content-Type, selected headers
 (SELECTED_HEADERS) and exact body are compared with a stored golden file:
 
-    tests/golden/data/<backend>/<case>.json
+    tests/golden/responses/<backend>/<case>.json
 
 Comparison is exact: the body is stored as the literal response text and
 must match byte for byte. A missing golden file is a failure.
@@ -90,7 +90,7 @@ from qbt_rules import config_store, metrics, queue_manager, server
 from qbt_rules.queue_backends import sqlite_queue
 from qbt_rules.queue_manager import JobStatus, QueueManager
 
-GOLDEN_DIR = Path(__file__).parent / "data"
+GOLDEN_DIR = Path(__file__).parent / "responses"  # not data/: .gitignore excludes it
 UPDATE_GOLDENS = os.environ.get("QBT_RULES_UPDATE_GOLDENS") == "1"
 
 API_KEY = "golden-api-key"

@@ -1,0 +1,11 @@
+{
+  "case": "config_source_401",
+  "backend": "redis",
+  "request": "GET /api/config/source",
+  "status": 401,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Unauthorized\",\"message\":\"Invalid or missing API key\"}\n"
+}

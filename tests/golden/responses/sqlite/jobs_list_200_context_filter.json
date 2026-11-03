@@ -1,0 +1,15 @@
+{
+  "case": "jobs_list_200_context_filter",
+  "backend": "sqlite",
+  "request": "GET /api/jobs?context=torrent-imported",
+  "status": 200,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [
+    "jobs[0].completed_at",
+    "jobs[0].created_at",
+    "jobs[0].started_at"
+  ],
+  "masked": [],
+  "body": "{\"jobs\":[{\"completed_at\":\"Tue, 03 Nov 2026 12:01:02 GMT\",\"context\":\"torrent-imported\",\"created_at\":\"Tue, 03 Nov 2026 12:01:00 GMT\",\"dry_run\":false,\"error\":\"Traceback (most recent call last):\\n  File \\\"worker.py\\\", line 170, in _process_job\\nqbt_rules.errors.ConnectionError: Cannot reach qBittorrent\\n\",\"hash\":\"abc123def456\",\"job_id\":\"00000000-0000-4000-8000-000000000002\",\"result\":null,\"started_at\":\"Tue, 03 Nov 2026 12:01:01 GMT\",\"status\":\"failed\"}],\"limit\":50,\"offset\":0,\"total\":3}\n"
+}

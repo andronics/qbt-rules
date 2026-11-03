@@ -1,0 +1,13 @@
+{
+  "case": "rules_history_200",
+  "backend": "redis",
+  "request": "GET /api/rules/history",
+  "status": 200,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [
+    "versions[0].saved_at"
+  ],
+  "masked": [],
+  "body": "{\"versions\":[{\"id\":\"20261103T123500000000Z\",\"saved_at\":\"2026-11-03T12:35:00+00:00\",\"size\":198}]}\n"
+}

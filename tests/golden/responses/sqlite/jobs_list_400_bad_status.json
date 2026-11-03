@@ -1,0 +1,11 @@
+{
+  "case": "jobs_list_400_bad_status",
+  "backend": "sqlite",
+  "request": "GET /api/jobs?status=bogus",
+  "status": 400,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Bad Request\",\"message\":\"Invalid status: bogus\"}\n"
+}

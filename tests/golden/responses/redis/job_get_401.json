@@ -1,0 +1,11 @@
+{
+  "case": "job_get_401",
+  "backend": "redis",
+  "request": "GET /api/jobs/no-such-job",
+  "status": 401,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Unauthorized\",\"message\":\"Invalid or missing API key\"}\n"
+}

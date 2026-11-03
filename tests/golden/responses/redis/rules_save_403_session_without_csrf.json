@@ -1,0 +1,11 @@
+{
+  "case": "rules_save_403_session_without_csrf",
+  "backend": "redis",
+  "request": "PUT /api/rules/source",
+  "status": 403,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Forbidden\",\"message\":\"Missing or invalid X-CSRF-Token header -- reload the page and try again\"}\n"
+}

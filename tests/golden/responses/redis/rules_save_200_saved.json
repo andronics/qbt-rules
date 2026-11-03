@@ -1,0 +1,15 @@
+{
+  "case": "rules_save_200_saved",
+  "backend": "redis",
+  "request": "PUT /api/rules/source",
+  "status": 200,
+  "content_type": "application/json",
+  "headers": {
+    "ETag": "\"5d259612c15311b9db75ce74ae1ba8d9537c4563dae05dc4f3dff1fe39628795\""
+  },
+  "timestamp_paths": [
+    "modified_at"
+  ],
+  "masked": [],
+  "body": "{\"etag\":\"5d259612c15311b9db75ce74ae1ba8d9537c4563dae05dc4f3dff1fe39628795\",\"modified_at\":\"2026-11-03T12:35:00+00:00\",\"saved\":true,\"size\":198,\"validation\":{\"counts\":{\"error\":0,\"info\":0,\"warning\":0},\"issues\":[],\"summary\":{\"contexts\":[],\"refs\":{\"actions\":[],\"conditions\":[],\"vars\":[]},\"rules\":[{\"context\":null,\"description\":null,\"enabled\":true,\"id\":\"pause-stalled\",\"index\":0,\"line\":3,\"stop_on_match\":false}]},\"valid\":true}}\n"
+}

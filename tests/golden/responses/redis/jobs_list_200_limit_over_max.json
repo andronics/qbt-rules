@@ -1,0 +1,19 @@
+{
+  "case": "jobs_list_200_limit_over_max",
+  "backend": "redis",
+  "request": "GET /api/jobs?limit=500",
+  "status": 200,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [
+    "jobs[0].created_at",
+    "jobs[1].completed_at",
+    "jobs[1].created_at",
+    "jobs[1].started_at",
+    "jobs[2].completed_at",
+    "jobs[2].created_at",
+    "jobs[2].started_at"
+  ],
+  "masked": [],
+  "body": "{\"jobs\":[{\"completed_at\":null,\"context\":null,\"created_at\":\"2026-11-03T12:02:00+00:00\",\"dry_run\":true,\"error\":null,\"hash\":null,\"job_id\":\"00000000-0000-4000-8000-000000000003\",\"result\":null,\"started_at\":null,\"status\":\"pending\"},{\"completed_at\":\"2026-11-03T12:01:02+00:00\",\"context\":\"torrent-imported\",\"created_at\":\"2026-11-03T12:01:00+00:00\",\"dry_run\":false,\"error\":\"Traceback (most recent call last):\\n  File \\\"worker.py\\\", line 170, in _process_job\\nqbt_rules.errors.ConnectionError: Cannot reach qBittorrent\\n\",\"hash\":\"abc123def456\",\"job_id\":\"00000000-0000-4000-8000-000000000002\",\"result\":null,\"started_at\":\"2026-11-03T12:01:01+00:00\",\"status\":\"failed\"},{\"completed_at\":\"2026-11-03T12:00:04+00:00\",\"context\":\"weekly-cleanup\",\"created_at\":\"2026-11-03T12:00:00+00:00\",\"dry_run\":false,\"error\":null,\"hash\":null,\"job_id\":\"00000000-0000-4000-8000-000000000001\",\"result\":{\"actions_executed\":2,\"rules_matched\":1,\"torrents_processed\":12},\"started_at\":\"2026-11-03T12:00:01+00:00\",\"status\":\"completed\"}],\"limit\":500,\"offset\":0,\"total\":3}\n"
+}

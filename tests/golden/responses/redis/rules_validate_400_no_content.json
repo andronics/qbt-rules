@@ -1,0 +1,11 @@
+{
+  "case": "rules_validate_400_no_content",
+  "backend": "redis",
+  "request": "POST /api/rules/validate",
+  "status": 400,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Bad Request\",\"message\":\"Body must be JSON with a 'content' string\"}\n"
+}

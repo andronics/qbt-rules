@@ -1,0 +1,11 @@
+{
+  "case": "rules_save_401",
+  "backend": "sqlite",
+  "request": "PUT /api/rules/source",
+  "status": 401,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Unauthorized\",\"message\":\"Invalid or missing API key\"}\n"
+}

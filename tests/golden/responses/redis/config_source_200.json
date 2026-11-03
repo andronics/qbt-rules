@@ -1,0 +1,15 @@
+{
+  "case": "config_source_200",
+  "backend": "redis",
+  "request": "GET /api/config/source",
+  "status": 200,
+  "content_type": "application/json",
+  "headers": {
+    "Cache-Control": "no-store"
+  },
+  "timestamp_paths": [],
+  "masked": [
+    "config directory -> <config_dir>"
+  ],
+  "body": "{\"content\":\"server:\\n  api_key: \\\"<redacted>\\\"\\nqbittorrent:\\n  host: http://localhost:8080\\n  username: admin\\n  password: \\\"<redacted>\\\"\\nschedule:\\n  - {cron: '0 * * * *', context: hourly}\\n  - {cron: '0 3 * * 0', context: weekly-cleanup}\\n\",\"issues\":[],\"path\":\"<config_dir>/config.yml\",\"redacted\":[\"server.api_key\",\"qbittorrent.password\"]}\n"
+}

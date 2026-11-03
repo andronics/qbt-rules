@@ -1,0 +1,11 @@
+{
+  "case": "execute_400_bad_dry_run",
+  "backend": "redis",
+  "request": "POST /api/execute?dry_run=maybe",
+  "status": 400,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Bad Request\",\"message\":\"dry_run must be one of 0, 1, false, no, off, on, true, yes\"}\n"
+}

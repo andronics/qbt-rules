@@ -1,0 +1,11 @@
+{
+  "case": "job_cancel_400_not_pending",
+  "backend": "redis",
+  "request": "DELETE /api/jobs/00000000-0000-4000-8000-000000000001",
+  "status": 400,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Bad Request\",\"message\":\"Cannot cancel job in status: completed\"}\n"
+}

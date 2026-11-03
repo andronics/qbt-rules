@@ -1,0 +1,18 @@
+{
+  "case": "rules_source_200_editor_disabled",
+  "backend": "redis",
+  "request": "GET /api/rules/source",
+  "status": 200,
+  "content_type": "application/json",
+  "headers": {
+    "ETag": "\"417de8a2a9429d66844bcdb2d395bb78515fb6447b314e068eb58a076b4dac5f\"",
+    "Cache-Control": "no-store"
+  },
+  "timestamp_paths": [
+    "modified_at"
+  ],
+  "masked": [
+    "config directory -> <config_dir>"
+  ],
+  "body": "{\"content\":\"version: 1\\nrules:\\n  - id: pause-stalled  # keep this comment\\n    conditions:\\n      all:\\n        - field: info.state\\n          operator: ==\\n          value: stalledDL\\n    actions:\\n      - type: stop\\n\",\"editable\":false,\"etag\":\"417de8a2a9429d66844bcdb2d395bb78515fb6447b314e068eb58a076b4dac5f\",\"modified_at\":\"2026-11-03T12:30:00+00:00\",\"path\":\"<config_dir>/rules.yml\",\"readonly_reason\":\"Saving is turned off (server.editor_enabled: false)\",\"size\":198}\n"
+}

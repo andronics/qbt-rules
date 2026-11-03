@@ -1,0 +1,11 @@
+{
+  "case": "jobs_list_500_non_integer_limit",
+  "backend": "sqlite",
+  "request": "GET /api/jobs?limit=abc",
+  "status": 500,
+  "content_type": "application/json",
+  "headers": {},
+  "timestamp_paths": [],
+  "masked": [],
+  "body": "{\"error\":\"Internal Server Error\",\"message\":\"An unexpected error occurred\"}\n"
+}
