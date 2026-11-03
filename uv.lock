@@ -1100,7 +1100,7 @@ provides-extras = ["redis"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "fakeredis", extras = ["lua"], specifier = ">=2.20" },
+    { name = "fakeredis", extras = ["lua"], specifier = ">=2.40.0" },
     { name = "httpx2", specifier = ">=2.0" },
     { name = "mypy", specifier = ">=1.15" },
     { name = "pytest", specifier = ">=8.3" },

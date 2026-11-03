@@ -43,7 +43,7 @@ dev = [
     "types-pyyaml",
     "httpx2>=2.0",
     "pytest-mock>=3.12",
-    "fakeredis[lua]>=2.20",
+    "fakeredis[lua]>=2.40.0",
     "requests-mock>=1.11",
     "redis>=5.0",
     "types-requests>=2.31",
