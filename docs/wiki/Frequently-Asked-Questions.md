@@ -514,7 +514,7 @@ A: The qbt-rules server itself runs continuously inside its container — a syst
 
 ### Q: Can I run multiple instances?
 
-A: You only need one qbt-rules server per qBittorrent instance — it's a persistent client-server deployment, not a per-schedule process you spin up and tear down. If jobs are backing up under load, increase `server.workers` in `config.yaml` rather than running separate containers. Separate *workloads* (frequent webhook-driven categorization vs. a daily cleanup sweep) are handled by using different `context` values against the same server, not by running different instances — see [Advanced Topics](Advanced-Topics) for scaling guidance.
+A: You only need one qbt-rules server per qBittorrent instance — it's a persistent client-server deployment, not a per-schedule process you spin up and tear down. Don't run a second server against the same qBittorrent: its scheduler would fire every entry again. Jobs run one at a time, in order. Separate *workloads* (frequent webhook-driven categorization vs. a daily cleanup sweep) are handled by using different `context` values against the same server, not by running different instances — see [Advanced Topics](Advanced-Topics) for scaling guidance.
 
 ### Q: How do I integrate with Sonarr/Radarr?
 

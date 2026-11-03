@@ -9,5 +9,5 @@
     "created_at"
   ],
   "masked": [],
-  "body": "{\"completed_at\":null,\"context\":null,\"created_at\":\"Tue, 03 Nov 2026 12:30:00 GMT\",\"dry_run\":true,\"error\":null,\"hash\":null,\"job_id\":\"00000000-0000-4000-8000-000000000001\",\"result\":null,\"started_at\":null,\"status\":\"pending\"}\n"
+  "body": "{\"completed_at\":null,\"context\":null,\"created_at\":\"2026-11-03T12:30:00+00:00\",\"dry_run\":true,\"error\":null,\"hash\":null,\"job_id\":\"00000000-0000-4000-8000-000000000001\",\"result\":null,\"started_at\":null,\"status\":\"pending\"}\n"
 }

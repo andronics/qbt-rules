@@ -85,7 +85,7 @@ ENV_CASES = [
     ("QBT_RULES_DRY_RUN", "0", "dry_run", False),
     ("QBT_RULES_RULES_FILE", "/srv/rules.yml", "rules_file", Path("/srv/rules.yml")),
     ("QBT_RULES_SERVER_API_KEY", "k3y", "api_key", Secret("k3y")),
-    ("QBT_RULES_SERVER_WORKERS", "3", "workers", 3),
+    ("QBT_RULES_SERVER_WORKERS", "1", "workers", 1),
     ("QBT_RULES_SERVER_EDITOR_ENABLED", "false", "editor_enabled", False),
     ("QBT_RULES_CLIENT_SERVER_URL", "http://qbtr:5000", "client_server_url", "http://qbtr:5000"),
     ("QBT_RULES_CLIENT_API_KEY", "c1ient", "client_api_key", Secret("c1ient")),
@@ -149,6 +149,8 @@ REFUSED = [
     ({"QBT_RULES_NOTIFICATIONS_SERVICE": "irc"}, r"notifications\.service: expected one of"),
     ({"QBT_RULES_INTEGRATIONS_TRACKIE_TIMEOUT": "0"}, r"trackie\.timeout: must be greater"),
     ({"QBT_RULES_SERVER_WORKERS": "0"}, r"server\.workers: must be greater than 0"),
+    # One process now (template-python decision 0008): Gunicorn's workers are gone
+    ({"QBT_RULES_SERVER_WORKERS": "2"}, r"server\.workers: must be 1, got 2: .* one process"),
     ({"QBT_RULES_LOGGING_LEVEL": "loud"}, r"logging\.level: expected one of DEBUG"),
 ]
 

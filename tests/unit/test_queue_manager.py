@@ -173,7 +173,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(
@@ -227,7 +227,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(
@@ -271,7 +271,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(
@@ -317,7 +317,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(
@@ -380,7 +380,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(
@@ -432,7 +432,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(
@@ -481,7 +481,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(
@@ -533,7 +533,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(

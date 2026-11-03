@@ -10,7 +10,7 @@ qbt-rules is a **rules engine acting on metadata**, not a content scanner. It's 
 - **It's not a replacement for antivirus or a firewall.** Treat it as one layer in a defense-in-depth setup: automation that reduces exposure window and enforces policy, not a guarantee nothing bad gets through.
 - **Its blast radius is qBittorrent-wide.** Anyone who can submit a job (see API Authentication below) can trigger any action any rule is capable of — including `delete_torrent`. Protecting job submission is as important as writing good rules.
 
-**What's exposed:** one HTTP port (default `5000`) serving the JSON API, the dashboard and, when enabled, `/metrics`. Everything on it except `GET /api/health` and `GET /api/version` needs the API key (or a dashboard session made with it). The server trusts the qBittorrent instance it's pointed at, the Sonarr/Radarr/trackie URLs you configure, and `rules.yml`, which anyone holding the key can rewrite through the rules editor.
+**What's exposed:** one HTTP port (default `5000`) serving the JSON API, the dashboard and, when enabled, `/metrics`. Everything on it except the probes (`GET /healthz`, `/readyz`, `/api/health`), `GET /api/version`, the API's schema (`/openapi.json`, `/docs`), `/login` and `/static` needs the API key (or a dashboard session made with it). The server trusts the qBittorrent instance it's pointed at, the Sonarr/Radarr/trackie URLs you configure, and `rules.yml`, which anyone holding the key can rewrite through the rules editor.
 
 ### Content-Safety Rules
 
@@ -59,9 +59,9 @@ A `torrent-imported`-only content filter is a best-effort first pass, not a guar
 - `client.api_key` (used by the CLI client) must match `server.api_key` exactly — a mismatch fails auth the same way a wrong password would.
 - Rotate it by updating the secret and recreating the container; there's no separate revocation mechanism, so a leaked key is valid until you change it.
 
-The [Dashboard](Dashboard) (`/`, `/jobs`, `/rules`, `/rules/edit`) reuses this same key: its login form exchanges it for a session cookie, and `?key=` in the URL works too — see the Dashboard page for the browser-history trade-off that implies, and why dashboard requests are excluded from the access log by default. A session can also save `rules.yml` from the editor, so treat a signed-in browser like the key itself; `server.editor_enabled: false` turns saving off.
+The [Dashboard](Dashboard) (`/`, `/jobs`, `/rules`, `/rules/edit`) reuses this same key: its login form exchanges it for a session cookie, and `?key=` in the URL works too — see the Dashboard page for the browser-history trade-off that implies. The server's access log replaces every `key=` value with `[REDACTED]`, so the key never reaches a log line. A session can also save `rules.yml` from the editor, so treat a signed-in browser like the key itself; `server.editor_enabled: false` turns saving off.
 
-The optional [`/metrics`](Metrics) endpoint (off by default) also requires this same key, via query param or `X-API-Key` header — unlike the dashboard, a scrape client typically sends the key as a header rather than a URL, so the browser-history trade-off doesn't apply there. What it exposes is operational counts (job throughput, error rates, HTTP request volume), not credentials — but that's still information you may not want reachable by anyone who can guess the port, hence the same API-key gate as everything else except `/api/health`/`/api/version`.
+The optional [`/metrics`](Metrics) endpoint (off by default) also requires this same key, via query param or `X-API-Key` header — unlike the dashboard, a scrape client typically sends the key as a header rather than a URL, so the browser-history trade-off doesn't apply there. What it exposes is operational counts (job throughput, error rates, HTTP request volume), not credentials — but that's still information you may not want reachable by anyone who can guess the port, hence the same API-key gate as everything else except the probes (`/healthz`, `/readyz`, `/api/health`) and `/api/version`.
 
 ### Credential Management
 

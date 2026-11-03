@@ -31,7 +31,6 @@ from qbt_rules.arguments import create_parser, process_args, validate_torrent_ha
 from qbt_rules.config_loader import Config
 from qbt_rules.errors import handle_errors
 from qbt_rules.log_setup import get_logger, setup_logging
-from qbt_rules.qbittorrent import QBittorrentAPI
 
 # logging.getLogger() returns the same object before and after setup_logging()
 logger = get_logger(__name__)
@@ -229,30 +228,27 @@ def run_server_mode(
     args: argparse.Namespace, config_obj: Config, logging_config: dict[str, Any]
 ) -> None:
     """
-    Run server mode - Start HTTP API server with worker
+    Run server mode: the FastAPI app under uvicorn, with the worker and
+    scheduler threads, until SIGTERM or SIGINT (server.serve)
 
     Args:
         args: Parsed CLI arguments
         config_obj: Loaded configuration object
-        logging_config: Pre-resolved dict from get_logging_config(), already
-            computed once by main() for setup_logging() -- threaded through
-            rather than re-resolved here
+        logging_config: Pre-resolved dict from get_logging_config()
     """
+    from qbt_rules.server import check_one_process, serve
+
+    settings = config_obj.settings
+    check_one_process(settings)
+
     logger.info("=" * 60)
     logger.info("Starting qbt-rules server")
     logger.info("=" * 60)
 
-    # Get configurations
-    server_config = get_server_config(args, config_obj)
-    queue_config = get_queue_config(args, config_obj)
-    notifications_config = get_notifications_config(args, config_obj)
-    integrations_config = get_integrations_config(args, config_obj)
+    # Initialize metrics before anything imports prometheus_client, so
+    # PROMETHEUS_MULTIPROC_DIR is set first (metrics.py's module docstring).
+    # TODO(4e): interpose's metrics replace prometheus_client
     metrics_config = get_metrics_config(args, config_obj)
-
-    # Initialize metrics (must happen before worker/engine/scheduler/server
-    # are imported below, so PROMETHEUS_MULTIPROC_DIR is set in os.environ
-    # before prometheus_client is first imported anywhere in this process --
-    # see metrics.py's module docstring for why this ordering matters)
     if metrics_config["enabled"]:
         multiproc_dir = Path(metrics_config["multiproc_dir"])
         multiproc_dir.mkdir(parents=True, exist_ok=True)
@@ -268,91 +264,15 @@ def run_server_mode(
 
     # Settings it can start without but not fully work without (no API
     # key): start anyway, so /api/health can say what's missing
-    for problem in config_obj.settings.problems:
+    for problem in settings.problems:
         logger.error(f"Configuration: {problem}")
-    if config_obj.settings.sources.get("listen.port", "").startswith("QBT_RULES_SERVER_PORT"):
+    if settings.sources.get("listen.port", "").startswith("QBT_RULES_SERVER_PORT"):
         logger.warning(
             "QBT_RULES_SERVER_PORT is an alias of QBT_RULES_LISTEN_PORT, the one the image's "
             "healthcheck polls: set QBT_RULES_LISTEN_PORT instead"
         )
 
-    # Initialize queue
-    from qbt_rules.queue_manager import create_queue
-
-    queue = create_queue(
-        backend=queue_config["backend"],
-        db_path=queue_config["sqlite_path"],
-        redis_url=queue_config["redis_url"],
-    )
-    logger.info(f"Queue backend: {queue.__class__.__name__}")
-
-    # Initialize qBittorrent API (lazy initialization - won't connect until first job)
-    qbt_config = get_qbittorrent_config(args, config_obj)
-    api = QBittorrentAPI(
-        host=qbt_config["host"],
-        username=qbt_config["username"],
-        password=qbt_config["password"],
-        connect_now=False,  # Defer connection until first job execution
-    )
-    logger.info(f"qBittorrent: {qbt_config['host']} (will connect on first job)")
-
-    # Initialize worker
-    from qbt_rules.worker import Worker
-
-    worker = Worker(
-        queue=queue,
-        api=api,
-        config=config_obj,
-        notifications_config=notifications_config,
-        integrations_config=integrations_config,
-        cleanup_after=queue_config["cleanup_after"],
-    )
-    worker.start()
-    logger.info("Worker started")
-
-    # Initialize scheduler (internal cron -- must start here, before
-    # run_server()/Gunicorn forks, and must NOT be restarted per-fork the
-    # way the worker thread is; see Scheduler's docstring)
-    from qbt_rules.scheduler import Scheduler
-
-    schedule_entries = get_schedule_config(args, config_obj)
-    scheduler = Scheduler(queue=queue, entries=schedule_entries)
-    scheduler.start()
-
-    # Create Flask app
-    from qbt_rules.web import create_app, run_server
-
-    app = create_app(
-        queue_manager=queue,
-        worker_instance=worker,
-        api_key=server_config["api_key"],
-        config=config_obj,
-        metrics_config=metrics_config,
-        editor=server_config["editor_enabled"],
-    )
-
-    # Run server
-    logger.info(f"Starting server on {server_config['host']}:{server_config['port']}")
-    logger.info("Press Ctrl+C to stop")
-    logger.info("=" * 60)
-
-    # Get HTTP access logging preference
-    log_http_access = logging_config["http_access"]
-
-    try:
-        run_server(
-            app=app,
-            host=server_config["host"],
-            port=server_config["port"],
-            workers=server_config["workers"],
-            log_http_access=log_http_access,
-            metrics_enabled=metrics_config["enabled"],
-        )
-    except KeyboardInterrupt:
-        logger.info("\nShutting down...")
-        scheduler.stop()
-        worker.stop()
-        logger.info("Server stopped")
+    serve(settings)
 
 
 def run_client_mode(args: argparse.Namespace, config_obj: Config) -> None:
@@ -428,7 +348,7 @@ def run_client_mode(args: argparse.Namespace, config_obj: Config) -> None:
 
     except requests.exceptions.ConnectionError:
         logger.error(f"Cannot connect to server at {server_url}")
-        logger.error("Is the server running? Start with: qbt-rules --serve")
+        logger.error("Is the server running? Start it with: qbt-rules serve")
         sys.exit(1)
     except requests.exceptions.Timeout:
         logger.error(f"Connection to {server_url} timed out")

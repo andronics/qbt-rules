@@ -304,16 +304,17 @@
 {% block scripts %}
 {% if config_available %}
 <script>
+  // The JSON API is the FastAPI app's (api.py), not this Flask app's: plain paths
   window.QBT_EDITOR = {
     csrfToken: {{ csrf_token()|tojson }},
     urls: {
-      source: {{ url_for('rules_source')|tojson }},
-      validate: {{ url_for('rules_validate')|tojson }},
-      history: {{ url_for('rules_history')|tojson }},
-      catalog: {{ url_for('rules_catalog')|tojson }},
-      config: {{ url_for('config_source')|tojson }},
-      execute: {{ url_for('execute')|tojson }},
-      jobsApi: {{ url_for('list_jobs')|tojson }},
+      source: {{ (request.script_root ~ '/api/rules/source')|tojson }},
+      validate: {{ (request.script_root ~ '/api/rules/validate')|tojson }},
+      history: {{ (request.script_root ~ '/api/rules/history')|tojson }},
+      catalog: {{ (request.script_root ~ '/api/rules/catalog')|tojson }},
+      config: {{ (request.script_root ~ '/api/config/source')|tojson }},
+      execute: {{ (request.script_root ~ '/api/execute')|tojson }},
+      jobsApi: {{ (request.script_root ~ '/api/jobs')|tojson }},
       jobsPage: {{ url_for('dashboard_jobs')|tojson }},
       acePath: {{ url_for('static', filename='vendor/ace')|tojson }}
     }

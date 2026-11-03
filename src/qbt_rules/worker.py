@@ -73,12 +73,13 @@ class Worker:
 
         self.running = False
         self.thread: threading.Thread | None = None
+        self._stop = threading.Event()
         self.last_job_completed: datetime | None = None
 
         logger.info("Worker initialized")
 
     def start(self) -> None:
-        """Start worker thread"""
+        """Start the worker in a thread of its own (tests; the server uses run())"""
         # Check if truly running (thread exists and is alive)
         if self.running and self.thread and self.thread.is_alive():
             logger.warning("Worker already running")
@@ -86,7 +87,10 @@ class Worker:
 
         # Reset state and start new thread
         self.running = True
-        self.thread = threading.Thread(target=self._run_loop, daemon=False, name="worker")
+        self._stop = threading.Event()
+        self.thread = threading.Thread(
+            target=self._run_loop, args=(self._stop,), daemon=False, name="worker"
+        )
         self.thread.start()
         logger.info("Worker thread started")
 
@@ -102,6 +106,7 @@ class Worker:
 
         logger.info("Stopping worker...")
         self.running = False
+        self._stop.set()
 
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=timeout)
@@ -110,6 +115,21 @@ class Worker:
                 logger.warning(f"Worker did not stop within {timeout}s timeout")
             else:
                 logger.info("Worker stopped gracefully")
+
+    def run(self, stop: threading.Event) -> None:
+        """
+        The worker loop, in the calling thread, until stop is set
+
+        The server's target for api.BackgroundThreads: the app's lifespan
+        starts it and, on shutdown, sets stop and joins the thread. A job
+        that is running finishes first (the join waits a few seconds for it).
+        """
+        self.thread = threading.current_thread()
+        self.running = True
+        try:
+            self._run_loop(stop)
+        finally:
+            self.running = False
 
     def is_alive(self) -> bool:
         """Check if worker thread is alive"""
@@ -131,11 +151,11 @@ class Worker:
             "queue_depth": self.queue.get_queue_depth(),
         }
 
-    def _run_loop(self) -> None:
-        """Main worker loop - runs in separate thread"""
+    def _run_loop(self, stop: threading.Event) -> None:
+        """Main worker loop: until stop is set"""
         logger.info("Worker loop started")
 
-        while self.running:
+        while not stop.is_set():
             try:
                 self._maybe_cleanup()
 
@@ -146,12 +166,12 @@ class Worker:
                     # Process job
                     self._process_job(job)
                 else:
-                    # Queue empty, sleep and retry
-                    time.sleep(self.poll_interval)
+                    # Queue empty: wait and retry, waking at once on stop
+                    stop.wait(self.poll_interval)
 
             except Exception as e:
                 logger.error(f"Unexpected error in worker loop: {e}", exc_info=True)
-                time.sleep(self.poll_interval)
+                stop.wait(self.poll_interval)
 
         logger.info("Worker loop exited")
 

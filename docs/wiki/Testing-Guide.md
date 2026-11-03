@@ -36,9 +36,9 @@ open htmlcov/index.html
 
 | Path | What goes there |
 |---|---|
-| `tests/unit/` | Fast and offline: no network, no real external systems. One file per module (`test_resolver.py`, `test_web.py`, `test_legacy_cli.py`, ...). Most tests. |
+| `tests/unit/` | Fast and offline: no network, no real external systems. One file per module (`test_resolver.py`, `test_api_routes.py`, `test_legacy_cli.py`, ...); `test_server.py` also starts `qbt-rules serve` in a subprocess and checks it stops on SIGTERM. Most tests. |
 | `tests/unit/test_engine/` | `engine.py`'s surface split by concern (`ConditionEvaluator`, `ActionExecutor`, `RulesEngine`, and per-action files — see [Architecture Internals](Architecture-Internals)) |
-| `tests/golden/` | Golden responses for the JSON API: every route in `web.py` driven through the Flask test client against a real queue (SQLite and fakeredis), compared byte for byte with `tests/golden/responses/<backend>/<case>.json`. After an intended change, regenerate with `QBT_RULES_UPDATE_GOLDENS=1 uv run pytest tests/golden` and review the diff |
+| `tests/golden/` | Golden responses for the JSON API: every route in `api.py` (and `/metrics`) driven through FastAPI's `TestClient` against a real queue (SQLite and fakeredis), compared byte for byte with `tests/golden/responses/<backend>/<case>.json`. After an intended change, regenerate with `QBT_RULES_UPDATE_GOLDENS=1 uv run pytest tests/golden` and review the diff |
 | `tests/integration/` | Real dependencies, marked `@pytest.mark.integration`; skipped unless `RUN_INTEGRATION=1` |
 | `tests/conftest.py` | Shared fixtures: `clean_env` (no `QBT_RULES_*` leakage), `write_config`, and the project's mocks |
 

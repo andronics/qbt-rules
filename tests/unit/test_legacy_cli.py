@@ -2,13 +2,14 @@
 Tests for qbt_rules.legacy_cli module (v0.4.0 client-server architecture)
 """
 
+import os
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 
-from qbt_rules.config import PLACEHOLDER_API_KEY
+from qbt_rules.config import PLACEHOLDER_API_KEY, ConfigError
 from qbt_rules.config import load_config as load_settings
 from qbt_rules.config_loader import Config
 from qbt_rules.legacy_cli import (
@@ -177,218 +178,82 @@ class TestGetConfigDicts:
 
 
 class TestRunServerMode:
-    """Test run_server_mode() function"""
+    """run_server_mode(): the FastAPI app under uvicorn (server.serve)"""
 
     @patch("qbt_rules.legacy_cli.logger")
-    @patch("qbt_rules.web.run_server")
-    @patch("qbt_rules.web.create_app")
-    @patch("qbt_rules.scheduler.Scheduler")
-    @patch("qbt_rules.worker.Worker")
-    @patch("qbt_rules.queue_manager.create_queue")
-    @patch("qbt_rules.legacy_cli.QBittorrentAPI")
-    def test_creates_and_runs_server(
-        self,
-        mock_api_class,
-        mock_create_queue,
-        mock_worker_class,
-        mock_scheduler_class,
-        mock_create_app,
-        mock_run_server,
-        mock_logger,
-    ):
-        """Should create Flask app and run server"""
-        # Setup mocks
-        mock_queue = Mock()
-        mock_queue.__class__.__name__ = "SQLiteQueue"
-        mock_create_queue.return_value = mock_queue
-
-        mock_api = Mock()
-        mock_api_class.return_value = mock_api
-
-        mock_worker = Mock()
-        mock_worker_class.return_value = mock_worker
-
-        mock_scheduler = Mock()
-        mock_scheduler_class.return_value = mock_scheduler
-
-        mock_app = Mock()
-        mock_create_app.return_value = mock_app
-
+    @patch("qbt_rules.server.serve")
+    def test_serves_the_settings_with_the_flags_applied(self, mock_serve, mock_logger):
         args = Namespace(
             serve=True,
-            server_host="0.0.0.0",  # noqa: S104  test fixture value
-            server_port=5000,
+            server_host="127.0.0.1",
+            server_port=5001,
             server_api_key="test-key",
             server_workers=1,
-            queue_backend="sqlite",
-            queue_sqlite_path="/tmp/test.db",  # noqa: S108  test fixture value
-            queue_redis_url=None,
-        )
-        config_obj = make_config(args, {"QBT_RULES_QBITTORRENT_PASSWORD": "password"})
-
-        run_server_mode(args, config_obj, {"http_access": False})
-
-        # Verify queue creation
-        mock_create_queue.assert_called_once_with(
-            backend="sqlite",
-            db_path="/tmp/test.db",  # noqa: S108  test fixture value
-            redis_url="redis://localhost:6379/0",  # Default value
-        )
-
-        # Verify API initialization
-        mock_api_class.assert_called_once_with(
-            host="http://localhost:8080",
-            username="admin",
-            password="password",  # noqa: S106  test fixture value
-            connect_now=False,
-        )
-
-        # Verify worker initialization
-        mock_worker_class.assert_called_once_with(
-            queue=mock_queue,
-            api=mock_api,
-            config=config_obj,
-            notifications_config={"webhook_url": None, "service": "generic"},
-            integrations_config={
-                "sonarr": {"url": None, "api_key": None},
-                "radarr": {"url": None, "api_key": None},
-                "trackie": {"url": None, "max_age": 3 * 3600, "timeout": 10.0},
-            },
-            cleanup_after=7 * 86400,  # queue.cleanup_after default (7d)
-        )
-        mock_worker.start.assert_called_once()
-
-        # Verify scheduler initialization
-        mock_scheduler_class.assert_called_once_with(queue=mock_queue, entries=[])
-        mock_scheduler.start.assert_called_once()
-
-        # Verify Flask app creation
-        mock_create_app.assert_called_once_with(
-            queue_manager=mock_queue,
-            worker_instance=mock_worker,
-            api_key="test-key",
-            config=config_obj,
-            metrics_config={"enabled": False, "multiproc_dir": "/tmp/qbt-rules-metrics"},  # noqa: S108  test fixture value
-            editor=True,
-        )
-
-        # Verify server run
-        mock_run_server.assert_called_once_with(
-            app=mock_app,
-            host="0.0.0.0",  # noqa: S104  test fixture value
-            port=5000,
-            workers=1,
-            log_http_access=False,
-            metrics_enabled=False,
-        )
-
-    @patch("qbt_rules.legacy_cli.logger")
-    @patch("qbt_rules.web.run_server")
-    @patch("qbt_rules.web.create_app")
-    @patch("qbt_rules.scheduler.Scheduler")
-    @patch("qbt_rules.worker.Worker")
-    @patch("qbt_rules.queue_manager.create_queue")
-    @patch("qbt_rules.legacy_cli.QBittorrentAPI")
-    def test_starts_without_api_key(
-        self,
-        mock_api_class,
-        mock_create_queue,
-        mock_worker_class,
-        mock_scheduler_class,
-        mock_create_app,
-        mock_run_server,
-        mock_logger,
-    ):
-        """With no API key the server still starts (the image's smoke test runs it with no
-        configuration): the problem is logged, and /api/health reports it"""
-        mock_create_queue.return_value = Mock()
-
-        run_server_mode(Namespace(), make_config(), {"http_access": False})
-
-        assert mock_run_server.called
-        assert mock_create_app.call_args.kwargs["api_key"] == ""
-        logged = " ".join(str(c.args[0]) for c in mock_logger.error.call_args_list)
-        assert "server.api_key is not set" in logged
-
-    @patch("qbt_rules.legacy_cli.logger")
-    @patch("qbt_rules.web.run_server")
-    @patch("qbt_rules.web.create_app")
-    @patch("qbt_rules.scheduler.Scheduler")
-    @patch("qbt_rules.worker.Worker")
-    @patch("qbt_rules.queue_manager.create_queue")
-    @patch("qbt_rules.legacy_cli.QBittorrentAPI")
-    def test_warns_about_the_port_alias(
-        self,
-        mock_api_class,
-        mock_create_queue,
-        mock_worker_class,
-        mock_scheduler_class,
-        mock_create_app,
-        mock_run_server,
-        mock_logger,
-    ):
-        """QBT_RULES_SERVER_PORT works, but the image's healthcheck reads QBT_RULES_LISTEN_PORT"""
-        mock_create_queue.return_value = Mock()
-        env = {"QBT_RULES_SERVER_PORT": "8080", "QBT_RULES_SERVER_API_KEY": "k"}
-
-        run_server_mode(Namespace(), make_config(environ=env), {"http_access": False})
-
-        assert mock_run_server.call_args.kwargs["port"] == 8080
-        assert "set QBT_RULES_LISTEN_PORT instead" in mock_logger.warning.call_args.args[0]
-
-    @patch("qbt_rules.legacy_cli.logger")
-    @patch("qbt_rules.web.run_server")
-    @patch("qbt_rules.web.create_app")
-    @patch("qbt_rules.scheduler.Scheduler")
-    @patch("qbt_rules.worker.Worker")
-    @patch("qbt_rules.queue_manager.create_queue")
-    @patch("qbt_rules.legacy_cli.QBittorrentAPI")
-    def test_stops_worker_on_keyboard_interrupt(
-        self,
-        mock_api_class,
-        mock_create_queue,
-        mock_worker_class,
-        mock_scheduler_class,
-        mock_create_app,
-        mock_run_server,
-        mock_logger,
-    ):
-        """Should stop worker and scheduler when KeyboardInterrupt is raised"""
-        mock_queue = Mock()
-        mock_queue.__class__.__name__ = "SQLiteQueue"
-        mock_create_queue.return_value = mock_queue
-
-        mock_api = Mock()
-        mock_api_class.return_value = mock_api
-
-        mock_worker = Mock()
-        mock_worker_class.return_value = mock_worker
-
-        mock_scheduler = Mock()
-        mock_scheduler_class.return_value = mock_scheduler
-
-        mock_app = Mock()
-        mock_create_app.return_value = mock_app
-
-        # Simulate KeyboardInterrupt
-        mock_run_server.side_effect = KeyboardInterrupt()
-
-        args = Namespace(
-            server_host="0.0.0.0",  # noqa: S104  test fixture value
-            server_port=5000,
-            server_api_key="test-key",
-            server_workers=1,
-            queue_backend="sqlite",
-            queue_sqlite_path="/tmp/test.db",  # noqa: S108  test fixture value
-            queue_redis_url=None,
         )
         config_obj = make_config(args)
 
         run_server_mode(args, config_obj, {"http_access": False})
 
-        # Verify worker and scheduler were stopped
-        mock_worker.stop.assert_called_once()
-        mock_scheduler.stop.assert_called_once()
+        [settings] = mock_serve.call_args.args
+        assert settings is config_obj.settings
+        assert (settings.host, settings.port, settings.api_key.reveal()) == (
+            "127.0.0.1",
+            5001,
+            "test-key",
+        )
+
+    @patch("qbt_rules.legacy_cli.logger")
+    @patch("qbt_rules.server.serve")
+    def test_refuses_more_than_one_worker_from_the_flag(self, mock_serve, mock_logger):
+        """config.py refuses server.workers > 1; --server-workers skips that check"""
+        args = Namespace(server_workers=2)
+
+        with pytest.raises(ConfigError, match="one process"):
+            run_server_mode(args, make_config(args), {"http_access": False})
+        assert not mock_serve.called
+
+    @patch("qbt_rules.legacy_cli.logger")
+    @patch("qbt_rules.server.serve")
+    def test_starts_without_api_key(self, mock_serve, mock_logger):
+        """With no API key the server still starts (the image's smoke test runs it with no
+        configuration): the problem is logged, and /api/health reports it"""
+        run_server_mode(Namespace(), make_config(), {"http_access": False})
+
+        assert mock_serve.called
+        logged = " ".join(str(c.args[0]) for c in mock_logger.error.call_args_list)
+        assert "server.api_key is not set" in logged
+
+    @patch("qbt_rules.legacy_cli.logger")
+    @patch("qbt_rules.server.serve")
+    def test_warns_about_the_port_alias(self, mock_serve, mock_logger):
+        """QBT_RULES_SERVER_PORT works, but the image's healthcheck reads QBT_RULES_LISTEN_PORT"""
+        env = {"QBT_RULES_SERVER_PORT": "8080", "QBT_RULES_SERVER_API_KEY": "k"}
+
+        run_server_mode(Namespace(), make_config(environ=env), {"http_access": False})
+
+        assert mock_serve.call_args.args[0].port == 8080
+        assert "set QBT_RULES_LISTEN_PORT instead" in mock_logger.warning.call_args.args[0]
+
+    @patch("qbt_rules.legacy_cli.logger")
+    @patch("qbt_rules.server.serve")
+    @patch("qbt_rules.metrics.init")
+    def test_metrics_get_a_clean_multiprocess_directory(
+        self, mock_init, mock_serve, mock_logger, tmp_path, monkeypatch
+    ):
+        multiproc = tmp_path / "metrics"
+        multiproc.mkdir()
+        (multiproc / "counter_1.db").write_bytes(b"stale")
+        monkeypatch.delenv("PROMETHEUS_MULTIPROC_DIR", raising=False)
+        env = {
+            "QBT_RULES_METRICS_ENABLED": "true",
+            "QBT_RULES_METRICS_MULTIPROC_DIR": str(multiproc),
+        }
+
+        run_server_mode(Namespace(), make_config(environ=env), {"http_access": False})
+
+        assert not (multiproc / "counter_1.db").exists()
+        assert os.environ["PROMETHEUS_MULTIPROC_DIR"] == str(multiproc)
+        mock_init.assert_called_once_with(enabled=True)
 
 
 class TestRunClientMode:

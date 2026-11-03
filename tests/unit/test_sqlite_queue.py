@@ -896,6 +896,19 @@ class TestSQLiteQueueCountJobs:
         assert queue.count_jobs(JobStatus.PROCESSING) == 0
         queue.close()
 
+    def test_count_jobs_by_context(self, tmp_path):
+        """count_jobs() takes list_jobs()'s context filter too (#28 item 2)"""
+        queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
+        first = queue.enqueue(context="nightly")
+        queue.enqueue(context="nightly")
+        queue.enqueue(context="other")
+        queue.update_status(first, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
+
+        assert queue.count_jobs(context="nightly") == 2
+        assert queue.count_jobs(status=JobStatus.PENDING, context="nightly") == 1
+        assert queue.count_jobs(context="none-such") == 0
+        queue.close()
+
     def test_count_jobs_after_dequeue(self, tmp_path):
         """count_jobs() updates after dequeue"""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))

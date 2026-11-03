@@ -191,15 +191,9 @@ There's one server per qBittorrent instance — you don't run multiple standalon
 
 #### Concurrent Job Processing
 
-Jobs are queued (SQLite or Redis, see [In-Depth Configuration](In-Depth-Configuration)) and picked up by background workers. If jobs are backing up under load, increase worker concurrency rather than running separate processes:
+Jobs are queued (SQLite or Redis, see [In-Depth Configuration](In-Depth-Configuration)) and run one at a time by the server's single worker thread. The server is one process: there is no worker count to raise (`server.workers` must be `1`), and a second server against the same qBittorrent would fire every scheduled job twice.
 
-```bash
-# config.yaml
-server:
-  workers: 4   # default is 1
-```
-
-Multiple submitters (webhooks firing rapidly, a cron sweep, a manual run) are safe to fire concurrently — they all land in the same queue and get worked off in order by whichever workers are free. For genuinely high torrent counts, switching `queue.backend` from `sqlite` to `redis` reduces lock contention under heavy concurrent submission.
+Multiple submitters (webhooks firing rapidly, a cron sweep, a manual run) are safe to fire concurrently — they all land in the same queue and get worked off in order. For genuinely high torrent counts, switching `queue.backend` from `sqlite` to `redis` reduces lock contention under heavy concurrent submission.
 
 **Separating workloads by context** still makes sense — just point every submitter at the same server:
 
@@ -217,4 +211,4 @@ For very large torrent libraries (10,000+), there's no manual batching to config
 
 - Order conditions cheap-first within `all:` blocks so expensive fields (`files.*`, `peers.*`) are only checked once cheap fields (`info.category`, `info.state`) have already narrowed the match (see [Performance Optimization](#performance-optimization) above).
 - Scope webhook-triggered jobs to a single torrent with `&hash=%I` instead of re-evaluating the whole library on every event.
-- Increase `server.workers` if multiple jobs are queued concurrently and workers, not per-torrent evaluation, are the bottleneck.
+- Scope cron sweeps by context, so a big cleanup doesn't hold up the webhook jobs queued behind it.

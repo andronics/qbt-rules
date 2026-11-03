@@ -108,12 +108,13 @@ class QueueManager(ABC):
         pass
 
     @abstractmethod
-    def count_jobs(self, status: str | None = None) -> int:
+    def count_jobs(self, status: str | None = None, context: str | None = None) -> int:
         """
-        Count jobs by status
+        Count jobs by status and context
 
         Args:
-            status: Filter by status, or None for total count
+            status: Filter by status, or None for every status
+            context: Filter by context, or None for every context
 
         Returns:
             Number of jobs matching filter

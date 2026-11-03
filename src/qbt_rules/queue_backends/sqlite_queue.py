@@ -321,14 +321,22 @@ class SQLiteQueue(QueueManager):
 
         return [self._row_to_dict(row) for row in rows]
 
-    def count_jobs(self, status: str | None = None) -> int:
-        """Count jobs by status"""
+    def count_jobs(self, status: str | None = None, context: str | None = None) -> int:
+        """Count jobs by status and context (the same filters as list_jobs)"""
         conn = self._get_connection()
 
+        where: list[str] = []
+        params: list[str] = []
         if status:
-            cursor = conn.execute("SELECT COUNT(*) FROM jobs WHERE status = ?", (status,))
-        else:
-            cursor = conn.execute("SELECT COUNT(*) FROM jobs")
+            where.append("status = ?")
+            params.append(status)
+        if context:
+            where.append("context = ?")
+            params.append(context)
+        sql = "SELECT COUNT(*) FROM jobs"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        cursor = conn.execute(sql, params)
 
         count: int = cursor.fetchone()[0]
         return count
