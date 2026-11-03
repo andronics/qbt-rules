@@ -12,10 +12,10 @@ dependencies = [
     "typer>=0.15",
     "fastapi>=0.115",
     "uvicorn>=0.34",
-    # The dashboard pages are still Flask, mounted under FastAPI through a2wsgi
-    # (TODO(4d): the FastAPI dashboard replaces both)
-    "flask>=3.0",
-    "a2wsgi>=1.10",
+    # The dashboard's templates (Jinja2Templates), and the signed session cookie
+    # (Starlette's SessionMiddleware)
+    "jinja2>=3.1",
+    "itsdangerous>=2.1",
     # qBittorrent's Web API, the scheduler's cron expressions, the trackie client
     "qbittorrent-api>=2024.12.0",
     "croniter>=2.0",
@@ -120,7 +120,6 @@ module = [
     "tests.unit.test_schema",
     "tests.unit.test_sqlite_queue",
     "tests.unit.test_utils",
-    "tests.unit.test_web",
     "tests.unit.test_worker",
 ]
 disallow_untyped_defs = false

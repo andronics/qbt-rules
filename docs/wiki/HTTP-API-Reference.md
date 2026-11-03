@@ -4,7 +4,7 @@ Complete reference for the HTTP API the server exposes (`api.py`, FastAPI under 
 
 The server listens on port 5000 by default. The live OpenAPI schema is served at `/openapi.json`, and interactive docs at `/docs`. The same schema is committed as [`docs/openapi.json`](https://github.com/andronics/qbt-rules/blob/main/docs/openapi.json): CI fails when it's stale, and a pull request that breaks it must say so (`feat!:`).
 
-The server also serves the human-facing dashboard at the site root (`/`, `/jobs`, `/rules`, `/rules/edit`, `/login`, `/static`; HTML, not JSON) — see [Dashboard](Dashboard) — and, when enabled, a Prometheus `/metrics` endpoint in text exposition format — see [Metrics](Metrics). Those are still a Flask app, mounted under the FastAPI app, so they aren't in the schema.
+The server also serves the human-facing dashboard at the site root (`/`, `/jobs`, `/rules`, `/rules/edit`, `/login`, `/static`; HTML, not JSON) — see [Dashboard](Dashboard) — and, when enabled, a Prometheus `/metrics` endpoint in text exposition format — see [Metrics](Metrics). They're routes on the same app (web.py), left out of the schema.
 
 **Base URL:** `http://localhost:5000` (or whatever `listen.host`/`listen.port` you've configured)
 

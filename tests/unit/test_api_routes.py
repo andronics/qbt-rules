@@ -450,8 +450,26 @@ def test_json_routes_are_counted_by_name(
     )
     client.get("/api/jobs", headers=KEY)
     client.get("/api/nope")
-    client.get("/login")  # the dashboard records its own
-    assert recorded == [("GET", "list_jobs", 200), ("GET", "unknown", 404)]
+    client.get("/login")
+    client.get("/static/editor.js")
+    client.get("/metrics")  # not registered (metrics off): a 404 like any unknown path
+    assert recorded == [
+        ("GET", "list_jobs", 200),
+        ("GET", "unknown", 404),
+        ("GET", "login", 200),
+        ("GET", "static", 200),
+        ("GET", "unknown", 404),
+    ]
+
+
+def test_endpoint_names() -> None:
+    def metrics_endpoint() -> None: ...
+
+    def login_submit() -> None: ...
+
+    assert api.endpoint_name({"endpoint": metrics_endpoint}) is None
+    assert api.endpoint_name({"endpoint": login_submit}) == "login"
+    assert api.endpoint_name({}) == "unknown"
 
 
 # -- the rules editor, and the dashboard's session ---------------------------------------------
@@ -481,9 +499,17 @@ class TestEditor:
     def client(self, rules: RulesConfig, queue: MagicMock, worker: StubWorker) -> TestClient:
         return _client(rules.settings, queue, worker, rules=rules)
 
+    def post_login(self, client: TestClient, key: str = API_KEY) -> httpx2.Response:
+        """Post the dashboard's login form, with the CSRF token it carries"""
+        form = client.get("/login").text
+        match = re.search(r'name="csrf_token" value="([^"]+)"', form)
+        assert match is not None
+        data = {"key": key, "next": "/rules/edit", "csrf_token": match.group(1)}
+        return client.post("/login", data=data)
+
     def login(self, client: TestClient) -> str:
         """Log in through the dashboard's form and return the editor page's CSRF token"""
-        response = client.post("/login", data={"key": API_KEY, "next": "/rules/edit"})
+        response = self.post_login(client)
         assert response.status_code == 302
         page = client.get("/rules/edit").text
         match = re.search(r'csrfToken: "([^"]+)"', page)
@@ -712,7 +738,7 @@ class TestEditor:
         assert client.get("/api/rules/source?key=wrong").status_code == 401
 
     def test_the_session_cookie(self, client: TestClient) -> None:
-        response = client.post("/login", data={"key": API_KEY, "next": "/"})
+        response = self.post_login(client)
         cookie = response.headers["Set-Cookie"]
         assert cookie.startswith("qbt_rules_session=")
         assert "samesite=lax" in cookie.lower()
@@ -720,14 +746,16 @@ class TestEditor:
         assert "Max-Age=2678400" in cookie
 
     def test_a_wrong_login_is_no_session(self, client: TestClient) -> None:
-        response = client.post("/login", data={"key": "wrong", "next": "/"})
+        response = self.post_login(client, key="wrong")
         assert response.status_code == 302
         assert "error=1" in response.headers["Location"]
         assert "Set-Cookie" not in response.headers
         assert client.get("/api/rules/source").status_code == 401
 
     def test_a_key_in_a_dashboard_url_logs_in(self, client: TestClient) -> None:
-        assert client.get(f"/rules?key={API_KEY}").status_code == 200
+        response = client.get(f"/rules?key={API_KEY}")
+        assert response.status_code == 302
+        assert response.headers["Location"] == "./rules"
         assert client.get("/api/rules/source").status_code == 200
 
     def test_a_flask_0_10_session_cookie_is_ignored(self, client: TestClient) -> None:
@@ -735,17 +763,17 @@ class TestEditor:
         client.cookies.set("session", "eyJhdXRoZW50aWNhdGVkIjp0cnVlfQ.Zz.abc")
         assert client.get("/api/rules/source").status_code == 401
 
-    # -- the dashboard's pages, through the mount -------------------------------------------------
+    # -- the dashboard's pages (tests/unit/test_web.py has the rest) ------------------------------
 
     def test_editor_page_requires_login(self, client: TestClient) -> None:
         response = client.get("/rules/edit")
         assert response.status_code == 302
-        assert response.headers["Location"].startswith("/login")
+        assert response.headers["Location"] == "../login?next=%2Frules%2Fedit"
 
     def test_pages_render(self, client: TestClient) -> None:
         self.login(client)
         assert "vendor/ace/ace.js" in client.get("/rules/edit").text
-        assert "/rules/edit#rule=a" in client.get("/rules").text
+        assert "./rules/edit#rule=a" in client.get("/rules").text
         assert client.get("/jobs").status_code == 200
         assert client.get("/").status_code == 200
 

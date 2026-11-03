@@ -58,8 +58,9 @@
     <div class="brand">qbt-rules</div>
     <div class="sub">dashboard sign-in</div>
     {% if no_api_key %}<div class="error">No API key is configured on the server: set QBT_RULES_SERVER_API_KEY_FILE (or server.api_key) and restart.</div>
-    {% elif error %}<div class="error">Invalid API key.</div>{% endif %}
-    <form method="post" action="{{ url_for('login') }}">
+    {% elif error %}<div class="error">{{ error }}</div>{% endif %}
+    <form method="post" action="{{ href('login') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="next" value="{{ next }}">
       <label for="key">API key</label>
       <input type="password" id="key" name="key" required autofocus>

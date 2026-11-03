@@ -40,7 +40,7 @@ Because the server is one process, the scheduler fires once per cron tick and ev
 | `api.py`, `api_rules.py`, `api_models.py` | The FastAPI app: the JSON API (jobs, health, stats, version, the rules editor's `/api/rules/*` and `/api/config/source`), `/healthz` and `/readyz`, API-key and session auth (see [HTTP API Reference](HTTP-API-Reference)), the `{"error", "message"}` error bodies, and the lifespan that runs the worker and scheduler threads. `api_models.py` describes the responses for the OpenAPI schema |
 | `server.py` | Runs the app under uvicorn; the access-log filter (hides polling requests, redacts `key=`) |
 | `sessions.py` | The login session shared by the JSON API and the dashboard (Starlette's `SessionMiddleware`, cookie `qbt_rules_session`), and its CSRF token |
-| `web.py` | The [Dashboard](Dashboard) pages (`/`, `/jobs`, `/rules`, `/rules/edit`, `/login`), `/static` and, when enabled, `/metrics` (see [Metrics](Metrics)): still Flask, mounted under the FastAPI app until the dashboard is ported |
+| `web.py` | The [Dashboard](Dashboard) pages (`/`, `/jobs`, `/rules`, `/rules/edit`, `/login`), `/static` and, when enabled, `/metrics` (see [Metrics](Metrics)): FastAPI routes on the API's app, rendered with Jinja2, sharing its login session (`sessions.py`) |
 | `templates/`, `static/` | Jinja2 templates for the dashboard — server-rendered HTML, no frontend build step — and the rules editor's script |
 | `config_store.py` | Reads and writes `rules.yml` for the editor: ETags, conflict detection, the `.history/` of previous versions, a file lock so concurrent saves can't interleave |
 | `rules_validation.py` | `rules.yml` validation for the editor and `--validate`: YAML syntax, structure, then the engine's vocabulary |
@@ -69,7 +69,7 @@ The template's skeleton modules `cli.py` (Typer) and `api.py` (FastAPI) are in t
 
 ## Data flow
 
-1. A job arrives at `web.py` (`POST /api/execute`) or via the CLI client, which is really just an HTTP request under the hood — or `scheduler.py` enqueues one directly on a cron tick, bypassing the HTTP layer entirely (no API key check needed, since it's not going over the network). The API key is checked for every other submission path before anything else happens.
+1. A job arrives at `api.py` (`POST /api/execute`) or via the CLI client, which is really just an HTTP request under the hood — or `scheduler.py` enqueues one directly on a cron tick, bypassing the HTTP layer entirely (no API key check needed, since it's not going over the network). The API key is checked for every other submission path before anything else happens.
 2. Either way, the job (context, optional hash) reaches `queue_manager.py`, which persists it through whichever backend is configured (`queue_backends/sqlite_queue.py` or `redis_queue.py`) with status `pending`.
 3. `worker.py`'s background thread dequeues the job, marks it `processing`, and loads `rules.yml` through `config_loader.py` — which also initializes `resolver.py`'s `RuleResolver` if a `refs:` block is present.
 4. For each rule, the resolver expands any `$ref:`/`${vars.x}` before the rule reaches `engine.py`. The engine's `ConditionEvaluator` checks `enabled`, then context, then evaluates `conditions:` per torrent (fetched via `qbittorrent.py`); matches are handed to `ActionExecutor`, which calls back into `qbittorrent.py` to actually act on qBittorrent.

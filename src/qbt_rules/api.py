@@ -11,9 +11,9 @@ error as ``{"error", "message"}`` (docs/design/0002-fastapi.md).
 One process (template-python decision 0008): the worker and the scheduler are threads
 the lifespan starts and stops (BackgroundThreads, decision 0006).
 
-TODO(4d): the dashboard pages, the login form and /static are still the Flask app in
-web.py, mounted here through a2wsgi (DASHBOARD_PATHS). TODO(4e): so is /metrics
-(prometheus_client); interpose's Registry replaces it.
+The dashboard pages, the login form, /static and /metrics are web.py's routes on the same
+app (web.register). TODO(4e): /metrics is still prometheus_client; interpose's Registry
+replaces it.
 """
 
 from __future__ import annotations
@@ -35,7 +35,6 @@ from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader, APIKeyQuery
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.routing import Route
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from qbt_rules import __description__, __version__, metrics, sessions
@@ -78,18 +77,6 @@ STATUS_NAMES = {
     500: "Internal Server Error",
     503: "Service Unavailable",
 }
-
-# Paths still served by the Flask dashboard (web.py) until the 4d and 4e ports
-DASHBOARD_PATHS = (
-    "/",
-    "/login",
-    "/jobs",
-    "/jobs/{job_id}",
-    "/rules",
-    "/rules/edit",
-    "/metrics",
-    "/static/{path:path}",
-)
 
 
 class CompatJSONResponse(JSONResponse):
@@ -426,10 +413,28 @@ class CatchAll:
             await error_response(500, "An unexpected error occurred")(scope, receive, send)
 
 
-class HttpMetrics:
-    """qbt_rules_http_requests_total and its duration histogram, for the JSON routes.
+# Metric labels kept from the Flask app, where GET and POST /login were one view
+_ENDPOINT_ALIASES = {"login_submit": "login"}
 
-    The dashboard paths record their own (web.py's Flask hooks). TODO(4e): interpose.
+
+def endpoint_name(scope: Scope) -> str | None:
+    """A request's HTTP metrics label: its route function's name, ``static`` for a static
+    file, ``unknown`` for no route, and None for /metrics (a scrape doesn't count itself)."""
+    from starlette.staticfiles import StaticFiles
+
+    endpoint = scope.get("endpoint")
+    if isinstance(endpoint, StaticFiles):
+        return "static"
+    name = getattr(endpoint, "__name__", None) or "unknown"
+    if name == "metrics_endpoint":
+        return None
+    return _ENDPOINT_ALIASES.get(name, name)
+
+
+class HttpMetrics:
+    """qbt_rules_http_requests_total and its duration histogram, for every route but /metrics.
+
+    TODO(4e): interpose.
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -451,24 +456,9 @@ class HttpMetrics:
         try:
             await self.app(scope, receive, send_wrapper)
         finally:
-            endpoint = scope.get("endpoint")
-            if not isinstance(endpoint, Dashboard):
-                name = getattr(endpoint, "__name__", None) or "unknown"
+            name = endpoint_name(scope)
+            if name is not None:
                 metrics.record_http_request(scope["method"], name, status, time.time() - start)
-
-
-class Dashboard:
-    """The Flask dashboard (web.py) as an ASGI app, once the lifespan has built it."""
-
-    def __init__(self, app: FastAPI) -> None:
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        wsgi: ASGIApp | None = self.app.state.dashboard
-        if wsgi is None:
-            await error_response(503, "qbt-rules is starting")(scope, receive, send)
-            return
-        await wsgi(scope, receive, send)
 
 
 # -- The app -------------------------------------------------------------------------------------
@@ -481,23 +471,10 @@ def create_app(config: Config, services: Services | None = None) -> FastAPI:
     api_key = config.api_key.reveal()
 
     def attach(app: FastAPI, found: Services) -> None:
-        from a2wsgi import WSGIMiddleware
-
-        from qbt_rules import web
-
         app.state.services = found
         threads.add("worker", found.worker.run)
         if found.scheduler is not None and found.scheduler.has_entries:
             threads.add("scheduler", found.scheduler.run)
-        dashboard = web.create_app(
-            found.queue,
-            found.worker,
-            api_key,
-            config=found.rules,
-            metrics_config={"enabled": metrics_on},
-            editor=config.editor_enabled,
-        )
-        app.state.dashboard = WSGIMiddleware(dashboard)  # type: ignore[arg-type]
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -524,7 +501,6 @@ def create_app(config: Config, services: Services | None = None) -> FastAPI:
     app.state.threads = threads
     app.state.api_key = api_key
     app.state.services = None
-    app.state.dashboard = None
     if services is not None:
         attach(app, services)
 
@@ -571,9 +547,9 @@ def create_app(config: Config, services: Services | None = None) -> FastAPI:
 
     app.include_router(rules_router)
 
-    dashboard = Dashboard(app)
-    for path in DASHBOARD_PATHS:
-        app.router.routes.append(Route(path, dashboard, include_in_schema=False))
+    from qbt_rules import web
+
+    web.register(app, metrics_on)
 
     return app
 

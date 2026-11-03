@@ -75,3 +75,23 @@ status, headers and body byte for byte, and #28 lists the inconsistencies they f
 - Logged-in dashboard users are logged out once on upgrade.
 - 4d replaces the Flask mount and the scope session interface with FastAPI routes calling `sessions.py`;
   4e replaces prometheus_client and the Flask `/metrics`.
+
+## Update: the dashboard on FastAPI (4d)
+
+The Flask dashboard, the a2wsgi mount and `ScopeSessionInterface` are gone, and so are Flask and a2wsgi.
+The six pages, `/login`, `/static` (Starlette's `StaticFiles`) and `/metrics` are FastAPI routes on the
+same app (`web.py`), rendered with `Jinja2Templates`, using `sessions.py` on `request.session`.
+
+- **Relative URLs.** Every link, form action, asset URL and redirect is relative to the current page
+  (`web.relative_url`, from Starlette's `request.url_for(...).path`), never absolute. So the dashboard
+  works under a path prefix with uvicorn's `root_path` set or with a proxy that strips the prefix and
+  says nothing, with no setting of ours. `?next=` holds an app path, reduced to a same-origin path.
+- **`?key=` on a page** starts the session and redirects to the same URL without `key=` (0.10.x served
+  the page with the key left in the URL). `X-API-Key` signs in and serves the page.
+- **CSRF on the login form**, as on the API's session writes: a hidden field with the session's token.
+  Signing in starts a fresh session (and token). The form body is parsed with `urllib.parse`, so
+  python-multipart isn't needed.
+- **`/metrics`** is a plain route serving prometheus_client's output and Flask's content type, double
+  charset and all, until 4e. HTTP request metrics now cover the pages too, labelled as Flask labelled
+  them (`login` for both methods, `static` for files).
+- Jinja2 and itsdangerous (the session cookie's signer), which came with Flask, are direct dependencies.

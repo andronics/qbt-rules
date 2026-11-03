@@ -57,7 +57,7 @@ def test_healthz_is_dependency_free(settings: Config) -> None:
 
 def test_routes_are_503_until_the_services_exist(settings: Config) -> None:
     client = TestClient(api.create_app(settings))
-    for path in ("/readyz", "/api/health", "/", "/login"):
+    for path in ("/readyz", "/api/health", "/"):
         response = client.get(path)
         assert response.status_code == 503, path
         assert response.json() == {

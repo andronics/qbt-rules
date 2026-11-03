@@ -9,11 +9,8 @@ the login form agree on what "logged in" means:
   dashboard page): the session is authenticated from then on.
 - ``is_logged_in(session)`` before serving a request that has no API key.
 - ``csrf_token(session)`` for a page that calls the JSON API with the session cookie: the page
-  sends it back as ``X-CSRF-Token`` on POST, PUT and DELETE, which ``csrf_ok`` checks.
-
-TODO(4d): the dashboard is still Flask, mounted under FastAPI (web.py). Its pages reach the
-same session through ``ScopeSessionInterface``, which reads and writes ``scope["session"]``
-instead of a Flask cookie. The FastAPI dashboard calls these helpers on ``request.session``.
+  sends it back as ``X-CSRF-Token`` on POST, PUT and DELETE, which ``csrf_ok`` checks. The
+  login form carries it as a hidden ``csrf_token`` field, checked the same way.
 """
 
 from __future__ import annotations
@@ -23,7 +20,7 @@ import secrets
 from collections.abc import MutableMapping
 from typing import Any
 
-# A new name: a 0.10.x Flask session cookie is simply ignored (one logout on upgrade)
+# A new name: a 0.10.x (Flask) session cookie is simply ignored (one logout on upgrade)
 SESSION_COOKIE = "qbt_rules_session"
 # Flask's PERMANENT_SESSION_LIFETIME, which 0.10.x logins used
 SESSION_MAX_AGE = 31 * 24 * 3600

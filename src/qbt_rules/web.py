@@ -1,82 +1,123 @@
-"""
-The dashboard: server-rendered pages (Flask + Jinja2), the login form, /static and /metrics
+"""The dashboard: server-rendered pages (Jinja2), the login form, /static and /metrics.
 
-TODO(4d): the dashboard moves to FastAPI. Until then this Flask app is mounted under the
-FastAPI app (api.py, through a2wsgi) for its paths only (api.DASHBOARD_PATHS); every JSON
-route is api.py's. TODO(4e): /metrics moves onto interpose's Registry.
+The pages are FastAPI routes on the API's app (api.create_app calls ``register``), so they
+share its session (Starlette's SessionMiddleware, sessions.py): logging in through the form
+logs the browser in to the JSON API too, which is what the rules editor's script calls.
 
-The login session is the FastAPI app's (Starlette's SessionMiddleware): ScopeSessionInterface
-hands Flask the ASGI scope's session instead of a cookie of its own, so a login here is a
-login for the JSON API too (sessions.py).
+Links. Every URL a page or a redirect carries is relative to the page it is on
+(``relative_url``), never absolute. So the dashboard works unchanged behind a reverse proxy
+or an ingress that serves it under a path prefix (``/qbt/`` -> ``/``), with or without a
+configured root path: the browser resolves ``../jobs`` against wherever it really is.
+
+Auth. A page needs the login session. Without one it redirects to the login form, carrying
+the page as ``?next=`` (an app path, sanitised to a same-origin path). A valid ``?key=`` on a
+page URL logs the browser in and redirects to the same URL without ``key=``, so the key
+doesn't stay in the address bar or the history; an ``X-API-Key`` header logs in and serves the
+page. The login form posts the key in its body, with the session's CSRF token.
+
+TODO(4e): /metrics is prometheus_client's output, unchanged; interpose's Registry replaces it.
 """
+
+from __future__ import annotations
 
 import logging
 import re
 import secrets
-import time
-from collections.abc import Callable
 from datetime import UTC, datetime
-from functools import wraps
+from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, parse_qsl, urlencode, urlsplit
 
 import yaml
-from flask import (
-    Flask,
-    Request,
-    Response,
-    g,
-    jsonify,
-    redirect,
-    render_template,
-    request,
-    session,
-    url_for,
-)
-from flask.sessions import SecureCookieSession, SecureCookieSessionInterface, SessionMixin
-from flask.typing import ResponseReturnValue
+from fastapi import Depends, FastAPI, Request, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
-from qbt_rules import __version__, metrics, sessions
-from qbt_rules.config_loader import Config
-from qbt_rules.queue_manager import QueueManager
+from qbt_rules import __version__, api, metrics, sessions
 
 logger = logging.getLogger(__name__)
 
-# Global references (set by create_app)
-# create_app() sets these before the app serves anything
-queue: QueueManager = None  # type: ignore[assignment]
-worker: Any = None  # api.WorkerLike
-# "" when no API key is configured: every authenticated request is refused (503)
-api_key_config: str = ""
-dashboard_config: Config | None = None
-metrics_enabled: bool = False
+PACKAGE_DIR = Path(__file__).parent
+TEMPLATES_DIR = PACKAGE_DIR / "templates"
+STATIC_DIR = PACKAGE_DIR / "static"
 
-# Largest request body accepted (the FastAPI app refuses larger ones first)
-MAX_REQUEST_BYTES = 2 * 1024 * 1024
+# Messages the login form shows for its ?error= values
+LOGIN_ERRORS = {
+    "1": "Invalid API key.",
+    "csrf": "The sign-in form expired. Try again.",
+}
 
 
-class ScopeSessionInterface(SecureCookieSessionInterface):
-    """Flask's session, kept in the ASGI scope's session (Starlette's SessionMiddleware)
+# -- Links -----------------------------------------------------------------------------------------
 
-    Under the FastAPI app, a2wsgi puts the ASGI scope in the WSGI environ: the session is
-    read from scope["session"] and written back to it, and SessionMiddleware signs and sets
-    the one cookie. Run on its own (the Flask test client), Flask's own cookie is used.
+
+def relative_url(from_path: str, to_path: str, query: str = "") -> str:
+    """``to_path`` (and ``query``) as a URL relative to the page at ``from_path``.
+
+    Both are paths as the server sees them. The result always starts with ``./`` or ``../``,
+    so it can't be read as a scheme or a host, and resolves to ``to_path`` under whatever
+    prefix the browser sees in front of both (a reverse proxy's, or the root path).
     """
+    here = from_path.split("/")[1:-1]  # the page's directory
+    there = to_path.split("/")[1:]
+    # Directories both share (never the target's last segment, which may be a file)
+    common = 0
+    while common < min(len(here), len(there) - 1) and here[common] == there[common]:
+        common += 1
+    url = "../" * (len(here) - common) + "/".join(there[common:])
+    if not url.startswith("../"):
+        url = "./" + url
+    return f"{url}?{query}" if query else url
 
-    def open_session(self, app: Flask, request: Request) -> SecureCookieSession | None:
-        scope = request.environ.get("asgi.scope")
-        if scope is None or "session" not in scope:
-            return super().open_session(app, request)
-        return SecureCookieSession(dict(scope["session"]))
 
-    def save_session(self, app: Flask, session: SessionMixin, response: Response) -> None:
-        scope = request.environ.get("asgi.scope")
-        if scope is None or "session" not in scope:
-            super().save_session(app, session, response)
-            return
-        if session.modified:
-            scope["session"].clear()
-            scope["session"].update({k: v for k, v in session.items() if k != "_permanent"})
+def _query(params: dict[str, Any] | None) -> str:
+    """A query string from ``params``, leaving out the ones that are None."""
+    return urlencode({k: v for k, v in (params or {}).items() if v is not None}, doseq=True)
+
+
+def href(request: Request, name: str, query: dict[str, Any] | None = None, **path: Any) -> str:
+    """The route ``name``'s URL, relative to this request's page (the templates' ``href``)."""
+    return relative_url(request.url.path, request.url_for(name, **path).path, _query(query))
+
+
+def app_path(request: Request) -> str:
+    """This request's path inside the app: without the root path, if one is set."""
+    path = request.url.path
+    root = str(request.scope.get("root_path", "")).rstrip("/")
+    if root and (path == root or path.startswith(root + "/")):
+        path = path[len(root) :]
+    return path or "/"
+
+
+def redirect(request: Request, to_app_path: str, query: str = "") -> RedirectResponse:
+    """A 302 to an app path (``/jobs``), relative to this request's page."""
+    root = str(request.scope.get("root_path", "")).rstrip("/")
+    target = root + to_app_path if request.url.path.startswith(root + "/") else to_app_path
+    return RedirectResponse(relative_url(request.url.path, target, query), status_code=302)
+
+
+def sanitize_next(next_url: str | None) -> str:
+    """Reduce a ``?next=`` value to a same-origin app path and query, without ``key=``.
+
+    The scheme and host are dropped, and leading slashes and backslashes collapse to one
+    slash, so ``https://evil.example/x``, ``//evil.example/x`` and ``/\\evil.example`` all
+    become a path here (``/x``, ``/x``, ``/evil.example``). Applied when the form is rendered
+    and again to the value the POST sends back, which is client input either way.
+    """
+    parsed = urlsplit(next_url or "")
+    path = "/" + parsed.path.lstrip("/\\").replace("\\", "/")
+    params = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if k != "key"]
+    query = urlencode(params)
+    return path + (f"?{query}" if query else "")
+
+
+def _without_key(request: Request) -> str:
+    """This request's query string with every ``key=`` removed."""
+    return urlencode([(k, v) for k, v in request.query_params.multi_items() if k != "key"])
+
+
+# -- Templates -------------------------------------------------------------------------------------
 
 
 def _timeago(value: datetime | str | None) -> str:
@@ -122,219 +163,95 @@ def _timeago(value: datetime | str | None) -> str:
     return "just now"
 
 
-def create_app(
-    queue_manager: QueueManager,
-    worker_instance: Any,
-    api_key: str,
-    config: Config | None = None,
-    metrics_config: dict[str, Any] | None = None,
-    editor: bool = True,
-) -> Flask:
-    """
-    Create the dashboard's Flask application
+def _template_globals(request: Request) -> dict[str, Any]:
+    """What every template can use, besides its own context.
 
-    Args:
-        queue_manager: Queue manager instance
-        worker_instance: Worker instance
-        api_key: API authentication key. "" (none configured) starts the
-            server anyway: authenticated requests get a 503 that says so,
-            and /api/health lists it under config_problems
-        config: Loaded Config instance, used by the read-only /rules
-            view. Optional (defaults to None) so existing callers that don't
-            need the dashboard's rules view are unaffected; that one route
-            reports itself unavailable if config wasn't provided
-        metrics_config: Resolved {'enabled': bool, 'multiproc_dir': str}
-            from legacy_cli.py's get_metrics_config(). Optional (defaults to None,
-            treated as disabled) -- metrics.init() must already have been
-            called by the caller before this, since that's what actually
-            makes prometheus_client importable/configured; this just
-            controls whether /metrics and the HTTP request hooks are wired up
-        editor: server.editor_enabled. Unused here since the editor's JSON
-            API moved to api_rules.py; kept for the 4d port's signature
-
-    Returns:
-        Configured Flask app
-    """
-    global queue, worker, api_key_config, dashboard_config, metrics_enabled
-
-    queue = queue_manager
-    worker = worker_instance
-    api_key_config = api_key
-    dashboard_config = config
-    metrics_enabled = bool(metrics_config and metrics_config.get("enabled"))
-
-    app = Flask(__name__)
-    app.config["JSON_SORT_KEYS"] = False
-    app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
-    # Lax keeps the dashboard session cookie off cross-site POST/PUTs --
-    # the first line of defence for the editor's write endpoints, with the
-    # X-CSRF-Token check in require_api_key_or_session as the second
-    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-    app.jinja_env.filters["timeago"] = _timeago
-
-    # Under FastAPI the session is the ASGI scope's; the secret signs Flask's own
-    # cookie only when this app runs on its own (tests)
-    app.session_interface = ScopeSessionInterface()
-    app.secret_key = sessions.session_secret(api_key)
-
-    @app.context_processor
-    def _inject_version() -> dict[str, Any]:
-        """Makes {{ version }} available in every dashboard template via
-        base.html's shared topbar, without threading it through every
-        individual route's render_template() call -- and {{ csrf_token() }}
-        for pages that call the JSON API with the session cookie."""
-        return {"version": __version__, "csrf_token": lambda: sessions.csrf_token(session)}
-
-    # Disable Flask's default logger (use our configured logger instead)
-    app.logger.disabled = True
-    logging.getLogger("werkzeug").setLevel(logging.WARNING)
-
-    register_error_handlers(app)
-    register_dashboard_routes(app)
-    if metrics_enabled:
-        register_metrics_routes(app)
-        _register_http_metrics_hooks(app)
-
-    logger.info("Dashboard application created")
-    return app
-
-
-NO_API_KEY_MESSAGE = (
-    "No API key is configured on the server: set QBT_RULES_SERVER_API_KEY_FILE (or "
-    "server.api_key) and restart"
-)
-
-
-def _key_matches(key: str | None) -> bool:
-    """Whether key is the configured API key (never, when none is configured)"""
-    return bool(key and api_key_config and secrets.compare_digest(key, api_key_config))
-
-
-def require_api_key[**P](f: Callable[P, ResponseReturnValue]) -> Callable[P, ResponseReturnValue]:
-    """
-    The API key (?key= or X-API-Key) for /metrics: 401 without it, 503 when the
-    server has none (the same answers as api.require_api_key)
+    ``href(name, query={...}, **path_params)`` and ``static_href(path)`` (with ``?v=<version>``
+    so an upgrade never runs a cached old script) give relative URLs; ``csrf_token()`` is the
+    session's token, for forms and for the editor's API calls.
     """
 
-    @wraps(f)
-    def decorated_function(*args: P.args, **kwargs: P.kwargs) -> ResponseReturnValue:
-        if not api_key_config:
-            return jsonify({"error": "Service Unavailable", "message": NO_API_KEY_MESSAGE}), 503
-        key = request.args.get("key") or request.headers.get("X-API-Key")
-        if not _key_matches(key):
-            return jsonify({"error": "Unauthorized", "message": "Invalid or missing API key"}), 401
-        return f(*args, **kwargs)
+    def page_href(name: str, query: dict[str, Any] | None = None, **path: Any) -> str:
+        return href(request, name, query, **path)
 
-    return decorated_function
+    def static_href(path: str, versioned: bool = True) -> str:
+        return href(request, "static", {"v": __version__} if versioned else None, path=path)
 
-
-def _next_url_without_key() -> str:
-    """
-    Build a same-origin path+query string for the current request, with
-    any ?key= stripped out -- used as the "next" destination a rejected
-    dashboard request redirects back to after a successful login.
-    """
-    args = request.args.to_dict(flat=False)
-    args.pop("key", None)
-    query = "&".join(f"{k}={v}" for k, vs in args.items() for v in vs)
-    return request.path + (f"?{query}" if query else "")
+    return {
+        "version": __version__,
+        "csrf_token": lambda: sessions.csrf_token(request.session),
+        "href": page_href,
+        "static_href": static_href,
+    }
 
 
-def _sanitize_next(next_url: str | None) -> str:
-    """
-    Reduce an arbitrary ?next= value down to a same-origin path+query,
-    discarding any scheme/host component and any embedded ?key=.
-
-    Used both when rendering the login form (so its hidden `next` field
-    only ever holds a safe value) and again right before issuing the
-    post-login redirect (defense in depth -- that hidden field is still
-    client-controlled input by the time it comes back in the POST body).
-    This is what makes a crafted next unable to send anyone off-site,
-    since redirect() only ever receives something already reduced to a
-    bare path+query, never a full URL, and can't be tricked into treating
-    a scheme-relative or absolute URL as one.
-    """
-    parsed = urlparse(next_url or "")
-    params = parse_qs(parsed.query)
-    params.pop("key", None)
-    query = urlencode(params, doseq=True)
-    return (parsed.path or "/") + (f"?{query}" if query else "")
+templates = Jinja2Templates(directory=TEMPLATES_DIR, context_processors=[_template_globals])
+templates.env.filters["timeago"] = _timeago
 
 
-def require_api_key_dashboard[**P](
-    f: Callable[P, ResponseReturnValue],
-) -> Callable[P, ResponseReturnValue]:
-    """
-    Like require_api_key, but for browser-facing dashboard routes
+def render(request: Request, name: str, status_code: int = 200, **context: Any) -> HTMLResponse:
+    return templates.TemplateResponse(request, name, context, status_code=status_code)
 
-    A scripted API client can handle a JSON 401 -- a human in a browser
-    can't do anything useful with one. A valid ?key=/header still works
-    as a direct, one-shot bootstrap (and refreshes the session), but
-    normal navigation no longer needs the key repeated in every URL:
-    a successful check establishes a signed session cookie, checked
-    here on every subsequent request before falling back to requiring
-    the key again. On neither a valid key nor a valid session, redirects
-    to the /login form, carrying the originally requested URL through as
-    ?next= so a successful login lands back where the user was headed.
+
+class Static(StaticFiles):
+    """/static, revalidated on every use (``Cache-Control: no-cache``, as Flask served it).
+
+    The pages ask for ``?v=<version>``, so a new release is a new URL; within one version the
+    ETag and Last-Modified answers make a reload cheap.
     """
 
-    @wraps(f)
-    def decorated_function(*args: P.args, **kwargs: P.kwargs) -> ResponseReturnValue:
-        key = request.args.get("key") or request.headers.get("X-API-Key")
-
-        if _key_matches(key):
-            sessions.log_in(session)
-            return f(*args, **kwargs)
-
-        if api_key_config and sessions.is_logged_in(session):
-            return f(*args, **kwargs)
-
-        login_kwargs: dict[str, Any] = {"next": _next_url_without_key()}
-        if key:
-            # A key was provided but it was wrong, as opposed to a first
-            # visit with no key/session at all -- show an error on the form.
-            login_kwargs["error"] = 1
-        return redirect(url_for("login", **login_kwargs))
-
-    return decorated_function
+    def file_response(self, *args: Any, **kwargs: Any) -> Response:
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
-def register_error_handlers(app: Flask) -> None:
-    """The JSON error bodies, for the dashboard's paths ({"error", "message"}, as api.py)"""
+# -- Auth ------------------------------------------------------------------------------------------
 
-    @app.errorhandler(405)
-    def method_not_allowed(error: Exception) -> ResponseReturnValue:
-        """Handle 405 errors"""
-        return jsonify(
-            {
-                "error": "Method Not Allowed",
-                "message": f"{request.method} is not allowed for this endpoint",
-            }
-        ), 405
 
-    @app.errorhandler(413)
-    def too_large(error: Exception) -> ResponseReturnValue:
-        """Handle bodies over MAX_CONTENT_LENGTH"""
-        return jsonify(
-            {
-                "error": "Payload Too Large",
-                "message": f"Request body exceeds {MAX_REQUEST_BYTES // (1024 * 1024)} MB",
-            }
-        ), 413
+class LoginRedirect(Exception):
+    """Raised by ``require_login``: answer with this redirect instead of the page."""
 
-    @app.errorhandler(404)
-    def not_found(error: Exception) -> ResponseReturnValue:
-        """Handle 404 errors"""
-        return jsonify({"error": "Not Found", "message": "Endpoint not found"}), 404
+    def __init__(self, response: RedirectResponse) -> None:
+        super().__init__("login required")
+        self.response = response
 
-    @app.errorhandler(500)
-    def internal_error(error: Exception) -> ResponseReturnValue:
-        """Handle 500 errors"""
-        logger.error(f"Internal server error: {error}", exc_info=True)
-        return jsonify(
-            {"error": "Internal Server Error", "message": "An unexpected error occurred"}
-        ), 500
 
+def _key_matches(request: Request, key: str | None) -> bool:
+    configured: str = request.app.state.api_key
+    return bool(key and configured and secrets.compare_digest(key, configured))
+
+
+def require_login(request: Request) -> None:
+    """A page's auth: the login session, or the API key once (which starts a session).
+
+    - ``?key=`` that matches: log in, and redirect to this URL without ``key=``.
+    - ``X-API-Key`` that matches: log in and serve the page.
+    - A session (and an API key configured): serve the page.
+    - Otherwise: redirect to the login form with ``?next=`` this page (and ``error=1`` when a
+      key was sent but was wrong). With no API key configured, the form says so.
+
+    A 503 before anything else while the app is starting, as for the JSON routes.
+    """
+    api.services(request)
+    query_key = request.query_params.get("key")
+    key = query_key or request.headers.get("X-API-Key")
+    if _key_matches(request, key):
+        sessions.log_in(request.session)
+        if query_key:
+            raise LoginRedirect(redirect(request, app_path(request), _without_key(request)))
+        return
+    if request.app.state.api_key and sessions.is_logged_in(request.session):
+        return
+    rest = _without_key(request)
+    login = {"next": app_path(request) + (f"?{rest}" if rest else ""), "error": 1 if key else None}
+    raise LoginRedirect(redirect(request, "/login", _query(login)))
+
+
+Page = [Depends(require_login)]
+
+
+# -- Routes ----------------------------------------------------------------------------------------
 
 _TRACEBACK_EXCEPTION_LINE = re.compile(
     r"^[A-Za-z_][\w.]*(?:Error|Exception|Warning)\b.*:", re.MULTILINE
@@ -369,63 +286,66 @@ def _summarize_error(error: str) -> str:
     return error[matches[-1].start() :].strip()
 
 
-def register_dashboard_routes(app: Flask) -> None:
+def _int_param(request: Request, name: str, default: int) -> int:
+    """A non-negative integer query parameter, or ``default`` when it isn't one."""
+    try:
+        return max(int(request.query_params.get(name, default)), 0)
+    except ValueError:
+        return default
+
+
+async def _form(request: Request) -> dict[str, str]:
+    """An urlencoded form body (the login form's), first value per field.
+
+    Read here rather than through python-multipart: the form is three short fields, and the
+    API's BodyLimit has already refused anything over 2 MB.
     """
-    Register read-only web dashboard routes
+    body = (await request.body()).decode("utf-8", errors="replace")
+    return {k: v[0] for k, v in parse_qs(body, keep_blank_values=True).items()}
 
-    Server-rendered via Flask + Jinja2 (templates in src/qbt_rules/templates/),
-    reusing the same queue/worker/config data the JSON API already exposes --
-    no new query logic. Lives at the site root (/, /jobs, /rules) rather
-    than under a /dashboard/ prefix, distinct from the /api/* and /metrics
-    namespaces. Auth is via require_api_key_dashboard (same ?key= query
-    param the JSON API supports, but redirects a human to /login instead
-    of a JSON 401 on failure); every internal link carries the key forward
-    so navigating between pages stays authenticated.
-    """
 
-    @app.route("/login", methods=["GET", "POST"])
-    def login() -> ResponseReturnValue:
-        """
-        API key entry form for browser use
+def register(app: FastAPI, metrics_on: bool) -> None:
+    """Add the dashboard's pages, the login form, /static and (when on) /metrics to ``app``."""
 
-        Not behind require_api_key_dashboard itself -- that would make it
-        impossible to ever reach. On success, establishes the session
-        require_api_key_dashboard checks on every subsequent request, so
-        the key doesn't need to be repeated in every URL from here on.
+    async def login_redirect(request: Request, exc: Exception) -> Response:
+        assert isinstance(exc, LoginRedirect)  # noqa: S101  registered for it only
+        return exc.response
 
-        `next` (where to go after a successful submission) is always run
-        through _sanitize_next() before being used as a redirect target --
-        both when rendering it into the form's hidden field and again on
-        the POST that reads it back -- so a crafted next can't send anyone
-        off-site.
-        """
-        if request.method == "POST":
-            key = request.form.get("key", "")
-            next_url = _sanitize_next(request.form.get("next"))
+    app.add_exception_handler(LoginRedirect, login_redirect)
+    app.mount("/static", Static(directory=STATIC_DIR), name="static")
 
-            if _key_matches(key):
-                sessions.log_in(session)
-                return redirect(next_url)
-
-            return redirect(url_for("login", next=next_url, error=1))
-
-        next_url = _sanitize_next(request.args.get("next"))
-
-        return render_template(
+    @app.get("/login", include_in_schema=False)
+    def login(request: Request) -> Response:
+        """The sign-in form: the API key, posted in the body (never in a URL)."""
+        error = request.query_params.get("error")
+        return render(
+            request,
             "login.html",
-            next=next_url,
-            error=bool(request.args.get("error")),
-            no_api_key=not api_key_config,
+            next=sanitize_next(request.query_params.get("next")),
+            error=LOGIN_ERRORS.get(error or "", LOGIN_ERRORS["1"] if error else None),
+            no_api_key=not request.app.state.api_key,
         )
 
-    @app.route("/", methods=["GET"])
-    @require_api_key_dashboard
-    def dashboard_overview() -> ResponseReturnValue:
-        """Dashboard home: job counts by status, recent activity, rules summary"""
-        queue_stats = queue.get_stats()
-        recent_jobs = queue.list_jobs(limit=5)
+    @app.post("/login", include_in_schema=False)
+    async def login_submit(request: Request) -> Response:
+        """Check the CSRF token and the key, then start the session and go to ``next``."""
+        form = await _form(request)
+        next_url = sanitize_next(form.get("next"))
+        if not sessions.csrf_ok(request.session, form.get("csrf_token")):
+            return redirect(request, "/login", _query({"next": next_url, "error": "csrf"}))
+        if not _key_matches(request, form.get("key")):
+            return redirect(request, "/login", _query({"next": next_url, "error": 1}))
+        # A fresh session (and CSRF token) for the signed-in browser
+        request.session.clear()
+        sessions.log_in(request.session)
+        path, _, query = next_url.partition("?")
+        return redirect(request, path, query)
 
-        rules = dashboard_config.get_rules() if dashboard_config is not None else None
+    @app.get("/", dependencies=Page, include_in_schema=False)
+    def dashboard_overview(request: Request) -> Response:
+        """Dashboard home: job counts by status, recent activity, rules summary"""
+        found = api.services(request)
+        rules = found.rules.get_rules() if found.rules is not None else None
         rules_summary = (
             {
                 "total": len(rules),
@@ -435,143 +355,100 @@ def register_dashboard_routes(app: Flask) -> None:
             if rules is not None
             else None
         )
-
-        return render_template(
+        return render(
+            request,
             "dashboard.html",
             active="overview",
-            queue_stats=queue_stats,
-            recent_jobs=recent_jobs,
+            queue_stats=found.queue.get_stats(),
+            recent_jobs=found.queue.list_jobs(limit=5),
             rules_summary=rules_summary,
         )
 
-    @app.route("/jobs", methods=["GET"])
-    @require_api_key_dashboard
-    def dashboard_jobs() -> ResponseReturnValue:
+    @app.get("/jobs", dependencies=Page, include_in_schema=False)
+    def dashboard_jobs(request: Request) -> Response:
         """Paginated job list, optionally filtered by status"""
-        status = request.args.get("status")
-        limit = int(request.args.get("limit", 50))
-        offset = int(request.args.get("offset", 0))
-
-        jobs = queue.list_jobs(status=status, limit=limit, offset=offset)
-        total = queue.count_jobs(status=status)
-
-        return render_template(
+        queue = api.services(request).queue
+        status = request.query_params.get("status") or None
+        limit = _int_param(request, "limit", 50) or 50
+        offset = _int_param(request, "offset", 0)
+        return render(
+            request,
             "jobs.html",
             active="jobs",
-            jobs=jobs,
-            total=total,
+            jobs=queue.list_jobs(status=status, limit=limit, offset=offset),
+            total=queue.count_jobs(status=status),
             limit=limit,
             offset=offset,
             status=status,
         )
 
-    @app.route("/jobs/<job_id>", methods=["GET"])
-    @require_api_key_dashboard
-    def dashboard_job_detail(job_id: str) -> ResponseReturnValue:
+    @app.get("/jobs/{job_id}", dependencies=Page, include_in_schema=False)
+    def dashboard_job_detail(request: Request, job_id: str) -> Response:
         """Single job's full detail, including result/error if present"""
-        job = queue.get_job(job_id)
+        job = api.services(request).queue.get_job(job_id)
         error_summary = _summarize_error(job["error"]) if job and job.get("error") else None
-
-        return render_template(
+        return render(
+            request,
             "job_detail.html",
+            status_code=200 if job else 404,
             active="jobs",
             job=job,
             job_id=job_id,
             error_summary=error_summary,
-        ), (200 if job else 404)
+        )
 
-    @app.route("/rules", methods=["GET"])
-    @require_api_key_dashboard
-    def dashboard_rules() -> ResponseReturnValue:
-        """Read-only rules.yml view, sourced from the same hot-reload-aware
-        Config.get_rules() the rules engine itself uses"""
-        rules = dashboard_config.get_rules() if dashboard_config is not None else None
-
-        # Pair each rule with its own resolved-YAML text for the template's
-        # per-rule "Show resolved YAML" panel, without mutating the rule
-        # dicts get_rules() returns (those may be a direct reference to the
-        # engine's cached resolved rules, not a defensive copy).
+    @app.get("/rules", dependencies=Page, include_in_schema=False)
+    def dashboard_rules(request: Request) -> Response:
+        """Read-only rules.yml view, from the same hot-reloading Config.get_rules() the engine
+        uses"""
+        config = api.services(request).rules
+        rules = config.get_rules() if config is not None else None
+        # Each rule beside its own YAML for the "Show resolved YAML" panel, without changing
+        # the dicts get_rules() returns (they may be the engine's cached rules)
         rules_with_yaml = (
             [(rule, yaml.dump(rule, default_flow_style=False, sort_keys=False)) for rule in rules]
             if rules
             else []
         )
-
-        return render_template(
+        return render(
+            request,
             "rules.html",
             active="rules",
             rules=rules,
             rules_with_yaml=rules_with_yaml,
-            config_available=dashboard_config is not None,
+            config_available=config is not None,
         )
 
-    @app.route("/rules/edit", methods=["GET"])
-    @require_api_key_dashboard
-    def dashboard_rules_edit() -> ResponseReturnValue:
-        """rules.yml editor -- the page itself is static; everything it
-        shows comes from the /api/rules/* and /api/config/source endpoints"""
-        return render_template(
+    @app.get("/rules/edit", dependencies=Page, include_in_schema=False)
+    def dashboard_rules_edit(request: Request) -> Response:
+        """The rules.yml editor: everything it shows comes from the JSON API (api_rules.py)"""
+        return render(
+            request,
             "rules_edit.html",
             active="rules",
-            config_available=dashboard_config is not None,
+            config_available=api.services(request).rules is not None,
         )
 
+    if metrics_on:
 
-def register_metrics_routes(app: Flask) -> None:
-    """
-    Register the Prometheus /metrics endpoint
+        @app.get("/metrics", dependencies=api.KeyOnly, include_in_schema=False)
+        def metrics_endpoint(request: Request) -> Response:
+            """Prometheus scrape endpoint: the API key, as ``?key=`` or ``X-API-Key``.
 
-    Only called from create_app() when metrics are enabled -- by that
-    point metrics.init(enabled=True) has already run (in legacy_cli.py, before
-    Gunicorn forks), so prometheus_client is guaranteed importable here.
-    """
-
-    @app.route("/metrics", methods=["GET"])
-    @require_api_key
-    def metrics_endpoint() -> ResponseReturnValue:
-        """
-        Prometheus scrape endpoint
-
-        Combines multiprocess-aggregated event counters/histograms (HTTP
-        requests, actions executed, job duration, scheduler fires) with
-        on-demand state gauges computed fresh from the same data /api/stats
-        and /api/health already expose (queue depth/job counts, worker
-        status, schedule entry count) -- see metrics.py's module docstring
-        for why these are split into two different collection strategies.
-        """
-        worker_status = worker.get_status()
-        schedule_entry_count = len(dashboard_config.schedule) if dashboard_config is not None else 0
-
-        output = metrics.generate_metrics_output(
-            queue_backend=queue.__class__.__name__,
-            queue_depth=queue.get_queue_depth(),
-            job_counts=queue.get_stats(),
-            worker_running=worker_status["running"],
-            worker_last_job_completed=worker_status["last_job_completed"],
-            schedule_entry_count=schedule_entry_count,
-        )
-        return Response(output, mimetype=metrics.content_type())
-
-
-def _register_http_metrics_hooks(app: Flask) -> None:
-    """
-    Register before_request/after_request hooks recording HTTP request
-    count/duration metrics for every route except /metrics itself (avoids a
-    self-referential scrape-of-scrape metric, standard practice)
-    """
-
-    @app.before_request
-    def _metrics_start_timer() -> None:
-        g._metrics_start_time = time.time()
-
-    @app.after_request
-    def _metrics_record_request(response: Response) -> Response:
-        if request.endpoint != "metrics_endpoint" and hasattr(g, "_metrics_start_time"):
-            duration = time.time() - g._metrics_start_time
-            metrics.record_http_request(
-                method=request.method,
-                endpoint=request.endpoint or "unknown",
-                status=response.status_code,
-                duration=duration,
+            Multiprocess-aggregated event counters and histograms, plus state gauges computed
+            now from the queue, the worker and the schedule (metrics.py says why).
+            """
+            found = api.services(request)
+            worker_status = found.worker.get_status()
+            output = metrics.generate_metrics_output(
+                queue_backend=found.queue.__class__.__name__,
+                queue_depth=found.queue.get_queue_depth(),
+                job_counts=found.queue.get_stats(),
+                worker_running=worker_status["running"],
+                worker_last_job_completed=worker_status["last_job_completed"],
+                schedule_entry_count=len(found.rules.schedule) if found.rules is not None else 0,
             )
-        return response
+            # The content type exactly as Flask sent it, charset twice (#28 item 4, fixed in 4e)
+            return Response(
+                output, headers={"Content-Type": f"{metrics.content_type()}; charset=utf-8"}
+            )
