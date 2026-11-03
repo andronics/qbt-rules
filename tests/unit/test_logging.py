@@ -1,18 +1,22 @@
 """Tests for logging module."""
 
 import logging
+import logging.handlers
 import sys
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
 import pytest
 
+import qbt_rules.logging as qbt_logging
 from qbt_rules.logging import (
-    setup_logging, get_logger, LOG_FORMAT_SIMPLE, LOG_FORMAT_DETAILED, CONSOLE_FORMAT_BARE
+    setup_logging, get_logger, set_file_rotation, LOG_FORMAT_SIMPLE, LOG_FORMAT_DETAILED,
+    CONSOLE_FORMAT_BARE, DEFAULT_MAX_BYTES, DEFAULT_BACKUP_COUNT
 )
 
 
-def _logging_config(level="INFO", file=None, trace_mode=False, http_access=False, client_mode=False):
+def _logging_config(level="INFO", file=None, trace_mode=False, http_access=False, client_mode=False,
+                    max_bytes=DEFAULT_MAX_BYTES, backup_count=DEFAULT_BACKUP_COUNT):
     """Build a resolved logging_config dict, matching cli.py's get_logging_config() shape."""
     return {
         'level': level,
@@ -20,7 +24,13 @@ def _logging_config(level="INFO", file=None, trace_mode=False, http_access=False
         'trace_mode': trace_mode,
         'http_access': http_access,
         'client_mode': client_mode,
+        'max_bytes': max_bytes,
+        'backup_count': backup_count,
     }
+
+
+def _file_handlers():
+    return [h for h in logging.getLogger().handlers if isinstance(h, logging.FileHandler)]
 
 
 class TestSetupLogging:
@@ -246,6 +256,112 @@ class TestSetupLogging:
         logging.getLogger("test").debug("Debug detail")
 
         assert "Debug detail" in log_file.read_text()
+
+
+class TestLogRotation:
+    """The log file rotates by size instead of growing without bound (#24)."""
+
+    def test_file_handler_rotates_with_defaults(self, tmp_path):
+        setup_logging(_logging_config(file=tmp_path / "test.log"))
+
+        [handler] = _file_handlers()
+        assert isinstance(handler, logging.handlers.RotatingFileHandler)
+        assert handler.maxBytes == 10 * 1024 * 1024
+        assert handler.backupCount == 5
+
+    def test_missing_rotation_keys_use_defaults(self, tmp_path):
+        config = _logging_config(file=tmp_path / "test.log")
+        del config['max_bytes'], config['backup_count']
+
+        setup_logging(config)
+
+        [handler] = _file_handlers()
+        assert handler.maxBytes == DEFAULT_MAX_BYTES
+        assert handler.backupCount == DEFAULT_BACKUP_COUNT
+
+    def test_file_rotates_at_max_bytes_and_keeps_backup_count(self, tmp_path):
+        log_file = tmp_path / "test.log"
+        setup_logging(_logging_config(file=log_file, max_bytes=500, backup_count=2))
+
+        log = logging.getLogger("test")
+        for i in range(100):
+            log.info("line %03d %s", i, "x" * 40)
+
+        assert log_file.stat().st_size <= 500
+        assert (tmp_path / "test.log.1").exists()
+        assert (tmp_path / "test.log.2").exists()
+        assert not (tmp_path / "test.log.3").exists()
+        assert "line 099" in log_file.read_text()
+
+    def test_max_bytes_zero_disables_rotation(self, tmp_path):
+        log_file = tmp_path / "test.log"
+        setup_logging(_logging_config(file=log_file, max_bytes=0, backup_count=2))
+
+        log = logging.getLogger("test")
+        for i in range(100):
+            log.info("line %03d %s", i, "x" * 40)
+
+        assert log_file.stat().st_size > 500
+        assert not (tmp_path / "test.log.1").exists()
+
+
+class TestSetFileRotation:
+    """Only one Gunicorn process should rotate the shared log file."""
+
+    def test_disable_swaps_to_watched_handler(self, tmp_path):
+        log_file = tmp_path / "test.log"
+        setup_logging(_logging_config(level="WARNING", file=log_file, trace_mode=True))
+        formatter = _file_handlers()[0].formatter
+
+        set_file_rotation(False)
+
+        [handler] = _file_handlers()
+        assert isinstance(handler, logging.handlers.WatchedFileHandler)
+        assert handler.baseFilename == str(log_file)
+        assert handler.level == logging.WARNING
+        assert handler.formatter is formatter
+        assert len(logging.getLogger().handlers) == 2  # console handler kept
+
+    def test_enable_swaps_back_to_rotating_handler(self, tmp_path):
+        setup_logging(_logging_config(file=tmp_path / "test.log", max_bytes=1234, backup_count=3))
+        set_file_rotation(False)
+
+        set_file_rotation(True)
+
+        [handler] = _file_handlers()
+        assert isinstance(handler, logging.handlers.RotatingFileHandler)
+        assert handler.maxBytes == 1234
+        assert handler.backupCount == 3
+
+    def test_enable_when_already_rotating_keeps_handler(self, tmp_path):
+        setup_logging(_logging_config(file=tmp_path / "test.log"))
+        [before] = _file_handlers()
+
+        set_file_rotation(True)
+
+        assert _file_handlers() == [before]
+
+    def test_watched_handler_follows_rotation_by_another_handler(self, tmp_path):
+        """Master (watching) keeps writing to the live file after a worker
+        (rotating) renames it, rather than to the rotated backup."""
+        log_file = tmp_path / "test.log"
+        setup_logging(_logging_config(file=log_file))
+        set_file_rotation(False)
+
+        log_file.rename(tmp_path / "test.log.1")  # what the rotating process does
+        logging.getLogger("test").warning("after rotation")
+
+        assert "after rotation" in log_file.read_text()
+        assert "after rotation" not in (tmp_path / "test.log.1").read_text()
+
+    def test_noop_without_file_logging(self, capsys):
+        setup_logging(_logging_config(file=Path("/root/forbidden/test.log")))
+        handlers = list(logging.getLogger().handlers)
+        assert qbt_logging._file_settings is None
+
+        set_file_rotation(False)
+
+        assert logging.getLogger().handlers == handlers
 
 
 class TestGetLogger:

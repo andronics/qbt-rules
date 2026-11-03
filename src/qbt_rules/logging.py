@@ -5,13 +5,22 @@ Provides consistent logging setup across all modules and triggers
 
 import sys
 import logging
-from typing import Dict, Any
+import logging.handlers
+from typing import Dict, Any, Optional
 
 # Standard log formats
 LOG_FORMAT_SIMPLE = '%(asctime)s | %(levelname)-8s | %(message)s'
 LOG_FORMAT_DETAILED = '%(asctime)s | %(levelname)-8s | %(name)s:%(funcName)s:%(lineno)d | %(message)s'
 CONSOLE_FORMAT_BARE = '%(message)s'
 DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
+
+# Log file rotation defaults (logging.max_bytes / logging.backup_count)
+DEFAULT_MAX_BYTES = 10 * 1024 * 1024
+DEFAULT_BACKUP_COUNT = 5
+
+# Settings of the file handler installed by the last setup_logging() call,
+# kept so set_file_rotation() can rebuild it in another process
+_file_settings: Optional[Dict[str, Any]] = None
 
 
 def setup_logging(logging_config: Dict[str, Any]):
@@ -24,8 +33,11 @@ def setup_logging(logging_config: Dict[str, Any]):
     Args:
         logging_config: Pre-resolved dict from cli.py's get_logging_config()
             -- {'level': str, 'file': Path, 'trace_mode': bool,
-                'http_access': bool, 'client_mode': bool}
+                'http_access': bool, 'client_mode': bool,
+                'max_bytes': int, 'backup_count': int}
     """
+    global _file_settings
+
     log_level = logging_config['level']
     trace_mode = logging_config['trace_mode']
     client_mode = logging_config.get('client_mode', False)
@@ -53,15 +65,24 @@ def setup_logging(logging_config: Dict[str, Any]):
         console_log_format = LOG_FORMAT_SIMPLE
 
     # Try to setup file logging
+    # The file rotates by size (logging.max_bytes, 0 disables rotation),
+    # keeping logging.backup_count old files -- a plain FileHandler grew
+    # without bound on a long-running server.
     file_handler = None
+    _file_settings = None
     try:
         log_file = logging_config['file']
         log_file.parent.mkdir(parents=True, exist_ok=True)
 
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setLevel(getattr(logging, log_level))
-        file_formatter = logging.Formatter(file_log_format, datefmt=DATE_FORMAT)
-        file_handler.setFormatter(file_formatter)
+        settings = {
+            'file': log_file,
+            'level': getattr(logging, log_level),
+            'formatter': logging.Formatter(file_log_format, datefmt=DATE_FORMAT),
+            'max_bytes': logging_config.get('max_bytes', DEFAULT_MAX_BYTES),
+            'backup_count': logging_config.get('backup_count', DEFAULT_BACKUP_COUNT),
+        }
+        file_handler = _build_file_handler(settings, rotate=True)
+        _file_settings = settings
     except (PermissionError, OSError) as e:
         # Fall back to console-only logging
         print(f"Cannot setup file logging: {e}", file=sys.stderr)
@@ -87,6 +108,45 @@ def setup_logging(logging_config: Dict[str, Any]):
     if file_handler:
         logger.addHandler(file_handler)
     logger.addHandler(console_handler)
+
+
+def _build_file_handler(settings: Dict[str, Any], rotate: bool) -> logging.Handler:
+    if rotate:
+        handler = logging.handlers.RotatingFileHandler(
+            settings['file'],
+            maxBytes=settings['max_bytes'],
+            backupCount=settings['backup_count'],
+        )
+    else:
+        handler = logging.handlers.WatchedFileHandler(settings['file'])
+    handler.setLevel(settings['level'])
+    handler.setFormatter(settings['formatter'])
+    return handler
+
+
+def set_file_rotation(enabled: bool):
+    """
+    Switch this process's log file handler between rotating and watching
+
+    Under Gunicorn the master and every forked worker write the same log
+    file. If each one rotated it, they'd rename the file out from under
+    each other (lost or misplaced lines, backups shifted twice). So only
+    one process should rotate (RotatingFileHandler); the others use a
+    WatchedFileHandler, which writes without rotating and reopens the file
+    when it notices another process has rotated it. A no-op when file
+    logging isn't active (e.g. it fell back to console-only).
+    """
+    if _file_settings is None:
+        return
+    root = logging.getLogger()
+    for handler in root.handlers[:]:
+        if not isinstance(handler, logging.FileHandler):
+            continue
+        if isinstance(handler, logging.handlers.RotatingFileHandler) == enabled:
+            continue
+        root.removeHandler(handler)
+        handler.close()
+        root.addHandler(_build_file_handler(_file_settings, rotate=enabled))
 
 
 def get_logger(name: str) -> logging.Logger:

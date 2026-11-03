@@ -2111,3 +2111,34 @@ class TestEditorRoutes:
     def test_static_assets_are_served(self, client):
         assert client.get('/static/editor.js').status_code == 200
         assert client.get('/static/vendor/ace/ace.js').status_code == 200
+
+
+class TestRunServerLogRotationHooks:
+    """Only one Gunicorn process rotates the shared log file: the master
+    stops rotating in when_ready (before the first fork), each forked
+    worker takes over rotation in post_fork."""
+
+    def test_when_ready_disables_and_post_fork_enables_rotation(self, mocker):
+        mocker.patch('qbt_rules.server.logger')
+        set_file_rotation = mocker.patch('qbt_rules.server.set_file_rotation')
+        captured = {}
+
+        class MockBaseApplication:
+            def __init__(self):
+                pass
+
+            def run(self):
+                captured.update(self.options)
+
+        mocker.patch('qbt_rules.server.worker', mocker.MagicMock(running=False))
+        with patch('gunicorn.app.base.BaseApplication', MockBaseApplication):
+            run_server(mocker.MagicMock(), host='127.0.0.1', port=8080)
+
+        assert captured['preload_app'] is True
+
+        captured['when_ready'](mocker.MagicMock())
+        set_file_rotation.assert_called_once_with(False)
+
+        set_file_rotation.reset_mock()
+        captured['post_fork'](mocker.MagicMock(), mocker.MagicMock(pid=1))
+        set_file_rotation.assert_called_once_with(True)

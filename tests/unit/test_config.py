@@ -15,6 +15,7 @@ from qbt_rules.config import (
     parse_bool,
     parse_int,
     parse_duration,
+    parse_retention,
     resolve_config,
     copy_default_if_missing,
     DEFAULT_CONFIG_SHARE_PATH,
@@ -208,6 +209,37 @@ class TestParseDuration:
     def test_other_types_to_string(self):
         """Other types convert to string."""
         assert parse_duration(42.5) == '42.5'
+
+
+# ============================================================================
+# parse_retention()
+# ============================================================================
+
+class TestParseRetention:
+    """Test parse_retention() (queue.cleanup_after to seconds)."""
+
+    @pytest.mark.parametrize('value, expected', [
+        (604800, 604800),
+        ('604800', 604800),
+        ('7d', 7 * 86400),
+        ('2w', 14 * 86400),
+        ('12h', 12 * 3600),
+        ('30m', 1800),
+        (' 7D ', 7 * 86400),
+        ('30 days', 30 * 86400),
+        ('12 hours', 12 * 3600),
+    ])
+    def test_parses_to_seconds(self, value, expected):
+        assert parse_retention(value) == expected
+
+    @pytest.mark.parametrize('value', [None, False, 0, '0', '', '  '])
+    def test_zero_or_empty_disables(self, value):
+        assert parse_retention(value) is None
+
+    def test_invalid_disables_with_warning(self, caplog):
+        with caplog.at_level(logging.WARNING):
+            assert parse_retention('soon') is None
+        assert 'cleanup disabled' in caplog.text
 
 
 # ============================================================================

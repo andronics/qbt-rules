@@ -36,7 +36,9 @@ class Worker:
         config: Config,
         poll_interval: float = 1.0,
         notifications_config: Optional[Dict[str, str]] = None,
-        integrations_config: Optional[Dict[str, Dict[str, str]]] = None
+        integrations_config: Optional[Dict[str, Dict[str, str]]] = None,
+        cleanup_after: Optional[int] = None,
+        cleanup_interval: float = 3600.0
     ):
         """
         Initialize worker
@@ -54,6 +56,10 @@ class Worker:
                 ({'sonarr': {'url', 'api_key'}, 'radarr': {...}}, already
                 _FILE-resolved) for the arr_blocklist action --
                 same rationale as notifications_config
+            cleanup_after: Remove finished jobs older than this many seconds
+                (queue.cleanup_after). None or 0 disables cleanup
+            cleanup_interval: Minimum seconds between cleanup runs. The
+                first run happens as soon as the worker loop starts
         """
         self.queue = queue
         self.api = api
@@ -61,6 +67,9 @@ class Worker:
         self.poll_interval = poll_interval
         self.notifications_config = notifications_config
         self.integrations_config = integrations_config
+        self.cleanup_after = cleanup_after
+        self.cleanup_interval = cleanup_interval
+        self._next_cleanup = float('-inf')  # monotonic time; run on first loop
 
         self.running = False
         self.thread: Optional[threading.Thread] = None
@@ -126,6 +135,8 @@ class Worker:
 
         while self.running:
             try:
+                self._maybe_cleanup()
+
                 # Try to dequeue a job
                 job = self.queue.dequeue()
 
@@ -141,6 +152,28 @@ class Worker:
                 time.sleep(self.poll_interval)
 
         logger.info("Worker loop exited")
+
+    def _maybe_cleanup(self):
+        """
+        Remove old finished jobs, at most once per cleanup_interval
+
+        The backends only delete completed, failed and cancelled jobs, and
+        log how many they removed.
+        """
+        if not self.cleanup_after:
+            return
+
+        now = time.monotonic()
+        if now < self._next_cleanup:
+            return
+
+        # Schedule the next run first, so a failing backend isn't retried
+        # on every poll
+        self._next_cleanup = now + self.cleanup_interval
+        try:
+            self.queue.cleanup_old_jobs(self.cleanup_after)
+        except Exception as e:
+            logger.error(f"Job cleanup failed: {e}", exc_info=True)
 
     def _process_job(self, job: Dict[str, Any]):
         """

@@ -814,3 +814,80 @@ class TestWorkerIntegration:
         assert mock_queue.update_status.call_count == 1
         # Should have stopped gracefully
         assert not worker.is_alive()
+
+
+class TestWorkerJobCleanup:
+    """Periodic queue.cleanup_after cleanup from the worker loop"""
+
+    def _worker(self, mock_queue, mock_api, mock_config, **kwargs):
+        return Worker(queue=mock_queue, api=mock_api, config=mock_config,
+                      poll_interval=0.01, **kwargs)
+
+    def test_disabled_by_default(self, worker, mock_queue):
+        worker._maybe_cleanup()
+        mock_queue.cleanup_old_jobs.assert_not_called()
+
+    def test_runs_on_first_call_then_throttled(self, mock_queue, mock_api, mock_config, mocker):
+        worker = self._worker(mock_queue, mock_api, mock_config, cleanup_after=604800)
+        clock = mocker.patch('qbt_rules.worker.time.monotonic', return_value=1000.0)
+
+        worker._maybe_cleanup()
+        mock_queue.cleanup_old_jobs.assert_called_once_with(604800)
+
+        clock.return_value = 1000.0 + 3599
+        worker._maybe_cleanup()
+        assert mock_queue.cleanup_old_jobs.call_count == 1
+
+        clock.return_value = 1000.0 + 3600
+        worker._maybe_cleanup()
+        assert mock_queue.cleanup_old_jobs.call_count == 2
+
+    def test_custom_interval(self, mock_queue, mock_api, mock_config, mocker):
+        worker = self._worker(mock_queue, mock_api, mock_config,
+                              cleanup_after=60, cleanup_interval=10)
+        clock = mocker.patch('qbt_rules.worker.time.monotonic', return_value=50.0)
+        worker._maybe_cleanup()
+        clock.return_value = 60.0
+        worker._maybe_cleanup()
+        assert mock_queue.cleanup_old_jobs.call_count == 2
+
+    def test_failure_is_logged_and_throttled(self, mock_queue, mock_api, mock_config,
+                                             mocker, caplog):
+        worker = self._worker(mock_queue, mock_api, mock_config, cleanup_after=604800)
+        mocker.patch('qbt_rules.worker.time.monotonic', return_value=1000.0)
+        mock_queue.cleanup_old_jobs.side_effect = RuntimeError('db locked')
+
+        worker._maybe_cleanup()
+        worker._maybe_cleanup()
+
+        assert mock_queue.cleanup_old_jobs.call_count == 1
+        assert 'Job cleanup failed: db locked' in caplog.text
+
+    def test_loop_runs_cleanup_once_at_start(self, mock_queue, mock_api, mock_config):
+        worker = self._worker(mock_queue, mock_api, mock_config, cleanup_after=604800)
+
+        worker.start()
+        time.sleep(0.1)  # many poll iterations
+        worker.stop()
+
+        mock_queue.cleanup_old_jobs.assert_called_once_with(604800)
+
+    def test_cleanup_with_real_sqlite_queue(self, tmp_path, mock_api, mock_config):
+        """End to end: the worker removes an old finished job, keeps a pending one"""
+        from datetime import timedelta
+
+        from qbt_rules.queue_backends.sqlite_queue import SQLiteQueue
+
+        queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
+        done = queue.enqueue()
+        queue.cancel_job(done)
+        pending = queue.enqueue()
+        old = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+        queue._get_connection().execute('UPDATE jobs SET created_at = ?', (old,))
+
+        worker = Worker(queue=queue, api=mock_api, config=mock_config, cleanup_after=604800)
+        worker._maybe_cleanup()
+
+        assert queue.get_job(done) is None
+        assert queue.get_job(pending) is not None
+        queue.close()

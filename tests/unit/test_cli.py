@@ -167,6 +167,8 @@ class TestGetLoggingConfig:
         assert config['trace_mode'] is False
         assert config['http_access'] is False
         assert config['client_mode'] is True
+        assert config['max_bytes'] == 10 * 1024 * 1024
+        assert config['backup_count'] == 5
 
     def test_client_mode_false_when_serving(self, tmp_path):
         """--serve should mark client_mode False, so setup_logging() keeps
@@ -196,10 +198,15 @@ class TestGetLoggingConfig:
                 'file': 'custom/path.log',
                 'trace_mode': True,
                 'http_access': True,
+                'max_bytes': 2048,
+                'backup_count': 2,
             }
         }, config_dir=tmp_path)
 
         config = get_logging_config(args, config_obj)
+
+        assert config['max_bytes'] == 2048
+        assert config['backup_count'] == 2
 
         assert config['level'] == 'DEBUG'
         assert config['file'] == tmp_path / 'custom' / 'path.log'
@@ -247,9 +254,14 @@ class TestGetLoggingConfig:
             'QBT_RULES_LOGGING_FILE': '/env/qbt-rules.log',
             'QBT_RULES_LOGGING_TRACE_MODE': 'true',
             'QBT_RULES_LOGGING_HTTP_ACCESS': 'true',
+            'QBT_RULES_LOGGING_MAX_BYTES': '1000000',
+            'QBT_RULES_LOGGING_BACKUP_COUNT': '0',
         }
         with patch.dict(os.environ, env):
             config = get_logging_config(args, config_obj)
+
+        assert config['max_bytes'] == 1000000
+        assert config['backup_count'] == 0
 
         assert config['level'] == 'ERROR'
         assert config['file'] == Path('/env/qbt-rules.log')
@@ -269,6 +281,24 @@ class TestGetLoggingConfig:
             config = get_logging_config(args, config_obj)
 
         assert config['level'] == 'DEBUG'
+
+    def test_rotation_settings_from_file_env_vars(self, tmp_path):
+        """logging.max_bytes / logging.backup_count support the _FILE variant too."""
+        (tmp_path / "max_bytes").write_text("4096\n")
+        (tmp_path / "backup_count").write_text("7\n")
+
+        args = Namespace()
+        config_obj = Mock(config={}, config_dir=tmp_path)
+
+        env = {
+            'QBT_RULES_LOGGING_MAX_BYTES_FILE': str(tmp_path / "max_bytes"),
+            'QBT_RULES_LOGGING_BACKUP_COUNT_FILE': str(tmp_path / "backup_count"),
+        }
+        with patch.dict(os.environ, env):
+            config = get_logging_config(args, config_obj)
+
+        assert config['max_bytes'] == 4096
+        assert config['backup_count'] == 7
 
     def test_bare_unprefixed_env_vars_no_longer_work(self, tmp_path):
         """The old (undocumented, no _FILE support) bare LOG_LEVEL/LOG_FILE/
@@ -571,6 +601,17 @@ class TestGetQueueConfig:
         assert config['backend'] == 'sqlite'
         assert config['sqlite_path'] == '/config/qbt-rules.db'
         assert config['redis_url'] == 'redis://localhost:6379/0'
+        assert config['cleanup_after'] == 7 * 86400
+
+    def test_cleanup_after_from_config_file(self):
+        """queue.cleanup_after is parsed to seconds, and 0 disables cleanup"""
+        args = Namespace()
+
+        config = get_queue_config(args, Mock(config={'queue': {'cleanup_after': '2w'}}))
+        assert config['cleanup_after'] == 14 * 86400
+
+        config = get_queue_config(args, Mock(config={'queue': {'cleanup_after': 0}}))
+        assert config['cleanup_after'] is None
 
     def test_uses_args_values(self):
         """Should use CLI argument values when provided"""
@@ -664,7 +705,8 @@ class TestRunServerMode:
                 'sonarr': {'url': None, 'api_key': None},
                 'radarr': {'url': None, 'api_key': None},
                 'trackie': {'url': None, 'max_age': None, 'timeout': None},
-            }
+            },
+            cleanup_after=7 * 86400  # queue.cleanup_after default (7d)
         )
         mock_worker.start.assert_called_once()
 

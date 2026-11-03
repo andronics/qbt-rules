@@ -180,6 +180,45 @@ def parse_int(value: Any, default: int = 0) -> int:
         return default
 
 
+_RETENTION_UNITS = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400, 'w': 604800}
+
+
+def parse_retention(value: Any) -> Optional[int]:
+    """
+    Parse queue.cleanup_after into seconds
+
+    Accepts integer seconds (604800, '604800'), a number with a unit
+    suffix ('7d', '2w', '12h') or a spelled-out duration ('30 days').
+    0 disables job cleanup, and so does a value that can't be parsed
+    (with a warning): when in doubt, keep the jobs.
+
+    Returns:
+        Retention period in seconds, or None if cleanup is disabled
+    """
+    if value is None or value is False:
+        return None
+
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    if text.isdigit():
+        seconds = int(text)
+    else:
+        match = re.fullmatch(r'(\d+)\s*([smhdw])', text)
+        if match:
+            seconds = int(match.group(1)) * _RETENTION_UNITS[match.group(2)]
+        else:
+            from qbt_rules.utils import parse_duration as duration_to_seconds
+
+            seconds = duration_to_seconds(text)
+            if seconds == 0:
+                logging.warning(
+                    f"Invalid queue.cleanup_after value {value!r}, job cleanup disabled"
+                )
+
+    return seconds or None
+
+
 def parse_duration(value: Union[str, int]) -> str:
     """
     Parse duration string to standardized format

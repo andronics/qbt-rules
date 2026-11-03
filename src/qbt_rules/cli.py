@@ -17,10 +17,14 @@ from pathlib import Path
 from typing import Optional
 
 from qbt_rules.arguments import create_parser, process_args, validate_torrent_hash
-from qbt_rules.config import load_config, resolve_config, parse_int, parse_bool, ENV_VAR_MAP
+from qbt_rules.config import (
+    load_config, resolve_config, parse_int, parse_bool, parse_retention, ENV_VAR_MAP
+)
 from qbt_rules.api import QBittorrentAPI
 from qbt_rules.errors import handle_errors
-from qbt_rules.logging import setup_logging, get_logger
+from qbt_rules.logging import (
+    setup_logging, get_logger, DEFAULT_MAX_BYTES, DEFAULT_BACKUP_COUNT
+)
 from qbt_rules import cli_ui
 
 logger = None  # Set after logging is configured
@@ -84,7 +88,9 @@ def get_logging_config(args, config_obj) -> dict:
         (bool), 'http_access' (bool), 'client_mode' (bool -- True for any
         invocation other than --serve, used by setup_logging() to keep
         console output bare in client mode while the log file still gets
-        full diagnostic detail)
+        full diagnostic detail), 'max_bytes' (int -- rotate the log file
+        once it reaches this size, 0 disables rotation), 'backup_count'
+        (int -- rotated files to keep)
     """
     level = resolve_config(
         getattr(args, 'log_level', None),
@@ -108,12 +114,24 @@ def get_logging_config(args, config_obj) -> dict:
         None, 'QBT_RULES_LOGGING_HTTP_ACCESS', config_obj.config, 'logging.http_access', default=False
     ))
 
+    max_bytes = parse_int(resolve_config(
+        None, 'QBT_RULES_LOGGING_MAX_BYTES', config_obj.config, 'logging.max_bytes',
+        default=DEFAULT_MAX_BYTES
+    ))
+
+    backup_count = parse_int(resolve_config(
+        None, 'QBT_RULES_LOGGING_BACKUP_COUNT', config_obj.config, 'logging.backup_count',
+        default=DEFAULT_BACKUP_COUNT
+    ))
+
     return {
         'level': level.upper(),
         'file': file_path,
         'trace_mode': trace_mode,
         'http_access': http_access,
         'client_mode': not getattr(args, 'serve', False),
+        'max_bytes': max_bytes,
+        'backup_count': backup_count,
     }
 
 
@@ -188,7 +206,8 @@ def get_queue_config(args, config_obj) -> dict:
         'backend': 'sqlite',
         'sqlite_path': '/config/qbt-rules.db',
         'redis_url': 'redis://localhost:6379/0',
-    })
+        'cleanup_after': '7d',
+    }, parsers={'cleanup_after': parse_retention})
 
 
 def get_notifications_config(args, config_obj) -> dict:
@@ -345,7 +364,8 @@ def run_server_mode(args, config_obj, logging_config):
         api=api,
         config=config_obj,
         notifications_config=notifications_config,
-        integrations_config=integrations_config
+        integrations_config=integrations_config,
+        cleanup_after=queue_config['cleanup_after']
     )
     worker.start()
     logger.info("Worker started")
