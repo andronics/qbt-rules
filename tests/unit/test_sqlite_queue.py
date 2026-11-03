@@ -1533,3 +1533,74 @@ class TestSQLiteQueueHelpers:
 
         # Connection should be closed
         assert not hasattr(queue.local, 'conn')
+
+
+# ============================================================================
+# Cleanup Tests
+# ============================================================================
+
+
+class TestSQLiteQueueCleanup:
+    """cleanup_old_jobs() removes only old finished jobs"""
+
+    @staticmethod
+    def _age(queue, job_id, days):
+        """Backdate a job's created_at/completed_at (completed_at only if set)"""
+        old = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        queue._get_connection().execute(
+            'UPDATE jobs SET created_at = ?, '
+            'completed_at = CASE WHEN completed_at IS NULL THEN NULL ELSE ? END '
+            'WHERE id = ?',
+            (old, old, job_id),
+        )
+
+    def _finished(self, queue, status):
+        job_id = queue.enqueue()
+        queue.dequeue()
+        queue.update_status(job_id, status, completed_at=datetime.now(timezone.utc))
+        return job_id
+
+    def test_removes_old_finished_jobs(self, tmp_path, caplog):
+        queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
+        completed = self._finished(queue, JobStatus.COMPLETED)
+        failed = self._finished(queue, JobStatus.FAILED)
+        cancelled = queue.enqueue()
+        queue.cancel_job(cancelled)  # cancelled jobs have no completed_at
+        for job_id in (completed, failed, cancelled):
+            self._age(queue, job_id, days=10)
+
+        with caplog.at_level('INFO', logger='qbt_rules.queue_backends.sqlite_queue'):
+            deleted = queue.cleanup_old_jobs(retention_period=7 * 86400)
+
+        assert deleted == 3
+        assert queue.count_jobs() == 0
+        assert 'Cleaned up 3 old jobs' in caplog.text
+        queue.close()
+
+    def test_keeps_old_pending_and_processing_jobs(self, tmp_path):
+        queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
+        processing = queue.enqueue()
+        queue.dequeue()
+        pending = queue.enqueue()
+        self._age(queue, processing, days=10)
+        self._age(queue, pending, days=10)
+
+        assert queue.cleanup_old_jobs(retention_period=7 * 86400) == 0
+        assert queue.get_job(processing)['status'] == JobStatus.PROCESSING
+        assert queue.get_job(pending)['status'] == JobStatus.PENDING
+        assert queue.dequeue()['job_id'] == pending  # still queued
+        queue.close()
+
+    def test_keeps_recent_finished_jobs(self, tmp_path, caplog):
+        queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
+        recent = self._finished(queue, JobStatus.COMPLETED)
+        cancelled = queue.enqueue()
+        queue.cancel_job(cancelled)
+
+        with caplog.at_level('INFO', logger='qbt_rules.queue_backends.sqlite_queue'):
+            assert queue.cleanup_old_jobs(retention_period=7 * 86400) == 0
+
+        assert queue.get_job(recent) is not None
+        assert queue.get_job(cancelled) is not None
+        assert 'Cleaned up' not in caplog.text
+        queue.close()

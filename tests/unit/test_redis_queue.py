@@ -904,6 +904,29 @@ class TestRedisQueueCleanup:
 
         assert deleted == 5
 
+    def test_cleanup_mixed_jobs_logs_count(self, queue, redis_client, caplog):
+        """Only finished jobs go, pending ones stay queued, and the count is logged"""
+        finished = queue.enqueue()
+        queue.dequeue()
+        queue.update_status(finished, JobStatus.FAILED, error='boom')
+        processing = queue.enqueue()
+        queue.dequeue()
+        pending = queue.enqueue()
+
+        old_timestamp = (datetime.now(timezone.utc) - timedelta(days=10)).timestamp()
+        for job_id in (finished, processing, pending):
+            redis_client.zadd('qbt_rules:jobs:by_time', {job_id: old_timestamp})
+
+        with caplog.at_level('INFO', logger='qbt_rules.queue_backends.redis_queue'):
+            deleted = queue.cleanup_old_jobs(retention_period=7 * 86400)
+
+        assert deleted == 1
+        assert 'Cleaned up 1 old jobs' in caplog.text
+        assert queue.get_job(finished) is None
+        assert queue.get_job(processing)['status'] == JobStatus.PROCESSING
+        assert queue.get_queue_depth() == 1
+        assert queue.dequeue()['job_id'] == pending
+
 
 class TestRedisQueueGetQueueDepth:
     """Test get_queue_depth() method"""
