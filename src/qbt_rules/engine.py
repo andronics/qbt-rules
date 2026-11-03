@@ -621,6 +621,29 @@ class ConditionEvaluator:
             raise OperatorError(operator, field)
 
 
+def describe_action(action_type: str, params: dict[str, Any]) -> str:
+    """An action's type and key parameter for log lines, e.g. ``add_tag (tags: hd, seed)``"""
+    key = _ACTION_KEY_PARAMS.get(action_type)
+    if key is None or key not in params:
+        return action_type
+    value = params[key]
+    if isinstance(value, list | tuple | set):
+        value = ", ".join(str(v) for v in value)
+    return f"{action_type} ({key}: {value})"
+
+
+# The parameter that tells two actions of the same type apart in a log line
+_ACTION_KEY_PARAMS = {
+    "set_category": "category",
+    "add_tag": "tags",
+    "remove_tag": "tags",
+    "set_tags": "tags",
+    "set_file_priority": "priority",
+    "set_upload_limit": "limit",
+    "set_download_limit": "limit",
+}
+
+
 class ActionExecutor:
     """Executes actions on torrents with idempotency checks"""
 
@@ -660,6 +683,10 @@ class ActionExecutor:
         self.notifications_config = notifications_config or {}
         self.integrations_config = integrations_config or {}
         self.field_resolver = field_resolver or ConditionEvaluator(api)
+        # Actions skipped because the torrent was already in the desired
+        # state; the engine logs one summary line per run rather than one
+        # INFO line per torrent and action
+        self.already_applied = 0
 
     def execute(self, torrent: dict[str, Any], action: dict[str, Any]) -> tuple[bool, bool]:
         """
@@ -678,8 +705,10 @@ class ActionExecutor:
         try:
             # Check idempotency before executing
             if self._should_skip_idempotent(torrent, action_type, params):
-                logger.info(
-                    f"  {torrent['name']} - {action_type} already in desired state (skipped)"
+                self.already_applied += 1
+                logger.debug(
+                    f"  {torrent['name']} - {describe_action(action_type, params)} "
+                    "already in desired state (skipped)"
                 )
                 return True, True
             if self.dry_run:
@@ -1493,7 +1522,12 @@ class RulesEngine:
         logger.info(f"  Processed: {self.stats.processed}")
         logger.info(f"  Rules matched: {self.stats.rules_matched}")
         logger.info(f"  Actions executed: {self.stats.actions_executed}")
-        logger.info(f"  Actions skipped (idempotent): {self.stats.actions_skipped}")
+        already_applied = self.executor.already_applied
+        logger.info(f"  {already_applied} action(s) skipped: already in desired state")
+        if self.dry_run:
+            # Dry run counts every action it didn't run as skipped
+            not_run = self.stats.actions_skipped - already_applied
+            logger.info(f"  {not_run} action(s) not run: dry run")
         if self.stats.errors > 0:
             logger.warning(f"  Errors: {self.stats.errors}")
         logger.info("=" * 60)

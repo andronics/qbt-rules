@@ -328,7 +328,7 @@ See [Contexts](Contexts) for the full picture, including why security-sensitive 
 
 ### Q: Will `stop` action pause a torrent that's already paused?
 
-A: No - actions are **idempotent**. The engine checks the current state before acting and skips (logging that it did) if the torrent is already in the desired state.
+A: No - actions are **idempotent**. The engine checks the current state before acting and skips it if the torrent is already in the desired state. The run's summary counts the skips; `logging.level: DEBUG` logs each one with the action that was skipped.
 
 ### Q: What's the difference between `start` and `force_start`?
 
@@ -479,7 +479,7 @@ A: Verify qBittorrent webhook configuration:
 A: Check:
 
 1. **Dry-run mode**: Are you using `--dry-run`? Remove it to apply changes.
-2. **Idempotency**: Action may be skipped if torrent already in desired state (check logs)
+2. **Idempotency**: Action may be skipped if torrent already in desired state (the run summary's `skipped: already in desired state` count; each skip is logged at `DEBUG`)
 3. **Conditions**: Rule may not be matching (use trace mode)
 4. **stop_on_match**: Earlier rule may have matched first
 5. **Context**: The job's context may not match the rule's `context:` field at all — a mismatched context means the rule is silently skipped, not evaluated-and-failed
