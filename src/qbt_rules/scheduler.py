@@ -59,7 +59,7 @@ class Scheduler:
         self.last_fire: dict[str, Any] | None = None
 
         now = time.time()
-        self._entries = []
+        self._entries: list[dict[str, Any]] = []
         for entry in entries:
             cron_iter = croniter(entry["cron"], now)
             self._entries.append(
@@ -73,7 +73,7 @@ class Scheduler:
 
         logger.info(f"Scheduler initialized with {len(self._entries)} entries")
 
-    def start(self):
+    def start(self) -> None:
         """Start scheduler thread"""
         if not self._entries:
             logger.info("No schedule entries configured, scheduler not started")
@@ -88,7 +88,7 @@ class Scheduler:
         self.thread.start()
         logger.info("Scheduler thread started")
 
-    def stop(self, timeout: float = 30.0):
+    def stop(self, timeout: float = 30.0) -> None:
         """
         Stop scheduler thread gracefully
 
@@ -131,7 +131,7 @@ class Scheduler:
             ],
         }
 
-    def _run_loop(self):
+    def _run_loop(self) -> None:
         """Main scheduler loop - runs in separate thread"""
         logger.info("Scheduler loop started")
 
@@ -151,7 +151,7 @@ class Scheduler:
 
         logger.info("Scheduler loop exited")
 
-    def _fire(self, entry: dict[str, Any]):
+    def _fire(self, entry: dict[str, Any]) -> None:
         """
         Enqueue a job for a due schedule entry
 

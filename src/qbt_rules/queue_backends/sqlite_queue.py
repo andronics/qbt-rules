@@ -13,6 +13,7 @@ import json
 import logging
 import sqlite3
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -46,7 +47,7 @@ class SQLiteQueue(QueueManager):
         """
         self.db_path = Path(db_path)
         self.local = threading.local()
-        self._connections = []  # Track all connections
+        self._connections: list[sqlite3.Connection] = []  # Track all connections
         self._conn_lock = threading.Lock()  # Lock for connection tracking
 
         # Ensure directory exists
@@ -87,10 +88,11 @@ class SQLiteQueue(QueueManager):
 
             self.local.conn = conn
 
-        return self.local.conn
+        thread_conn: sqlite3.Connection = self.local.conn
+        return thread_conn
 
     @contextmanager
-    def _transaction(self):
+    def _transaction(self) -> Iterator[sqlite3.Connection]:
         """
         Context manager for database transactions
 
@@ -118,7 +120,7 @@ class SQLiteQueue(QueueManager):
             conn.execute("ROLLBACK")
             raise
 
-    def _init_database(self):
+    def _init_database(self) -> None:
         """Initialize database schema and run migrations"""
         conn = self._get_connection()
 
@@ -145,7 +147,7 @@ class SQLiteQueue(QueueManager):
         if current_version < self.SCHEMA_VERSION:
             self._migrate_schema(conn, current_version)
 
-    def _create_schema_v1(self, conn: sqlite3.Connection):
+    def _create_schema_v1(self, conn: sqlite3.Connection) -> None:
         """Create initial database schema (version 1)"""
 
         # Jobs table: Complete job data
@@ -181,7 +183,7 @@ class SQLiteQueue(QueueManager):
 
         conn.execute("CREATE INDEX IF NOT EXISTS idx_queue_priority ON queue(priority, id)")
 
-    def _migrate_schema(self, conn: sqlite3.Connection, from_version: int):
+    def _migrate_schema(self, conn: sqlite3.Connection, from_version: int) -> None:
         """
         Run schema migrations
 
@@ -301,7 +303,7 @@ class SQLiteQueue(QueueManager):
 
         # Build query
         query = "SELECT * FROM jobs WHERE 1=1"
-        params = []
+        params: list[str | int] = []
 
         if status:
             query += " AND status = ?"
@@ -328,7 +330,8 @@ class SQLiteQueue(QueueManager):
         else:
             cursor = conn.execute("SELECT COUNT(*) FROM jobs")
 
-        return cursor.fetchone()[0]
+        count: int = cursor.fetchone()[0]
+        return count
 
     def update_status(
         self,
@@ -347,7 +350,7 @@ class SQLiteQueue(QueueManager):
 
         # Build update query
         updates = ["status = ?"]
-        params = [status]
+        params: list[str | int] = [status]
 
         if started_at is not None:
             updates.append("started_at = ?")
@@ -422,7 +425,7 @@ class SQLiteQueue(QueueManager):
         conn = self._get_connection()
 
         # Count by status
-        stats = {
+        stats: dict[str, Any] = {
             "total_jobs": self.count_jobs(),
             "pending": self.count_jobs(JobStatus.PENDING),
             "processing": self.count_jobs(JobStatus.PROCESSING),
@@ -485,7 +488,7 @@ class SQLiteQueue(QueueManager):
 
         return job
 
-    def close(self):
+    def close(self) -> None:
         """Close all database connections across all threads"""
         # Close all tracked connections
         with self._conn_lock:
@@ -499,6 +502,6 @@ class SQLiteQueue(QueueManager):
         if hasattr(self.local, "conn"):
             delattr(self.local, "conn")
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Cleanup on deletion"""
         self.close()

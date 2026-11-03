@@ -11,7 +11,7 @@ In-memory queue implementation using Redis with:
 import json
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 try:
     import redis
@@ -92,7 +92,7 @@ class RedisQueue(QueueManager):
         timestamp = created_at.timestamp()
 
         # Create job data
-        job_data = {
+        job_data: dict[Any, str] = {
             "id": job_id,
             "context": context or "",
             "hash": hash_filter or "",
@@ -132,7 +132,8 @@ class RedisQueue(QueueManager):
     def dequeue(self) -> dict[str, Any] | None:
         """Get next pending job and mark as processing"""
         # Atomic pop from pending queue
-        job_id = self.redis.lpop(self._key("queue", "pending"))
+        # decode_responses=True: every reply is str, never bytes
+        job_id = cast("str | None", self.redis.lpop(self._key("queue", "pending")))
 
         if not job_id:
             return None
@@ -164,7 +165,7 @@ class RedisQueue(QueueManager):
     def get_job(self, job_id: str) -> dict[str, Any] | None:
         """Get job by ID"""
         job_key = self._key("jobs", job_id)
-        job_data = self.redis.hgetall(job_key)
+        job_data = cast("dict[str, str]", self.redis.hgetall(job_key))
 
         if not job_data:
             return None
@@ -182,20 +183,23 @@ class RedisQueue(QueueManager):
         limit = min(limit, 100)
 
         # Get job IDs from appropriate index
+        job_ids: list[str]
         if status and context:
             # Intersection of status and context sets
-            job_ids = list(
-                self.redis.sinter(
-                    self._key("jobs", "status", status), self._key("jobs", "context", context)
-                )
+            members = self.redis.sinter(
+                [self._key("jobs", "status", status), self._key("jobs", "context", context)]
             )
+            job_ids = list(cast("set[str]", members))
         elif status:
-            job_ids = list(self.redis.smembers(self._key("jobs", "status", status)))
+            job_ids = list(
+                cast("set[str]", self.redis.smembers(self._key("jobs", "status", status)))
+            )
         elif context:
-            job_ids = list(self.redis.smembers(self._key("jobs", "context", context)))
+            members = self.redis.smembers(self._key("jobs", "context", context))
+            job_ids = list(cast("set[str]", members))
         else:
             # Get all jobs from time-sorted set
-            job_ids = self.redis.zrevrange(self._key("jobs", "by_time"), 0, -1)
+            job_ids = cast("list[str]", self.redis.zrevrange(self._key("jobs", "by_time"), 0, -1))
 
         # Sort by created_at (newest first) using time-sorted set scores
         if job_ids and not (status or context):
@@ -308,8 +312,9 @@ class RedisQueue(QueueManager):
         cutoff_timestamp = cutoff_date.timestamp()
 
         # Get old job IDs from time-sorted set
-        old_job_ids = self.redis.zrangebyscore(
-            self._key("jobs", "by_time"), "-inf", cutoff_timestamp
+        old_job_ids = cast(
+            "list[str]",
+            self.redis.zrangebyscore(self._key("jobs", "by_time"), "-inf", cutoff_timestamp),
         )
 
         if not old_job_ids:
@@ -351,7 +356,7 @@ class RedisQueue(QueueManager):
 
     def get_stats(self) -> dict[str, Any]:
         """Get queue statistics"""
-        stats = {
+        stats: dict[str, Any] = {
             "total_jobs": self.count_jobs(),
             "pending": self.count_jobs(JobStatus.PENDING),
             "processing": self.count_jobs(JobStatus.PROCESSING),
@@ -417,11 +422,11 @@ class RedisQueue(QueueManager):
 
         return job
 
-    def close(self):
+    def close(self) -> None:
         """Close Redis connection pool"""
         if hasattr(self, "pool") and self.pool is not None:
             self.pool.disconnect()
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Cleanup on deletion"""
         self.close()

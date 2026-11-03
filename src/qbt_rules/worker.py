@@ -77,7 +77,7 @@ class Worker:
 
         logger.info("Worker initialized")
 
-    def start(self):
+    def start(self) -> None:
         """Start worker thread"""
         # Check if truly running (thread exists and is alive)
         if self.running and self.thread and self.thread.is_alive():
@@ -90,7 +90,7 @@ class Worker:
         self.thread.start()
         logger.info("Worker thread started")
 
-    def stop(self, timeout: float = 30.0):
+    def stop(self, timeout: float = 30.0) -> None:
         """
         Stop worker thread gracefully
 
@@ -131,7 +131,7 @@ class Worker:
             "queue_depth": self.queue.get_queue_depth(),
         }
 
-    def _run_loop(self):
+    def _run_loop(self) -> None:
         """Main worker loop - runs in separate thread"""
         logger.info("Worker loop started")
 
@@ -155,7 +155,7 @@ class Worker:
 
         logger.info("Worker loop exited")
 
-    def _maybe_cleanup(self):
+    def _maybe_cleanup(self) -> None:
         """
         Remove old finished jobs, at most once per cleanup_interval
 
@@ -177,7 +177,7 @@ class Worker:
         except Exception as e:
             logger.error(f"Job cleanup failed: {e}", exc_info=True)
 
-    def _process_job(self, job: dict[str, Any]):
+    def _process_job(self, job: dict[str, Any]) -> None:
         """
         Process a single job
 

@@ -6,6 +6,8 @@ Available backends:
 - Redis: In-memory queue (optional, high-performance)
 """
 
+from typing import Any
+
 from qbt_rules.queue_backends.sqlite_queue import SQLiteQueue
 from qbt_rules.queue_manager import QueueManager
 
@@ -21,7 +23,7 @@ except ImportError:
     REDIS_AVAILABLE = False
 
 
-def create_queue(backend: str = "sqlite", **kwargs) -> QueueManager:
+def create_queue(backend: str = "sqlite", **kwargs: Any) -> QueueManager:
     """
     Factory function to create queue backend instances
 

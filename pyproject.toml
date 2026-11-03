@@ -141,10 +141,6 @@ files = ["src/qbt_rules"]
 # migration removes its modules from this list; it must end up empty.
 [[tool.mypy.overrides]]
 module = [
-    "qbt_rules.queue_manager",
-    "qbt_rules.queue_backends.*",
-    "qbt_rules.worker",
-    "qbt_rules.scheduler",
     "qbt_rules.web",
     "qbt_rules.legacy_cli",
 ]
