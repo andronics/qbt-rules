@@ -10,17 +10,19 @@ Provides REST API for:
 
 import hashlib
 import logging
-import os
 import re
 import secrets
+import sys
 import time
-from datetime import UTC, datetime
+from collections.abc import Callable, MutableMapping
+from datetime import UTC, datetime, timedelta
 from functools import wraps
-from typing import Any
+from typing import TYPE_CHECKING, Any, ParamSpec
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import yaml
 from flask import Flask, Response, g, jsonify, redirect, render_template, request, session, url_for
+from flask.typing import ResponseReturnValue
 
 from qbt_rules import metrics, schema
 from qbt_rules.__version__ import __version__
@@ -36,6 +38,12 @@ from qbt_rules.queue_manager import JobStatus, QueueManager
 from qbt_rules.rules_validation import validate_rules_text
 from qbt_rules.worker import Worker
 
+if TYPE_CHECKING:
+    from gunicorn.arbiter import Arbiter
+    from gunicorn.http import Request as GunicornRequest
+    from gunicorn.http.wsgi import Response as GunicornResponse
+    from gunicorn.workers.base import Worker as GunicornWorker
+
 # Accepted spellings for boolean query parameters (parse_bool's true set
 # plus their opposites)
 BOOL_VALUES = {"true", "false", "1", "0", "yes", "no", "on", "off"}
@@ -43,9 +51,10 @@ BOOL_VALUES = {"true", "false", "1", "0", "yes", "no", "on", "off"}
 logger = logging.getLogger(__name__)
 
 # Global references (set by create_app)
-queue: QueueManager = None
-worker: Worker = None
-api_key_config: str = None
+# create_app() sets these before the app serves anything
+queue: QueueManager = None  # type: ignore[assignment]
+worker: Worker = None  # type: ignore[assignment]
+api_key_config: str = None  # type: ignore[assignment]
 dashboard_config: Config | None = None
 metrics_enabled: bool = False
 editor_enabled: bool = True
@@ -58,7 +67,7 @@ MAX_REQUEST_BYTES = 2 * 1024 * 1024
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 
 
-def _timeago(value) -> str:
+def _timeago(value: datetime | str | None) -> str:
     """
     Jinja filter: render a timestamp as relative time ("2 hours ago")
 
@@ -78,7 +87,7 @@ def _timeago(value) -> str:
         try:
             value = datetime.fromisoformat(value)
         except ValueError:
-            return value
+            return str(value)
 
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
@@ -169,7 +178,7 @@ def create_app(
     app.secret_key = hashlib.sha256(f"qbt-rules-dashboard-session:{api_key}".encode()).digest()
 
     @app.context_processor
-    def _inject_version():
+    def _inject_version() -> dict[str, Any]:
         """Makes {{ version }} available in every dashboard template via
         base.html's shared topbar, without threading it through every
         individual route's render_template() call -- and {{ csrf_token() }}
@@ -192,7 +201,10 @@ def create_app(
     return app
 
 
-def require_api_key(f):
+P = ParamSpec("P")
+
+
+def require_api_key(f: Callable[P, ResponseReturnValue]) -> Callable[P, ResponseReturnValue]:
     """
     Decorator for endpoints requiring API key authentication
 
@@ -204,7 +216,7 @@ def require_api_key(f):
     """
 
     @wraps(f)
-    def decorated_function(*args, **kwargs):
+    def decorated_function(*args: P.args, **kwargs: P.kwargs) -> ResponseReturnValue:
         # Get API key from query param or header
         key = request.args.get("key") or request.headers.get("X-API-Key")
 
@@ -221,10 +233,13 @@ def _csrf_token() -> str:
     """This session's CSRF token, created on first use"""
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_urlsafe(32)
-    return session["csrf_token"]
+    token: str = session["csrf_token"]
+    return token
 
 
-def require_api_key_or_session(f):
+def require_api_key_or_session(
+    f: Callable[P, ResponseReturnValue],
+) -> Callable[P, ResponseReturnValue]:
     """
     For JSON endpoints the dashboard's own pages call from the browser
 
@@ -237,7 +252,7 @@ def require_api_key_or_session(f):
     """
 
     @wraps(f)
-    def decorated_function(*args, **kwargs):
+    def decorated_function(*args: P.args, **kwargs: P.kwargs) -> ResponseReturnValue:
         key = request.args.get("key") or request.headers.get("X-API-Key")
         if key:
             if secrets.compare_digest(key, api_key_config):
@@ -296,7 +311,9 @@ def _sanitize_next(next_url: str | None) -> str:
     return (parsed.path or "/") + (f"?{query}" if query else "")
 
 
-def require_api_key_dashboard(f):
+def require_api_key_dashboard(
+    f: Callable[P, ResponseReturnValue],
+) -> Callable[P, ResponseReturnValue]:
     """
     Like require_api_key, but for browser-facing dashboard routes
 
@@ -312,7 +329,7 @@ def require_api_key_dashboard(f):
     """
 
     @wraps(f)
-    def decorated_function(*args, **kwargs):
+    def decorated_function(*args: P.args, **kwargs: P.kwargs) -> ResponseReturnValue:
         key = request.args.get("key") or request.headers.get("X-API-Key")
 
         if key and secrets.compare_digest(key, api_key_config):
@@ -323,7 +340,7 @@ def require_api_key_dashboard(f):
         if session.get("authenticated"):
             return f(*args, **kwargs)
 
-        login_kwargs = {"next": _next_url_without_key()}
+        login_kwargs: dict[str, Any] = {"next": _next_url_without_key()}
         if key:
             # A key was provided but it was wrong, as opposed to a first
             # visit with no key/session at all -- show an error on the form.
@@ -333,12 +350,12 @@ def require_api_key_dashboard(f):
     return decorated_function
 
 
-def register_routes(app: Flask):
+def register_routes(app: Flask) -> None:
     """Register all API routes"""
 
     @app.route("/api/execute", methods=["POST"])
     @require_api_key_or_session
-    def execute():
+    def execute() -> ResponseReturnValue:
         """
         Queue job for execution
 
@@ -387,7 +404,7 @@ def register_routes(app: Flask):
 
     @app.route("/api/jobs", methods=["GET"])
     @require_api_key
-    def list_jobs():
+    def list_jobs() -> ResponseReturnValue:
         """
         List jobs with filtering and pagination
 
@@ -424,7 +441,7 @@ def register_routes(app: Flask):
 
     @app.route("/api/jobs/<job_id>", methods=["GET"])
     @require_api_key_or_session
-    def get_job(job_id: str):
+    def get_job(job_id: str) -> ResponseReturnValue:
         """
         Get job by ID
 
@@ -448,7 +465,7 @@ def register_routes(app: Flask):
 
     @app.route("/api/jobs/<job_id>", methods=["DELETE"])
     @require_api_key
-    def cancel_job(job_id: str):
+    def cancel_job(job_id: str) -> ResponseReturnValue:
         """
         Cancel pending job
 
@@ -491,7 +508,7 @@ def register_routes(app: Flask):
             ), 500
 
     @app.route("/api/health", methods=["GET"])
-    def health():
+    def health() -> ResponseReturnValue:
         """
         Health check endpoint (no authentication required)
 
@@ -545,7 +562,7 @@ def register_routes(app: Flask):
 
     @app.route("/api/stats", methods=["GET"])
     @require_api_key
-    def stats():
+    def stats() -> ResponseReturnValue:
         """
         Get server statistics
 
@@ -592,7 +609,7 @@ def register_routes(app: Flask):
             return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
 
     @app.route("/api/version", methods=["GET"])
-    def version():
+    def version() -> ResponseReturnValue:
         """
         Get version information (no authentication required)
 
@@ -603,12 +620,12 @@ def register_routes(app: Flask):
             {
                 "version": __version__,
                 "api_version": "1.0",
-                "python_version": os.sys.version.split()[0],
+                "python_version": sys.version.split()[0],
             }
         ), 200
 
     @app.errorhandler(413)
-    def too_large(error):
+    def too_large(error: Exception) -> ResponseReturnValue:
         """Handle bodies over MAX_CONTENT_LENGTH"""
         return jsonify(
             {
@@ -618,12 +635,12 @@ def register_routes(app: Flask):
         ), 413
 
     @app.errorhandler(404)
-    def not_found(error):
+    def not_found(error: Exception) -> ResponseReturnValue:
         """Handle 404 errors"""
         return jsonify({"error": "Not Found", "message": "Endpoint not found"}), 404
 
     @app.errorhandler(500)
-    def internal_error(error):
+    def internal_error(error: Exception) -> ResponseReturnValue:
         """Handle 500 errors"""
         logger.error(f"Internal server error: {error}", exc_info=True)
         return jsonify(
@@ -662,7 +679,7 @@ def _json_body() -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def register_editor_routes(app: Flask):
+def register_editor_routes(app: Flask) -> None:
     """
     JSON API behind the rules editor (/rules/edit)
 
@@ -679,7 +696,7 @@ def register_editor_routes(app: Flask):
     config_store.redacted_config_view() for why.
     """
 
-    def _unavailable():
+    def _unavailable() -> ResponseReturnValue:
         return jsonify(
             {
                 "error": "Service Unavailable",
@@ -687,14 +704,14 @@ def register_editor_routes(app: Flask):
             }
         ), 503
 
-    def _bad_content():
+    def _bad_content() -> ResponseReturnValue:
         return jsonify(
             {"error": "Bad Request", "message": "Body must be JSON with a 'content' string"}
         ), 400
 
     @app.route("/api/rules/source", methods=["GET"])
     @require_api_key_or_session
-    def rules_source():
+    def rules_source() -> ResponseReturnValue:
         """
         rules.yml as text, with the ETag a save must send back
 
@@ -711,7 +728,7 @@ def register_editor_routes(app: Flask):
 
     @app.route("/api/rules/validate", methods=["POST"])
     @require_api_key_or_session
-    def rules_validate():
+    def rules_validate() -> ResponseReturnValue:
         """
         Validate a candidate rules.yml without saving it
 
@@ -729,7 +746,7 @@ def register_editor_routes(app: Flask):
 
     @app.route("/api/rules/source", methods=["PUT"])
     @require_api_key_or_session
-    def rules_save():
+    def rules_save() -> ResponseReturnValue:
         """
         Save rules.yml
 
@@ -796,6 +813,8 @@ def register_editor_routes(app: Flask):
             # Gunicorn worker notices the changed file on its next
             # get_rules() call
             try:
+                # rules_store is only set alongside dashboard_config (create_app)
+                assert dashboard_config is not None  # noqa: S101
                 dashboard_config.reload_rules(force=True)
             except Exception as e:
                 logger.warning(f"Saved rules.yml but reloading it failed: {e}")
@@ -814,7 +833,7 @@ def register_editor_routes(app: Flask):
 
     @app.route("/api/rules/history", methods=["GET"])
     @require_api_key_or_session
-    def rules_history():
+    def rules_history() -> ResponseReturnValue:
         """
         Previous versions of rules.yml kept by editor saves, newest first
 
@@ -827,7 +846,7 @@ def register_editor_routes(app: Flask):
 
     @app.route("/api/rules/history/<version_id>", methods=["GET"])
     @require_api_key_or_session
-    def rules_history_version(version_id: str):
+    def rules_history_version(version_id: str) -> ResponseReturnValue:
         """
         One previous version's content -- restore it by saving it
 
@@ -844,7 +863,7 @@ def register_editor_routes(app: Flask):
 
     @app.route("/api/rules/catalog", methods=["GET"])
     @require_api_key_or_session
-    def rules_catalog():
+    def rules_catalog() -> ResponseReturnValue:
         """
         Fields, operators and action types the engine supports, for the
         editor's autocomplete, plus the contexts config.yml's schedule fires
@@ -856,7 +875,7 @@ def register_editor_routes(app: Flask):
 
     @app.route("/api/config/source", methods=["GET"])
     @require_api_key_or_session
-    def config_source():
+    def config_source() -> ResponseReturnValue:
         """
         config.yml as text, read-only, with credentials masked
 
@@ -904,7 +923,7 @@ def _summarize_error(error: str) -> str:
     return error[matches[-1].start() :].strip()
 
 
-def register_dashboard_routes(app: Flask):
+def register_dashboard_routes(app: Flask) -> None:
     """
     Register read-only web dashboard routes
 
@@ -919,7 +938,7 @@ def register_dashboard_routes(app: Flask):
     """
 
     @app.route("/login", methods=["GET", "POST"])
-    def login():
+    def login() -> ResponseReturnValue:
         """
         API key entry form for browser use
 
@@ -955,7 +974,7 @@ def register_dashboard_routes(app: Flask):
 
     @app.route("/", methods=["GET"])
     @require_api_key_dashboard
-    def dashboard_overview():
+    def dashboard_overview() -> ResponseReturnValue:
         """Dashboard home: job counts by status, recent activity, rules summary"""
         queue_stats = queue.get_stats()
         recent_jobs = queue.list_jobs(limit=5)
@@ -981,7 +1000,7 @@ def register_dashboard_routes(app: Flask):
 
     @app.route("/jobs", methods=["GET"])
     @require_api_key_dashboard
-    def dashboard_jobs():
+    def dashboard_jobs() -> ResponseReturnValue:
         """Paginated job list, optionally filtered by status"""
         status = request.args.get("status")
         limit = int(request.args.get("limit", 50))
@@ -1002,7 +1021,7 @@ def register_dashboard_routes(app: Flask):
 
     @app.route("/jobs/<job_id>", methods=["GET"])
     @require_api_key_dashboard
-    def dashboard_job_detail(job_id: str):
+    def dashboard_job_detail(job_id: str) -> ResponseReturnValue:
         """Single job's full detail, including result/error if present"""
         job = queue.get_job(job_id)
         error_summary = _summarize_error(job["error"]) if job and job.get("error") else None
@@ -1017,7 +1036,7 @@ def register_dashboard_routes(app: Flask):
 
     @app.route("/rules", methods=["GET"])
     @require_api_key_dashboard
-    def dashboard_rules():
+    def dashboard_rules() -> ResponseReturnValue:
         """Read-only rules.yml view, sourced from the same hot-reload-aware
         Config.get_rules() the rules engine itself uses"""
         rules = dashboard_config.get_rules() if dashboard_config is not None else None
@@ -1042,7 +1061,7 @@ def register_dashboard_routes(app: Flask):
 
     @app.route("/rules/edit", methods=["GET"])
     @require_api_key_dashboard
-    def dashboard_rules_edit():
+    def dashboard_rules_edit() -> ResponseReturnValue:
         """rules.yml editor -- the page itself is static; everything it
         shows comes from the /api/rules/* and /api/config/source endpoints"""
         return render_template(
@@ -1052,7 +1071,7 @@ def register_dashboard_routes(app: Flask):
         )
 
 
-def register_metrics_routes(app: Flask):
+def register_metrics_routes(app: Flask) -> None:
     """
     Register the Prometheus /metrics endpoint
 
@@ -1063,7 +1082,7 @@ def register_metrics_routes(app: Flask):
 
     @app.route("/metrics", methods=["GET"])
     @require_api_key
-    def metrics_endpoint():
+    def metrics_endpoint() -> ResponseReturnValue:
         """
         Prometheus scrape endpoint
 
@@ -1088,7 +1107,7 @@ def register_metrics_routes(app: Flask):
         return Response(output, mimetype=metrics.content_type())
 
 
-def _register_http_metrics_hooks(app: Flask):
+def _register_http_metrics_hooks(app: Flask) -> None:
     """
     Register before_request/after_request hooks recording HTTP request
     count/duration metrics for every route except /metrics itself (avoids a
@@ -1096,11 +1115,11 @@ def _register_http_metrics_hooks(app: Flask):
     """
 
     @app.before_request
-    def _metrics_start_timer():
+    def _metrics_start_timer() -> None:
         g._metrics_start_time = time.time()
 
     @app.after_request
-    def _metrics_record_request(response):
+    def _metrics_record_request(response: Response) -> Response:
         if request.endpoint != "metrics_endpoint" and hasattr(g, "_metrics_start_time"):
             duration = time.time() - g._metrics_start_time
             metrics.record_http_request(
@@ -1119,7 +1138,7 @@ def run_server(
     workers: int = 1,
     log_http_access: bool = False,
     metrics_enabled: bool = False,
-):
+) -> None:
     """
     Run Flask app with Gunicorn in production mode
 
@@ -1140,7 +1159,13 @@ def run_server(
     class FilteredLogger(Logger):
         """Custom Gunicorn logger that filters out health check and dashboard requests"""
 
-        def access(self, resp, req, environ, request_time):
+        def access(
+            self,
+            resp: "GunicornResponse",
+            req: "GunicornRequest",
+            environ: MutableMapping[str, Any],
+            request_time: timedelta,
+        ) -> None:
             """Override access log to filter /api/health and dashboard requests"""
             # Only filter if log_http_access is False
             if not log_http_access:
@@ -1168,20 +1193,20 @@ def run_server(
             super().access(resp, req, environ, request_time)
 
     class StandaloneApplication(BaseApplication):
-        def __init__(self, app, options=None):
+        def __init__(self, app: Flask, options: dict[str, Any] | None = None) -> None:
             self.application = app
             self.options = options or {}
             super().__init__()
 
-        def load_config(self):
+        def load_config(self) -> None:
             for key, value in self.options.items():
                 if key in self.cfg.settings and value is not None:
                     self.cfg.set(key, value)
 
-        def load(self):
+        def load(self) -> Callable[..., Any]:
             return self.application
 
-    def post_fork(server, worker_process):
+    def post_fork(server: "Arbiter", worker_process: "GunicornWorker") -> None:
         """
         Gunicorn post-fork hook - restart worker thread in forked process
 
@@ -1207,7 +1232,7 @@ def run_server(
         worker_instance.start()
         logger.info(f"Worker thread restarted in Gunicorn worker {worker_process.pid}")
 
-    def when_ready(server):
+    def when_ready(server: "Arbiter") -> None:
         """
         Gunicorn when_ready hook - runs in the master before the first fork
 
@@ -1217,7 +1242,7 @@ def run_server(
         """
         set_file_rotation(False)
 
-    def child_exit(server, worker_process):
+    def child_exit(server: "Arbiter", worker_process: "GunicornWorker") -> None:
         """
         Gunicorn child_exit hook - Prometheus multiprocess bookkeeping
         when a worker exits
@@ -1241,9 +1266,10 @@ def run_server(
         """
         from prometheus_client import multiprocess
 
-        multiprocess.mark_process_dead(worker_process.pid)
+        # prometheus_client leaves mark_process_dead unannotated
+        multiprocess.mark_process_dead(worker_process.pid)  # type: ignore[no-untyped-call]
 
-    options = {
+    options: dict[str, Any] = {
         "bind": f"{host}:{port}",
         "workers": workers,
         "worker_class": "sync",
