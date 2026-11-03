@@ -1,0 +1,9 @@
+# GitHub's About box. Project-owned: edit it, then apply it with
+#   python3 scripts/repo-metadata.py
+# CI warns on each push to main while GitHub differs from this file.
+description = "A rules engine for qBittorrent automation, with a job queue, scheduler and web dashboard"
+homepage = "https://github.com/andronics/qbt-rules/wiki"
+topics = [
+    "actions", "automation", "conditions", "docker", "management", "qbittorrent", "radarr",
+    "rules", "rules-engine", "selfhosted", "sonarr", "torrent", "triggers",
+]

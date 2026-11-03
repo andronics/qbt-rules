@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from qbt_rules.config_loader import (
+    DEFAULT_CONFIG_SHARE_PATH,
     Config,
     copy_default_if_missing,
     expand_env_vars,
@@ -198,7 +199,7 @@ class TestParseDuration:
 
     def test_other_types_to_string(self):
         """Other types convert to string."""
-        assert parse_duration(42.5) == "42.5"
+        assert parse_duration(42.5) == "42.5"  # type: ignore[arg-type]  # str() fallback
 
 
 # ============================================================================
@@ -281,7 +282,7 @@ class TestResolveConfig:
             result = resolve_config(
                 cli_value=None,
                 env_var="ENV_VAR",
-                config=None,
+                config=None,  # type: ignore[arg-type]  # runtime tolerates None
                 config_key="key",
                 default="default_value",
             )
@@ -297,7 +298,7 @@ class TestResolveConfig:
             result = resolve_config(
                 cli_value=None,
                 env_var="ENV_VAR",
-                config=None,
+                config=None,  # type: ignore[arg-type]  # runtime tolerates None
                 config_key="key",
                 default="default_value",
             )
@@ -366,7 +367,7 @@ class TestResolveConfig:
         result = resolve_config(
             cli_value=None,
             env_var="ENV_VAR",
-            config=None,
+            config=None,  # type: ignore[arg-type]  # runtime tolerates None
             config_key="key",
             default="default_value",
         )
@@ -722,13 +723,27 @@ class TestConfig:
         config = Config(tmp_config_dir)
         assert config.get("version", 1) == 1
 
-    def test_missing_config_file(self, tmp_path):
-        """Raise error when config.yml missing."""
+    def test_missing_config_file(self, tmp_path, mocker):
+        """Raise error when config.yml is missing and there is no default to copy."""
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
+        mocker.patch("qbt_rules.config_loader.DEFAULT_CONFIG_SHARE_PATH", tmp_path / "none")
 
         with pytest.raises(ConfigurationError):
             Config(empty_dir)
+
+    def test_missing_files_get_the_packaged_defaults(self, tmp_path):
+        """An empty directory (the image's first start) gets config.yml and rules.yml."""
+        state = tmp_path / "state"
+        state.mkdir()
+
+        config = Config(state)
+
+        assert (state / "config.yml").read_text() == (
+            DEFAULT_CONFIG_SHARE_PATH / "config.default.yml"
+        ).read_text()
+        assert (state / "rules.yml").is_file()
+        assert config.get("queue.sqlite_path") == "/var/lib/qbt-rules/qbt-rules.db"
 
     def test_invalid_rules_not_list(self, tmp_path):
         """Raise error when rules is not a list."""

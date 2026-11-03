@@ -614,13 +614,11 @@ class TestGetClientConfig:
 
     def test_shipped_default_config_has_the_placeholder(self):
         """PLACEHOLDER_API_KEY must track config.default.yml"""
-        from pathlib import Path
-
         import yaml
 
-        default = yaml.safe_load(
-            (Path(__file__).parents[2] / "config" / "config.default.yml").read_text()
-        )
+        from tests.examples import DEFAULT_CONFIG
+
+        default = yaml.safe_load(DEFAULT_CONFIG.read_text())
         assert default["client"]["api_key"] == PLACEHOLDER_API_KEY
 
 
@@ -635,7 +633,7 @@ class TestGetQueueConfig:
         config = get_queue_config(args, config_obj)
 
         assert config["backend"] == "sqlite"
-        assert config["sqlite_path"] == "/config/qbt-rules.db"
+        assert config["sqlite_path"] == "/var/lib/qbt-rules/qbt-rules.db"
         assert config["redis_url"] == "redis://localhost:6379/0"
         assert config["cleanup_after"] == 7 * 86400
 
@@ -1878,6 +1876,33 @@ class TestMain:
         main()
 
         assert mock_run_server.called
+        mock_exit.assert_called_with(0)
+
+    @patch("qbt_rules.legacy_cli.sys.argv", ["qbt-rules", "serve"])
+    @patch("qbt_rules.legacy_cli.run_server_mode")
+    @patch("qbt_rules.arguments.handle_utility_args", return_value=None)
+    @patch("qbt_rules.legacy_cli.get_logger")
+    @patch("qbt_rules.legacy_cli.setup_logging")
+    @patch("qbt_rules.legacy_cli.load_config")
+    @patch("qbt_rules.legacy_cli.sys.exit")
+    def test_main_serve_is_a_synonym_of_dash_dash_serve(
+        self,
+        mock_exit,
+        mock_load_config,
+        mock_setup_logging,
+        mock_get_logger,
+        mock_handle_utility,
+        mock_run_server,
+    ):
+        """`qbt-rules serve` (the image's CMD) runs the server, as --serve does"""
+        mock_load_config.return_value = Mock(config={}, config_dir=Path("/state"))
+
+        from qbt_rules.legacy_cli import main
+
+        main()
+
+        assert mock_run_server.called
+        assert mock_run_server.call_args.args[0].serve is True
         mock_exit.assert_called_with(0)
 
     @patch("qbt_rules.legacy_cli.sys.argv", ["qbt-rules", "--list-jobs"])

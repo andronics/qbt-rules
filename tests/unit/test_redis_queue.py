@@ -53,7 +53,7 @@ class TestRedisImportError:
                 del sys.modules["redis"]
 
             # Add sentinel to block redis import
-            sys.modules["redis"] = None
+            sys.modules["redis"] = None  # type: ignore[assignment]  # None blocks the import
 
             # Attempt import should raise ImportError
             with pytest.raises(ImportError) as exc_info:
@@ -93,7 +93,7 @@ def queue(redis_client, mocker):
     q = RedisQueue(redis_url="redis://localhost:6379/15")
     # Replace with actual client
     q.redis = redis_client
-    q.pool = None
+    q.pool = None  # type: ignore[assignment]  # close() tolerates a None pool
 
     yield q
 

@@ -1,5 +1,6 @@
 """Comprehensive tests for ConditionEvaluator class in engine.py."""
 
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
@@ -166,7 +167,7 @@ class TestLogicalGroups:
     def test_all_empty_list(self, mock_api, sample_torrent):
         """all: empty list returns True (vacuous truth)."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {"all": []}
+        conditions: dict[str, Any] = {"all": []}
         result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
@@ -209,7 +210,7 @@ class TestLogicalGroups:
     def test_any_empty_list(self, mock_api, sample_torrent):
         """any: empty list returns False."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {"any": []}
+        conditions: dict[str, Any] = {"any": []}
         result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is False
 
@@ -253,7 +254,7 @@ class TestLogicalGroups:
     def test_none_empty_list(self, mock_api, sample_torrent):
         """none: empty list returns True."""
         evaluator = ConditionEvaluator(mock_api)
-        conditions = {"none": []}
+        conditions: dict[str, Any] = {"none": []}
         result = evaluator.evaluate(sample_torrent, conditions, current_context="adhoc-run")
         assert result is True
 
@@ -263,7 +264,7 @@ class TestLogicalGroups:
     # 'all' in conditions / 'any' in conditions / 'none' in conditions (list
     # membership checks against a list of dicts, always False), so evaluate()
     # fell through to `return True` unconditionally -- every rule written in
-    # this style (as advanced-rules-example.yml is, throughout) matched every
+    # this style (as the wiki's Advanced Rules Example is, throughout) matched every
     # torrent regardless of its conditions.
     def test_bare_list_all_conditions_true(self, mock_api, sample_torrent):
         """Bare list: all entries true returns True."""
@@ -400,7 +401,7 @@ class TestConditionTrace:
         """A single passing condition appends one record with the actual value."""
         evaluator = ConditionEvaluator(mock_api)
         conditions = {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]}
-        trace = []
+        trace: list[dict[str, Any]] = []
 
         result = evaluator.evaluate(
             sample_torrent, conditions, current_context="adhoc-run", trace=trace
@@ -421,7 +422,7 @@ class TestConditionTrace:
         """A failing condition is recorded with passed: False and its real actual value."""
         evaluator = ConditionEvaluator(mock_api)
         conditions = {"all": [{"field": "info.state", "operator": "==", "value": "downloading"}]}
-        trace = []
+        trace: list[dict[str, Any]] = []
 
         result = evaluator.evaluate(
             sample_torrent, conditions, current_context="adhoc-run", trace=trace
@@ -449,7 +450,7 @@ class TestConditionTrace:
                 {"field": "info.ratio", "operator": ">=", "value": 1.0},  # never reached
             ]
         }
-        trace = []
+        trace: list[dict[str, Any]] = []
 
         result = evaluator.evaluate(
             sample_torrent, conditions, current_context="adhoc-run", trace=trace
@@ -472,7 +473,7 @@ class TestConditionTrace:
                 },
             ]
         }
-        trace = []
+        trace: list[dict[str, Any]] = []
 
         result = evaluator.evaluate(
             sample_torrent, conditions, current_context="adhoc-run", trace=trace

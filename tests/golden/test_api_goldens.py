@@ -83,13 +83,14 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from qbt_rules import config_store, metrics, queue_manager, web
 from qbt_rules.queue_backends import sqlite_queue
 from qbt_rules.queue_manager import JobStatus, QueueManager
+from qbt_rules.worker import Worker
 
 GOLDEN_DIR = Path(__file__).parent / "responses"  # not data/: .gitignore excludes it
 UPDATE_GOLDENS = os.environ.get("QBT_RULES_UPDATE_GOLDENS") == "1"
@@ -248,7 +249,7 @@ def _make_queue(backend: str, tmp_path: Path) -> QueueManager:
     queue = RedisQueue.__new__(RedisQueue)
     queue.redis_url = "redis://golden/0"
     queue.redis = fakeredis.FakeRedis(decode_responses=True)
-    queue.pool = None
+    queue.pool = None  # type: ignore[assignment]  # close() tolerates a None pool
     return queue
 
 
@@ -320,7 +321,7 @@ class Env:
             }
         app = web.create_app(
             self.queue,
-            self.worker,
+            cast(Worker, self.worker),  # StubWorker duck-types the parts the API reads
             API_KEY,
             config=config,
             metrics_config=metrics_config,
@@ -372,7 +373,8 @@ class Env:
         client.post("/login", data={"key": API_KEY, "next": "/rules/edit"})
 
     def etag(self, client) -> str:
-        return client.get("/api/rules/source", headers=KEY).get_json()["etag"]
+        etag: str = client.get("/api/rules/source", headers=KEY).get_json()["etag"]
+        return etag
 
 
 # ---------------------------------------------------------------------------
@@ -948,7 +950,8 @@ def _golden_path(backend: str, name: str) -> Path:
 def _load(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
-    return json.loads(path.read_text("utf-8"))
+    data: dict[str, Any] = json.loads(path.read_text("utf-8"))
+    return data
 
 
 @pytest.mark.parametrize("name", list(CASES))

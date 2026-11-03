@@ -1,6 +1,7 @@
 """tracker.* fields from the trackie integration (qbt_rules/trackie.py)."""
 
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from unittest.mock import Mock
 
 import pytest
@@ -113,7 +114,7 @@ class FakeTrackie:
 @pytest.fixture
 def evaluator(mock_api):
     ev = ConditionEvaluator(mock_api)
-    ev.trackie = FakeTrackie(snapshot_doc())
+    ev.trackie = cast(TrackieClient, FakeTrackie(snapshot_doc()))
     return ev
 
 
@@ -207,7 +208,7 @@ class TestFailSafe:
 
     def test_stale_tracker_is_not_ready(self, mock_api):
         ev = ConditionEvaluator(mock_api)
-        ev.trackie = FakeTrackie(snapshot_doc(td_fetched=STALE))
+        ev.trackie = cast(TrackieClient, FakeTrackie(snapshot_doc(td_fetched=STALE)))
         with pytest.raises(TrackerDataNotReadyError, match="Tracker data"):
             ev.get_field_value(torrent(HASH_HNR), "tracker.status")
         # The other tracker is still fresh
@@ -215,18 +216,17 @@ class TestFailSafe:
 
     def test_unreachable_is_not_ready_and_tried_once(self, mock_api):
         ev = ConditionEvaluator(mock_api)
-        ev.trackie = FakeTrackie(
-            error="trackie unreachable at http://trackie:8080 (ConnectionError)"
-        )
+        fake = FakeTrackie(error="trackie unreachable at http://trackie:8080 (ConnectionError)")
+        ev.trackie = cast(TrackieClient, fake)
         for _ in range(3):
             with pytest.raises(TrackerDataNotReadyError):
                 ev.get_field_value(torrent(HASH_REQUIRED), "tracker.status")
-        assert ev.trackie.calls == 1
+        assert fake.calls == 1
 
     def test_condition_skips_instead_of_matching(self, mock_api):
         """A none: group must not vacuously match when trackie is down."""
         ev = ConditionEvaluator(mock_api)
-        ev.trackie = FakeTrackie(error="down")
+        ev.trackie = cast(TrackieClient, FakeTrackie(error="down"))
         conditions = {"none": [{"field": "tracker.status", "operator": "==", "value": "hnr"}]}
         assert ev.evaluate(torrent(HASH_REQUIRED), conditions) is False
 

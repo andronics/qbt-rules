@@ -1,0 +1,17 @@
+# gitleaks: the project's allow-list. Written once; `copier update` never touches it.
+# The default rules and base's entries come from .gitleaks.base.toml (template-owned):
+# keep the [extend] below (scripts/checks.sh fails without it; template-base decision 0006).
+# Add an entry with a comment saying why: a regex or a stopword, never a blanket path.
+[extend]
+path = ".gitleaks.base.toml"
+
+[[allowlists]]
+description = "qbt-rules: known non-secrets"
+regexes = [
+  # The fake API keys the web and full-stack tests authenticate with
+  # (tests/unit/test_web.py, tests/unit/test_full_stack.py, the old tests/unit/test_server.py)
+  '''test-api-key-12345''',
+  '''test-integration-key-12345''',
+  # The placeholder key in the curl examples of the old docs/API.md (in the history only)
+  '''my-secret-key''',
+]

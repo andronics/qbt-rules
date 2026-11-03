@@ -348,7 +348,10 @@ class TestArrBlocklistAndSearchConfigErrors:
         executor = ActionExecutor(
             mock_api,
             dry_run=False,
-            integrations_config={"sonarr": {"url": "http://sonarr:8989", "api_key": None}},
+            integrations_config={
+                # deliberate None: checks the runtime "not configured" guard
+                "sonarr": {"url": "http://sonarr:8989", "api_key": None}  # type: ignore[dict-item]
+            },
         )
 
         action = {"type": "arr_blocklist", "params": {"service": "sonarr"}}

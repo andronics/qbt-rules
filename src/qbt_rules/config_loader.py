@@ -47,8 +47,15 @@ ENV_VAR_MAP = {
 # convention this map/helper assume). Its env vars are QBT_RULES_LOGGING_*,
 # matching the convention exactly -- no exception entry needed here.
 
-# Default config location (Linux FHS standard)
-DEFAULT_CONFIG_SHARE_PATH = Path("/usr/share/qbt-rules")
+# TODO(4b): the legacy single directory (config.yml, rules.yml, database, log).
+# The template's paths: config in /etc/qbt-rules, state in /var/lib/qbt-rules.
+# Until config moves to interpose, everything stays together in the one
+# directory the image makes writable; the old /config is gone, with no fallback.
+LEGACY_DIR = "/var/lib/qbt-rules"
+
+# The defaults copied in when config.yml or rules.yml is missing: package data,
+# so an installed package and the image both have them
+DEFAULT_CONFIG_SHARE_PATH = Path(__file__).parent / "defaults"
 
 
 def copy_default_if_missing(target_path: Path, default_filename: str) -> bool:
@@ -56,7 +63,7 @@ def copy_default_if_missing(target_path: Path, default_filename: str) -> bool:
     Copy default config from /usr/share if target doesn't exist.
 
     Args:
-        target_path: Target file path (e.g., /config/config.yml)
+        target_path: Target file path (e.g., /var/lib/qbt-rules/config.yml)
         default_filename: Default filename (e.g., 'config.default.yml')
 
     Returns:
@@ -427,10 +434,10 @@ class Config:
 
         Args:
             config_dir: Directory containing config.yml and rules.yml
-                       Defaults to /config
+                       Defaults to LEGACY_DIR
         """
         if config_dir is None:
-            config_dir = Path(os.environ.get("CONFIG_DIR", "/config"))
+            config_dir = Path(os.environ.get("CONFIG_DIR", LEGACY_DIR))
 
         self.config_dir = config_dir
         self.config_file = config_dir / "config.yml"

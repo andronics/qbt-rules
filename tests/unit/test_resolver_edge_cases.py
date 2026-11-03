@@ -1,5 +1,7 @@
 """Comprehensive edge case and stress tests for RuleResolver"""
 
+from typing import Any
+
 import pytest
 
 from qbt_rules.errors import (
@@ -107,7 +109,7 @@ class TestVariableEdgeCases:
 
     def test_variable_with_empty_list(self):
         """Should handle empty lists"""
-        refs = {"vars": {"empty_list": []}}
+        refs: dict[str, Any] = {"vars": {"empty_list": []}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
@@ -284,7 +286,7 @@ class TestReferenceEdgeCases:
 
     def test_ref_with_empty_condition_block(self):
         """Should handle references to empty condition blocks"""
-        refs = {"conditions": {"empty": {}}}
+        refs: dict[str, Any] = {"conditions": {"empty": {}}}
         resolver = RuleResolver(refs=refs)
 
         rule = {"id": "test", "conditions": [{"$ref": "conditions.empty"}], "actions": []}
@@ -296,7 +298,7 @@ class TestReferenceEdgeCases:
         """Should handle references to empty action lists (spliced -> contributes
         zero actions, not a nested empty-list placeholder that would crash the
         engine's executor when it tries to treat it as an action dict)"""
-        refs = {"actions": {"empty": []}}
+        refs: dict[str, Any] = {"actions": {"empty": []}}
         resolver = RuleResolver(refs=refs)
 
         rule = {"id": "test", "conditions": [], "actions": [{"$ref": "actions.empty"}]}
@@ -442,7 +444,7 @@ class TestReferenceEdgeCases:
 
     def test_invalid_ref_format_no_dot(self):
         """Should reject ref path without dot separator"""
-        refs = {"conditions": {"test": {}}}
+        refs: dict[str, Any] = {"conditions": {"test": {}}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
@@ -457,7 +459,7 @@ class TestReferenceEdgeCases:
 
     def test_invalid_ref_format_multiple_dots(self):
         """Should handle ref names with dots (splits on first dot only)"""
-        refs = {
+        refs: dict[str, Any] = {
             "conditions": {
                 "test.extra": {}  # Name can contain dots
             }
@@ -481,7 +483,7 @@ class TestReferenceEdgeCases:
 
     def test_ref_with_non_string_value(self):
         """Should reject non-string ref values"""
-        refs = {"conditions": {"test": {}}}
+        refs: dict[str, Any] = {"conditions": {"test": {}}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
@@ -925,7 +927,7 @@ class TestComplexScenarios:
 
     def test_massive_rule_with_many_refs_and_vars(self):
         """Should handle rule with many references and variables"""
-        refs = {
+        refs: dict[str, Any] = {
             "vars": {
                 "min_ratio": 1.0,
                 "max_ratio": 5.0,

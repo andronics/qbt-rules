@@ -8,7 +8,8 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from qbt_rules.__version__ import __version__
+from qbt_rules import __version__
+from qbt_rules.config_loader import LEGACY_DIR
 from qbt_rules.rules_validation import ERROR, format_path, lint_rules
 
 if TYPE_CHECKING:
@@ -19,12 +20,18 @@ def smart_config_default() -> str:
     """
     Determine smart default for config directory
 
-    Returns ./config if it exists (bare metal), otherwise /config (Docker)
+    Returns ./config if it exists (bare metal), otherwise /var/lib/qbt-rules
+    (the image's state directory)
+
+    TODO(4b): the legacy single directory for config.yml, rules.yml, the
+    database and the log. Config moves to interpose (/etc/qbt-rules/config.yaml);
+    the old /config default is gone, with no fallback.
     """
     local_config = Path("./config")
-    if local_config.exists() and local_config.is_dir():
+    # The image's working directory is /, where ./config would be the old /config
+    if local_config.is_dir() and local_config.resolve() != Path("/config"):
         return "./config"
-    return "/config"
+    return LEGACY_DIR
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -137,7 +144,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--queue-sqlite-path",
         type=str,
-        help="SQLite database path (default: /config/qbt-rules.db)",
+        help=f"SQLite database path (default: {LEGACY_DIR}/qbt-rules.db)",
         metavar="PATH",
     )
 
@@ -263,7 +270,7 @@ Environment Variables:
     QBT_RULES_CLIENT_SERVER_URL=http://localhost:5000
     QBT_RULES_QUEUE_BACKEND=sqlite
 
-See PLAN.md or config.default.yml for complete configuration reference.
+See the wiki's In-Depth-Configuration page for the complete configuration reference.
     """
 
     return parser
