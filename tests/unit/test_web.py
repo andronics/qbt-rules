@@ -14,13 +14,13 @@ import contextlib
 import json
 import os
 from datetime import UTC, datetime
-from typing import ClassVar
+from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import Flask
 
-from qbt_rules.__version__ import __version__
+from qbt_rules import __version__
 from qbt_rules.queue_manager import JobStatus
 from qbt_rules.web import _summarize_error, create_app, run_server
 
@@ -1113,7 +1113,7 @@ class TestPostForkHook:
         mock_worker.running = True
         mock_worker.start = mocker.MagicMock()
 
-        mocker.patch("qbt_rules.web.logger")
+        mock_logger = mocker.patch("qbt_rules.web.logger")
 
         with patch("qbt_rules.web.worker", mock_worker):
             # Simulate what post_fork does (lines 424-435 from web.py)
@@ -1144,8 +1144,9 @@ class TestPostForkHook:
 
             # Verify the logic executed correctly
             assert worker_instance.running is False
-            worker_instance.start.assert_called_once()
-            assert logger.info.call_count == 2
+            # worker_instance/logger are these mocks; mypy sees the real types
+            mock_worker.start.assert_called_once()
+            assert mock_logger.info.call_count == 2
 
 
 class TestSummarizeError:
@@ -1960,7 +1961,9 @@ class TestEditorRoutes:
         page = client.get("/rules/edit").get_data(as_text=True)
         import re
 
-        return re.search(r'csrfToken: "([^"]+)"', page).group(1)
+        match = re.search(r'csrfToken: "([^"]+)"', page)
+        assert match is not None
+        return match.group(1)
 
     # -- reading ----------------------------------------------------------
 
@@ -2192,8 +2195,10 @@ class TestEditorRoutes:
         assert "/rules/edit#rule=a" in page
 
     def test_static_assets_are_served(self, client):
-        assert client.get("/static/editor.js").status_code == 200
-        assert client.get("/static/vendor/ace/ace.js").status_code == 200
+        # Closed, or the file Flask streams from is left open (a ResourceWarning).
+        for path in ("/static/editor.js", "/static/vendor/ace/ace.js"):
+            with client.get(path) as response:
+                assert response.status_code == 200
 
 
 class TestRunServerLogRotationHooks:
@@ -2207,6 +2212,8 @@ class TestRunServerLogRotationHooks:
         captured = {}
 
         class MockBaseApplication:
+            options: dict[str, Any]  # set by StandaloneApplication.__init__
+
             def __init__(self):
                 pass
 

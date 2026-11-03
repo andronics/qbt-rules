@@ -76,6 +76,7 @@ class TestSetupLogging:
         # Verify format contains module/function/line info
         formatter = file_handlers[0].formatter
         assert formatter is not None
+        assert formatter._fmt is not None
         # The detailed format includes %(module)s %(funcName)s %(lineno)d
         assert "module" in formatter._fmt or "funcName" in formatter._fmt
 
@@ -92,6 +93,7 @@ class TestSetupLogging:
 
         formatter = file_handlers[0].formatter
         assert formatter is not None
+        assert formatter._fmt is not None
         # Simple format should not include module/function info
         assert "levelname" in formatter._fmt
         assert "message" in formatter._fmt

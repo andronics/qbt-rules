@@ -1,5 +1,7 @@
 """Unit tests for RuleResolver"""
 
+from typing import Any
+
 import pytest
 
 from qbt_rules.errors import (
@@ -645,7 +647,7 @@ class TestReferenceExpansion:
 
     def test_unknown_condition_ref_raises_error(self):
         """Should raise UnknownRefError for undefined condition"""
-        refs = {"conditions": {"private-tracker": {}}}
+        refs: dict[str, Any] = {"conditions": {"private-tracker": {}}}
         resolver = RuleResolver(refs=refs)
 
         rule = {"id": "test", "conditions": [{"$ref": "conditions.unknown"}], "actions": []}
@@ -658,7 +660,7 @@ class TestReferenceExpansion:
 
     def test_unknown_action_ref_raises_error(self):
         """Should raise UnknownRefError for undefined action"""
-        refs = {"actions": {"safe-delete": []}}
+        refs: dict[str, Any] = {"actions": {"safe-delete": []}}
         resolver = RuleResolver(refs=refs)
 
         rule = {"id": "test", "conditions": [], "actions": [{"$ref": "actions.unknown"}]}
@@ -670,7 +672,7 @@ class TestReferenceExpansion:
 
     def test_invalid_ref_path_raises_error(self):
         """Should raise InvalidRefError for invalid path format"""
-        refs = {"conditions": {"private-tracker": {}}}
+        refs: dict[str, Any] = {"conditions": {"private-tracker": {}}}
         resolver = RuleResolver(refs=refs)
 
         rule = {
@@ -686,7 +688,7 @@ class TestReferenceExpansion:
 
     def test_unknown_group_raises_error(self):
         """Should raise InvalidRefError for unknown group"""
-        refs = {}
+        refs: dict[str, Any] = {}
         resolver = RuleResolver(refs=refs)
 
         rule = {"id": "test", "conditions": [{"$ref": "unknown.something"}], "actions": []}
@@ -739,7 +741,7 @@ class TestResolutionPipeline:
 
     def test_complex_rule_full_resolution(self):
         """Should fully resolve complex rule with multiple refs and vars"""
-        refs = {
+        refs: dict[str, Any] = {
             "vars": {
                 "min_ratio": 1.0,
                 "cleanup_age": "30 days",

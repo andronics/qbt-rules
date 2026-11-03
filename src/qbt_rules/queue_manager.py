@@ -271,7 +271,7 @@ def create_queue(backend: str = "sqlite", **kwargs: Any) -> QueueManager:
         backend: Queue backend type ('sqlite' or 'redis')
         **kwargs: Backend-specific configuration
             For SQLite:
-                - db_path: Path to database file (default: /config/qbt-rules.db)
+                - db_path: Path to database file (default: /var/lib/qbt-rules/qbt-rules.db)
             For Redis:
                 - redis_url: Redis connection URL (default: redis://localhost:6379/0)
 
@@ -288,7 +288,7 @@ def create_queue(backend: str = "sqlite", **kwargs: Any) -> QueueManager:
     if backend == "sqlite":
         from qbt_rules.queue_backends.sqlite_queue import SQLiteQueue
 
-        db_path = kwargs.get("db_path", "/config/qbt-rules.db")
+        db_path = kwargs.get("db_path", "/var/lib/qbt-rules/qbt-rules.db")
         return SQLiteQueue(db_path=db_path)
 
     elif backend == "redis":

@@ -263,7 +263,7 @@ def get_queue_config(args: argparse.Namespace, config_obj: Config) -> dict[str, 
         "queue",
         {
             "backend": "sqlite",
-            "sqlite_path": "/config/qbt-rules.db",
+            "sqlite_path": "/var/lib/qbt-rules/qbt-rules.db",
             "redis_url": "redis://localhost:6379/0",
             "cleanup_after": "7d",
         },
@@ -875,9 +875,13 @@ def stats_command(args: argparse.Namespace, config_obj: Config) -> None:
 @handle_errors
 def main() -> None:
     """Main entry point for qbt-rules CLI"""
-    # Parse arguments
+    # Parse arguments. `serve` is the image's CMD (template-python's Dockerfile):
+    # a synonym of --serve until the Typer CLI replaces this one (TODO(4f)).
+    argv = sys.argv[1:]
+    if argv[:1] == ["serve"]:
+        argv = ["--serve", *argv[1:]]
     parser = create_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # Process arguments and get config directory
     config_dir = process_args(args)

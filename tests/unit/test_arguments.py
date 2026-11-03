@@ -41,22 +41,29 @@ class TestSmartConfigDefault:
         assert result == "./config"
 
     def test_returns_docker_config_when_local_missing(self, tmp_path, monkeypatch):
-        """Returns /config when ./config doesn't exist."""
+        """Returns the image's state directory when ./config doesn't exist."""
         # Change to tmp_path where no config dir exists
         monkeypatch.chdir(tmp_path)
 
         result = smart_config_default()
-        assert result == "/config"
+        assert result == "/var/lib/qbt-rules"
+
+    def test_old_config_volume_is_never_used(self, monkeypatch):
+        """In the image (working directory /), ./config is the old /config: not a fallback."""
+        monkeypatch.chdir("/")
+        monkeypatch.setattr(Path, "is_dir", lambda self: True)
+
+        assert smart_config_default() == "/var/lib/qbt-rules"
 
     def test_returns_docker_config_when_local_is_file(self, tmp_path, monkeypatch):
-        """Returns /config when ./config exists but is a file."""
+        """Returns the image's state directory when ./config exists but is a file."""
         # Change to tmp_path and create config as a file
         monkeypatch.chdir(tmp_path)
         config_file = tmp_path / "config"
         config_file.write_text("not a directory")
 
         result = smart_config_default()
-        assert result == "/config"
+        assert result == "/var/lib/qbt-rules"
 
 
 class TestCreateParser:

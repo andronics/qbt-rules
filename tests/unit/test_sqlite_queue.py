@@ -243,9 +243,13 @@ class TestSQLiteQueueInitialization:
 
         queue = SQLiteQueue(db_path=str(db_path))
 
-        assert queue.get_job("old-job")["dry_run"] is False
+        old_job = queue.get_job("old-job")
+        assert old_job is not None
+        assert old_job["dry_run"] is False
         new_id = queue.enqueue(context="manual", dry_run=True)
-        assert queue.get_job(new_id)["dry_run"] is True
+        new_job = queue.get_job(new_id)
+        assert new_job is not None
+        assert new_job["dry_run"] is True
         conn = sqlite3.connect(str(db_path))
         assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 2
         conn.close()
@@ -256,12 +260,16 @@ class TestSQLiteQueueInitialization:
         db_path = tmp_path / "test.db"
         SQLiteQueue(db_path=str(db_path)).close()
         queue = SQLiteQueue(db_path=str(db_path))
-        assert queue.get_job(queue.enqueue(dry_run=True))["dry_run"] is True
+        job = queue.get_job(queue.enqueue(dry_run=True))
+        assert job is not None
+        assert job["dry_run"] is True
         queue.close()
 
     def test_enqueue_defaults_to_not_dry_run(self, tmp_path):
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
-        assert queue.get_job(queue.enqueue(context="manual"))["dry_run"] is False
+        job = queue.get_job(queue.enqueue(context="manual"))
+        assert job is not None
+        assert job["dry_run"] is False
         queue.close()
 
         queue.close()
@@ -300,6 +308,7 @@ class TestSQLiteQueueEnqueue:
         job_id = queue.enqueue(context="torrent-imported")
 
         job = queue.get_job(job_id)
+        assert job is not None
         assert job["context"] == "torrent-imported"
         queue.close()
 
@@ -309,6 +318,7 @@ class TestSQLiteQueueEnqueue:
         job_id = queue.enqueue(hash_filter="abc123def456")
 
         job = queue.get_job(job_id)
+        assert job is not None
         assert job["hash"] == "abc123def456"
         queue.close()
 
@@ -318,6 +328,7 @@ class TestSQLiteQueueEnqueue:
         job_id = queue.enqueue(context="weekly-cleanup", hash_filter="abc123")
 
         job = queue.get_job(job_id)
+        assert job is not None
         assert job["context"] == "weekly-cleanup"
         assert job["hash"] == "abc123"
         queue.close()
@@ -328,6 +339,7 @@ class TestSQLiteQueueEnqueue:
         job_id = queue.enqueue()
 
         job = queue.get_job(job_id)
+        assert job is not None
         assert job["status"] == JobStatus.PENDING
         queue.close()
 
@@ -339,6 +351,7 @@ class TestSQLiteQueueEnqueue:
         after = datetime.now(UTC)
 
         job = queue.get_job(job_id)
+        assert job is not None
         created_str = job["created_at"]
 
         # Parse ISO timestamp (SQLite stores as string)
@@ -357,6 +370,7 @@ class TestSQLiteQueueEnqueue:
         job_id = queue.enqueue()
 
         job = queue.get_job(job_id)
+        assert job is not None
         assert job["started_at"] is None
         assert job["completed_at"] is None
         assert job["result"] is None
@@ -443,6 +457,7 @@ class TestSQLiteQueueDequeue:
         # Dequeue should return in same order
         for expected_id in job_ids:
             job = queue.dequeue()
+            assert job is not None
             assert job["job_id"] == expected_id
 
         queue.close()
@@ -453,6 +468,7 @@ class TestSQLiteQueueDequeue:
         queue.enqueue()
 
         job = queue.dequeue()
+        assert job is not None
         assert job["status"] == JobStatus.PROCESSING
         queue.close()
 
@@ -463,6 +479,7 @@ class TestSQLiteQueueDequeue:
 
         before = datetime.now(UTC)
         job = queue.dequeue()
+        assert job is not None
         after = datetime.now(UTC)
 
         started_str = job["started_at"]
@@ -504,7 +521,7 @@ class TestSQLiteQueueDequeue:
 
     def test_dequeue_atomic_operation(self, tmp_path):
         """dequeue() is atomic (transaction-safe) -- regression guard for
-        the missing busy_timeout/BEGIN IMMEDIATE bug (see BUGS.md): 5
+        the missing busy_timeout/BEGIN IMMEDIATE bug (see BUGS.md in the git history): 5
         threads racing to dequeue the same single job used to raise
         'sqlite3.OperationalError: database is locked' in worker threads,
         silently swallowed by pytest as a warning rather than a test
@@ -543,6 +560,7 @@ class TestSQLiteQueueDequeue:
         queue.enqueue(context="test", hash_filter="abc123")
 
         job = queue.dequeue()
+        assert job is not None
 
         assert "job_id" in job
         assert "context" in job
@@ -569,6 +587,7 @@ class TestSQLiteQueueDequeue:
 
         # Should get second job (first is no longer in queue)
         job = queue.dequeue()
+        assert job is not None
         assert job["job_id"] == job2_id
         queue.close()
 
@@ -635,6 +654,7 @@ class TestSQLiteQueueGetJob:
         job_id = queue.enqueue(context="test", hash_filter="abc123")
 
         job = queue.get_job(job_id)
+        assert job is not None
 
         required_fields = [
             "job_id",
@@ -662,6 +682,7 @@ class TestSQLiteQueueGetJob:
         )
 
         job = queue.get_job(job_id)
+        assert job is not None
         assert job["result"] == result_data
         queue.close()
 
@@ -674,6 +695,7 @@ class TestSQLiteQueueGetJob:
         queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
         job = queue.get_job(job_id)
+        assert job is not None
         assert job["status"] == JobStatus.COMPLETED
         queue.close()
 
@@ -908,6 +930,7 @@ class TestSQLiteQueueUpdateStatus:
         success = queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
         job = queue.get_job(job_id)
+        assert job is not None
         assert success is True
         assert job["status"] == JobStatus.COMPLETED
         queue.close()
@@ -921,6 +944,7 @@ class TestSQLiteQueueUpdateStatus:
         queue.update_status(job_id, JobStatus.PROCESSING, started_at=started)
 
         job = queue.get_job(job_id)
+        assert job is not None
         assert job["started_at"] is not None
         queue.close()
 
@@ -933,6 +957,7 @@ class TestSQLiteQueueUpdateStatus:
         queue.update_status(job_id, JobStatus.COMPLETED, completed_at=completed)
 
         job = queue.get_job(job_id)
+        assert job is not None
         assert job["completed_at"] is not None
         queue.close()
 
@@ -947,6 +972,7 @@ class TestSQLiteQueueUpdateStatus:
         )
 
         job = queue.get_job(job_id)
+        assert job is not None
         assert job["result"] == result_data
         queue.close()
 
@@ -961,6 +987,7 @@ class TestSQLiteQueueUpdateStatus:
         )
 
         job = queue.get_job(job_id)
+        assert job is not None
         assert job["error"] == error_msg
         queue.close()
 
@@ -1000,6 +1027,7 @@ class TestSQLiteQueueUpdateStatus:
         )
 
         job = queue.get_job(job_id)
+        assert job is not None
         assert job["status"] == JobStatus.COMPLETED
         assert job["started_at"] is not None
         assert job["completed_at"] is not None
@@ -1023,6 +1051,7 @@ class TestSQLiteQueueCancelJob:
         success = queue.cancel_job(job_id)
 
         job = queue.get_job(job_id)
+        assert job is not None
         assert success is True
         assert job["status"] == JobStatus.CANCELLED
         queue.close()
@@ -1072,7 +1101,7 @@ class TestSQLiteQueueCancelJob:
 
     def test_cancel_job_transaction_safe(self, tmp_path):
         """cancel_job() is transaction-safe -- regression guard for the
-        missing busy_timeout/BEGIN IMMEDIATE bug (see BUGS.md): concurrent
+        missing busy_timeout/BEGIN IMMEDIATE bug (see BUGS.md in the git history): concurrent
         cancel_job() calls used to raise 'sqlite3.OperationalError:
         database is locked' in worker threads."""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
@@ -1423,7 +1452,7 @@ class TestSQLiteQueueThreadSafety:
     def test_concurrent_dequeue(self, tmp_path):
         """Multiple threads can dequeue concurrently without duplicates --
         regression guard for the missing busy_timeout/BEGIN IMMEDIATE bug
-        (see BUGS.md): concurrent dequeue() calls used to raise
+        (see BUGS.md in the git history): concurrent dequeue() calls used to raise
         'sqlite3.OperationalError: database is locked' in worker threads."""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
@@ -1623,9 +1652,15 @@ class TestSQLiteQueueCleanup:
         self._age(queue, pending, days=10)
 
         assert queue.cleanup_old_jobs(retention_period=7 * 86400) == 0
-        assert queue.get_job(processing)["status"] == JobStatus.PROCESSING
-        assert queue.get_job(pending)["status"] == JobStatus.PENDING
-        assert queue.dequeue()["job_id"] == pending  # still queued
+        processing_job = queue.get_job(processing)
+        assert processing_job is not None
+        assert processing_job["status"] == JobStatus.PROCESSING
+        pending_job = queue.get_job(pending)
+        assert pending_job is not None
+        assert pending_job["status"] == JobStatus.PENDING
+        next_job = queue.dequeue()
+        assert next_job is not None
+        assert next_job["job_id"] == pending  # still queued
         queue.close()
 
     def test_keeps_recent_finished_jobs(self, tmp_path, caplog):

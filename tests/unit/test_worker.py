@@ -234,8 +234,12 @@ class TestWorkerStop:
 
     def test_stop_with_timeout(self, worker, mock_queue):
         """Should respect timeout parameter"""
+
         # Make dequeue block for a bit to test timeout
-        mock_queue.dequeue.side_effect = lambda: time.sleep(0.1) or None
+        def slow_empty_dequeue() -> None:
+            time.sleep(0.1)
+
+        mock_queue.dequeue.side_effect = slow_empty_dequeue
 
         worker.start()
         time.sleep(0.05)  # Let it start

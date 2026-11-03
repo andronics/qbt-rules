@@ -17,15 +17,14 @@ import time
 from collections.abc import Callable, MutableMapping
 from datetime import UTC, datetime, timedelta
 from functools import wraps
-from typing import TYPE_CHECKING, Any, ParamSpec
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import yaml
 from flask import Flask, Response, g, jsonify, redirect, render_template, request, session, url_for
 from flask.typing import ResponseReturnValue
 
-from qbt_rules import metrics, schema
-from qbt_rules.__version__ import __version__
+from qbt_rules import __version__, metrics, schema
 from qbt_rules.config_loader import Config, parse_bool
 from qbt_rules.config_store import (
     EditableFile,
@@ -201,10 +200,7 @@ def create_app(
     return app
 
 
-P = ParamSpec("P")
-
-
-def require_api_key(f: Callable[P, ResponseReturnValue]) -> Callable[P, ResponseReturnValue]:
+def require_api_key[**P](f: Callable[P, ResponseReturnValue]) -> Callable[P, ResponseReturnValue]:
     """
     Decorator for endpoints requiring API key authentication
 
@@ -237,7 +233,7 @@ def _csrf_token() -> str:
     return token
 
 
-def require_api_key_or_session(
+def require_api_key_or_session[**P](
     f: Callable[P, ResponseReturnValue],
 ) -> Callable[P, ResponseReturnValue]:
     """
@@ -311,7 +307,7 @@ def _sanitize_next(next_url: str | None) -> str:
     return (parsed.path or "/") + (f"?{query}" if query else "")
 
 
-def require_api_key_dashboard(
+def require_api_key_dashboard[**P](
     f: Callable[P, ResponseReturnValue],
 ) -> Callable[P, ResponseReturnValue]:
     """

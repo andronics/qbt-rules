@@ -5,7 +5,7 @@ Provides clear, actionable error messages without Python stack traces
 
 import sys
 from collections.abc import Callable
-from typing import Any, ParamSpec, TypeVar
+from typing import Any
 
 from qbt_rules.log_setup import get_logger
 
@@ -339,11 +339,7 @@ class RefTypeMismatchError(ResolverError):
         )
 
 
-P = ParamSpec("P")
-R = TypeVar("R")
-
-
-def handle_errors(func: Callable[P, R]) -> Callable[P, R]:
+def handle_errors[**P, R](func: Callable[P, R]) -> Callable[P, R]:
     """Decorator for user-friendly error handling"""
 
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:

@@ -1,14 +1,17 @@
-"""Pytest configuration and comprehensive fixtures for qbt-rules test suite."""
+"""Shared fixtures: the template's (clean_env, write_config) and the project's."""
 
 import atexit
 import os
 import shutil
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
 import pytest
+
+from qbt_rules.config import ENV_PREFIX
 
 # prometheus_client resolves its multiprocess-vs-single-process value
 # storage exactly once, at its own first import anywhere in the process --
@@ -21,6 +24,26 @@ import pytest
 _metrics_test_dir = tempfile.mkdtemp(prefix="qbtr-test-metrics-")
 os.environ.setdefault("PROMETHEUS_MULTIPROC_DIR", _metrics_test_dir)
 atexit.register(shutil.rmtree, _metrics_test_dir, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test sees the developer's own QBT_RULES_* variables."""
+    for name in list(os.environ):
+        if name.startswith(ENV_PREFIX):
+            monkeypatch.delenv(name)
+
+
+@pytest.fixture
+def write_config(tmp_path: Path) -> Callable[..., Path]:
+    """Write a config file and return its path."""
+
+    def write(text: str) -> Path:
+        path = tmp_path / "config.yaml"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    return write
 
 
 @pytest.fixture(autouse=True)
@@ -95,7 +118,7 @@ class MockQBittorrentAPI:
         }
 
         # Track API calls for verification
-        self.calls = {
+        self.calls: dict[str, list[Any]] = {
             "stop": [],
             "start": [],
             "force_start": [],

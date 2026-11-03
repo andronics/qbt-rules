@@ -1,0 +1,22 @@
+# qbt-rules configuration: every setting, with its default.
+#
+# Copy to /etc/qbt-rules/config.yaml (or point QBT_RULES_CONFIG / --config
+# at it). Every key can also be set as an environment variable,
+# QBT_RULES_<KEY> (dots become underscores), or read from a file with
+# QBT_RULES_<KEY>_FILE. Secrets belong in _FILE, never in this file.
+# Full reference: the wiki's In-Depth-Configuration page.
+#
+# TODO(4b): not read yet. Until the config moves to interpose, the legacy server
+# reads config.yml and rules.yml from its state directory (/var/lib/qbt-rules in
+# the image; defaults: src/qbt_rules/defaults/). 4b fills this file with the
+# real settings.
+
+# DEBUG, INFO, WARNING or ERROR
+log_level: INFO
+
+listen:
+  host: 0.0.0.0
+  port: 5000
+
+# Persistent state
+state_dir: /var/lib/qbt-rules

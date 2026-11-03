@@ -38,7 +38,7 @@ class SQLiteQueue(QueueManager):
     SCHEMA_VERSION = 2
     BUSY_TIMEOUT_MS = 5000
 
-    def __init__(self, db_path: str = "/config/qbt-rules.db"):
+    def __init__(self, db_path: str = "/var/lib/qbt-rules/qbt-rules.db"):
         """
         Initialize SQLite queue
 
