@@ -249,6 +249,16 @@ logging:
   # Env: QBT_RULES_LOGGING_FILE or QBT_RULES_LOGGING_FILE_FILE
   file: /config/qbt-rules.log
 
+  # Log file rotation: once the file reaches max_bytes it is renamed to
+  # qbt-rules.log.1 (older ones shift to .2, .3, ...) and a new file is
+  # started, keeping backup_count old files. max_bytes: 0 disables rotation.
+  # Under Gunicorn with server.workers > 1, each worker rotates the same
+  # file, so a few lines can land in the wrong file around a rotation.
+  # Env: QBT_RULES_LOGGING_MAX_BYTES or QBT_RULES_LOGGING_MAX_BYTES_FILE
+  max_bytes: 10485760  # 10 MB
+  # Env: QBT_RULES_LOGGING_BACKUP_COUNT or QBT_RULES_LOGGING_BACKUP_COUNT_FILE
+  backup_count: 5
+
   # Trace mode: Include module/function/line numbers in logs (for debugging)
   # Env: QBT_RULES_LOGGING_TRACE_MODE or QBT_RULES_LOGGING_TRACE_MODE_FILE
   trace_mode: false

@@ -25,6 +25,7 @@ from flask import Flask, request, jsonify, Response, render_template, redirect, 
 from qbt_rules.queue_manager import QueueManager, JobStatus
 from qbt_rules.worker import Worker
 from qbt_rules.config import Config, parse_bool
+from qbt_rules.logging import set_file_rotation
 from qbt_rules.config_store import (
     EditableFile, FileConflictError, FileNotWritableError, redacted_config_view,
 )
@@ -1162,7 +1163,13 @@ def run_server(
 
         When Gunicorn forks, threads don't survive the fork. We need to
         restart the worker thread in each forked worker process.
+
+        The worker also takes over log file rotation from the master (see
+        when_ready). With server.workers > 1 every worker rotates the same
+        file, which can misplace lines around a rotation -- a known
+        limitation; run one worker if that matters.
         """
+        set_file_rotation(True)
         logger.info(f"Gunicorn worker {worker_process.pid} forked - restarting worker thread")
 
         # Import here to access the global worker instance
@@ -1175,6 +1182,16 @@ def run_server(
         # Restart the worker thread in this process
         worker_instance.start()
         logger.info(f"Worker thread restarted in Gunicorn worker {worker_process.pid}")
+
+    def when_ready(server):
+        """
+        Gunicorn when_ready hook - runs in the master before the first fork
+
+        The master stops rotating the log file and only reopens it after a
+        worker rotates it, so the master and its workers never rotate the
+        same file at once. Workers switch back to rotating in post_fork.
+        """
+        set_file_rotation(False)
 
     def child_exit(server, worker_process):
         """
@@ -1212,6 +1229,7 @@ def run_server(
         'logger_class': FilteredLogger,  # Use custom logger to filter health checks
         'preload_app': True,  # Load app before forking workers
         'post_fork': post_fork,  # Restart worker thread after fork
+        'when_ready': when_ready,  # Master stops rotating the log file
     }
     if metrics_enabled:
         options['child_exit'] = child_exit
