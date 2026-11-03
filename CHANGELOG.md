@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > before inserting its own, so a manual entry for a version gets duplicated when that
 > version is tagged.**
 
+## [0.10.2] - 2026-11-03
+
+### ✨ New Features
+- Merge pull request #22 from andronics/dev/rules-editor
+- feat: live rules.yml editor in the dashboard (/rules/edit)
+- feat: rules.yml validator with line-accurate diagnostics
+
+### 🐛 Bug Fixes
+- fix: rotate the log file by size instead of growing without bound (#27)
+- fix: clean up old finished jobs per queue.cleanup_after (#25)
+- fix: keep_files on delete_torrent is an error again
+- Merge pull request #21 from Madarame-Baku1/feat/validate-action-parameters
+- fix: validate CLI rules with shared diagnostics
+
+### 🔧 Maintenance
+- chore: Bump version to 0.10.2
+
+
 ## [0.10.1] - 2026-10-21
 
 ### 🐛 Bug Fixes
