@@ -19,7 +19,7 @@ stack_answers:
     contrib:
     - docker
     extra_ports: []
-    health_path: /api/health
+    health_path: /healthz
     image_extras:
     - redis
     integration_ci: false
