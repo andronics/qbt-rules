@@ -29,7 +29,7 @@ def reset_metrics_module_state():
     references before and after every test in the whole suite
 
     Applies across every test file (not just test_metrics.py) since
-    test_server.py's /metrics tests also call metrics.init(enabled=True),
+    test_web.py's /metrics tests also call metrics.init(enabled=True),
     and without this reset that would otherwise leak "enabled" state into
     every test that runs afterward in the same pytest session.
     """

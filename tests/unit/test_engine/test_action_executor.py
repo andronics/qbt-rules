@@ -389,7 +389,7 @@ class TestSpeedLimitActions:
 class TestPriorityActions:
     """Test torrent priority actions (increase_priority/decrease_priority/
     set_top_priority/set_bottom_priority). The API client methods for all
-    four already existed in api.py, but weren't wired into the action
+    four already existed in qbittorrent.py, but weren't wired into the action
     dispatch -- using them from a rule fell through to the 'Unknown action
     type' branch (logged error, returned False), silently never doing
     anything. Found while verifying advanced-rules-example.yml Rule 9,

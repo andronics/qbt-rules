@@ -46,7 +46,7 @@ try:
 except ImportError:  # pragma: no cover - not POSIX
     fcntl = None
 
-from qbt_rules.config import ENV_VAR_MAP
+from qbt_rules.config_loader import ENV_VAR_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -253,7 +253,7 @@ REDACTED = '<redacted>'
 
 
 def _env_var_for(config_key: str) -> str:
-    """The env var that overrides a config.yml key -- cli.py's
+    """The env var that overrides a config.yml key -- legacy_cli.py's
     resolve_section_config naming, plus ENV_VAR_MAP's exceptions"""
     return ENV_VAR_MAP.get(config_key, 'QBT_RULES_' + config_key.upper().replace('.', '_'))
 

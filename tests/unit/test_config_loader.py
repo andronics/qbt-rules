@@ -1,4 +1,4 @@
-"""Comprehensive tests for config.py - Configuration loading and management."""
+"""Comprehensive tests for config_loader.py - Configuration loading and management."""
 
 import pytest
 import os
@@ -6,7 +6,7 @@ import logging
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
-from qbt_rules.config import (
+from qbt_rules.config_loader import (
     expand_env_vars,
     load_yaml_file,
     Config,
@@ -576,7 +576,7 @@ class TestCopyDefaultIfMissing:
         mock_default_file.write_text('default: config')
 
         # Mock DEFAULT_CONFIG_SHARE_PATH
-        mocker.patch('qbt_rules.config.DEFAULT_CONFIG_SHARE_PATH', mock_default_dir)
+        mocker.patch('qbt_rules.config_loader.DEFAULT_CONFIG_SHARE_PATH', mock_default_dir)
 
         # Execute
         result = copy_default_if_missing(target_path, default_filename)
@@ -600,7 +600,7 @@ class TestCopyDefaultIfMissing:
         mock_default_file.write_text('default: config')
 
         # Mock DEFAULT_CONFIG_SHARE_PATH
-        mocker.patch('qbt_rules.config.DEFAULT_CONFIG_SHARE_PATH', mock_default_dir)
+        mocker.patch('qbt_rules.config_loader.DEFAULT_CONFIG_SHARE_PATH', mock_default_dir)
 
         # Execute
         result = copy_default_if_missing(target_path, default_filename)
@@ -617,7 +617,7 @@ class TestCopyDefaultIfMissing:
 
         # Mock DEFAULT_CONFIG_SHARE_PATH to non-existent directory
         mock_default_dir = tmp_path / 'usr_share'
-        mocker.patch('qbt_rules.config.DEFAULT_CONFIG_SHARE_PATH', mock_default_dir)
+        mocker.patch('qbt_rules.config_loader.DEFAULT_CONFIG_SHARE_PATH', mock_default_dir)
 
         # Execute
         result = copy_default_if_missing(target_path, default_filename)
@@ -639,7 +639,7 @@ class TestCopyDefaultIfMissing:
         mock_default_file.write_text('default: config')
 
         # Mock DEFAULT_CONFIG_SHARE_PATH
-        mocker.patch('qbt_rules.config.DEFAULT_CONFIG_SHARE_PATH', mock_default_dir)
+        mocker.patch('qbt_rules.config_loader.DEFAULT_CONFIG_SHARE_PATH', mock_default_dir)
 
         # Execute
         result = copy_default_if_missing(target_path, default_filename)
@@ -662,10 +662,10 @@ class TestCopyDefaultIfMissing:
         mock_default_file.write_text('default: config')
 
         # Mock DEFAULT_CONFIG_SHARE_PATH
-        mocker.patch('qbt_rules.config.DEFAULT_CONFIG_SHARE_PATH', mock_default_dir)
+        mocker.patch('qbt_rules.config_loader.DEFAULT_CONFIG_SHARE_PATH', mock_default_dir)
 
         # Mock shutil.copy2 to raise exception
-        mocker.patch('qbt_rules.config.shutil.copy2', side_effect=PermissionError('Test error'))
+        mocker.patch('qbt_rules.config_loader.shutil.copy2', side_effect=PermissionError('Test error'))
 
         # Execute
         result = copy_default_if_missing(target_path, default_filename)

@@ -5,7 +5,7 @@ Tests for QBittorrentAPI class.
 import pytest
 
 
-from qbt_rules.api import QBittorrentAPI as QBittorrentAPIv4
+from qbt_rules.qbittorrent import QBittorrentAPI as QBittorrentAPIv4
 from qbt_rules.errors import AuthenticationError, ConnectionError, APIError
 from unittest.mock import Mock, patch, MagicMock
 
@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch, MagicMock
 class TestQBittorrentAPIv4Init:
     """Test QBittorrentAPI v0.4.0 initialization."""
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_init_creates_client(self, mock_client_class):
         """Should create qbittorrent-api Client"""
         mock_client = Mock()
@@ -31,13 +31,13 @@ class TestQBittorrentAPIv4Init:
             password='password'
         )
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_init_strips_trailing_slash(self, mock_client_class):
         """Should strip trailing slash from host"""
         api = QBittorrentAPIv4('http://localhost:8080/', 'admin', 'password', connect_now=False)
         assert api.host == 'http://localhost:8080'
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_init_with_connect_now_true(self, mock_client_class):
         """Should connect immediately when connect_now=True"""
         mock_client = Mock()
@@ -51,7 +51,7 @@ class TestQBittorrentAPIv4Init:
         assert api._connected is True
         mock_client.auth_log_in.assert_called_once()
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_init_login_failed_raises_auth_error(self, mock_client_class):
         """Should raise AuthenticationError when login fails"""
         import qbittorrentapi
@@ -65,7 +65,7 @@ class TestQBittorrentAPIv4Init:
 
         assert error.value.__cause__ is original_error
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_init_connection_error_raises(self, mock_client_class):
         """Should raise ConnectionError when cannot reach server"""
         import qbittorrentapi
@@ -79,7 +79,7 @@ class TestQBittorrentAPIv4Init:
 
         assert error.value.__cause__ is original_error
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_init_generic_exception_raises_connection_error(self, mock_client_class):
         """Should raise ConnectionError for generic exceptions"""
         mock_client = Mock()
@@ -96,7 +96,7 @@ class TestQBittorrentAPIv4Init:
 class TestQBittorrentAPIv4TorrentInfo:
     """Test torrent information methods."""
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_get_torrents(self, mock_client_class):
         """Should get list of torrents"""
         mock_client = Mock()
@@ -120,7 +120,7 @@ class TestQBittorrentAPIv4TorrentInfo:
             tag=None
         )
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_get_properties(self, mock_client_class):
         """Should get torrent properties"""
         mock_client = Mock()
@@ -135,7 +135,7 @@ class TestQBittorrentAPIv4TorrentInfo:
 
         assert props['size'] == 1024
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_get_trackers(self, mock_client_class):
         """Should get torrent trackers"""
         mock_client = Mock()
@@ -151,7 +151,7 @@ class TestQBittorrentAPIv4TorrentInfo:
         assert len(trackers) == 1
         assert trackers[0]['url'] == 'http://tracker.example.com'
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_get_files(self, mock_client_class):
         """Should get torrent files"""
         mock_client = Mock()
@@ -167,7 +167,7 @@ class TestQBittorrentAPIv4TorrentInfo:
         assert len(files) == 1
         assert files[0]['name'] == 'file.txt'
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_get_webseeds(self, mock_client_class):
         """Should get torrent webseeds"""
         mock_client = Mock()
@@ -182,7 +182,7 @@ class TestQBittorrentAPIv4TorrentInfo:
 
         assert len(webseeds) == 1
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_get_peers(self, mock_client_class):
         """Should get torrent peers"""
         mock_client = Mock()
@@ -201,7 +201,7 @@ class TestQBittorrentAPIv4TorrentInfo:
 class TestQBittorrentAPIv4GlobalInfo:
     """Test global information methods."""
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_get_transfer_info(self, mock_client_class):
         """Should get transfer info"""
         mock_client = Mock()
@@ -216,7 +216,7 @@ class TestQBittorrentAPIv4GlobalInfo:
 
         assert info['dl_speed'] == 1000
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_get_app_preferences(self, mock_client_class):
         """Should get app preferences"""
         mock_client = Mock()
@@ -235,7 +235,7 @@ class TestQBittorrentAPIv4GlobalInfo:
 class TestQBittorrentAPIv4TorrentControl:
     """Test torrent control methods."""
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_stop_torrents(self, mock_client_class):
         """Should stop torrents"""
         mock_client = Mock()
@@ -251,7 +251,7 @@ class TestQBittorrentAPIv4TorrentControl:
         assert result is True
         mock_client.torrents_pause.assert_called_once_with(torrent_hashes=['abc123'])
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_start_torrents(self, mock_client_class):
         """Should start torrents"""
         mock_client = Mock()
@@ -266,7 +266,7 @@ class TestQBittorrentAPIv4TorrentControl:
 
         assert result is True
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_force_start_torrents(self, mock_client_class):
         """Should force start torrents"""
         mock_client = Mock()
@@ -281,7 +281,7 @@ class TestQBittorrentAPIv4TorrentControl:
 
         assert result is True
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_recheck_torrents(self, mock_client_class):
         """Should recheck torrents"""
         mock_client = Mock()
@@ -296,7 +296,7 @@ class TestQBittorrentAPIv4TorrentControl:
 
         assert result is True
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_reannounce_torrents(self, mock_client_class):
         """Should reannounce torrents"""
         mock_client = Mock()
@@ -311,7 +311,7 @@ class TestQBittorrentAPIv4TorrentControl:
 
         assert result is True
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_delete_torrents(self, mock_client_class):
         """Should delete torrents"""
         mock_client = Mock()
@@ -334,7 +334,7 @@ class TestQBittorrentAPIv4TorrentControl:
 class TestQBittorrentAPIv4CategoryTags:
     """Test category and tag methods."""
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_set_category(self, mock_client_class):
         """Should set category"""
         mock_client = Mock()
@@ -353,7 +353,7 @@ class TestQBittorrentAPIv4CategoryTags:
             category='movies'
         )
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_add_tags(self, mock_client_class):
         """Should add tags"""
         mock_client = Mock()
@@ -368,7 +368,7 @@ class TestQBittorrentAPIv4CategoryTags:
 
         assert result is True
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_remove_tags(self, mock_client_class):
         """Should remove tags"""
         mock_client = Mock()
@@ -387,7 +387,7 @@ class TestQBittorrentAPIv4CategoryTags:
 class TestQBittorrentAPIv4Limits:
     """Test limit setting methods."""
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_set_upload_limit(self, mock_client_class):
         """Should set upload limit"""
         mock_client = Mock()
@@ -402,7 +402,7 @@ class TestQBittorrentAPIv4Limits:
 
         assert result is True
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_set_download_limit(self, mock_client_class):
         """Should set download limit"""
         mock_client = Mock()
@@ -417,7 +417,7 @@ class TestQBittorrentAPIv4Limits:
 
         assert result is True
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_set_share_limits(self, mock_client_class):
         """Should set share limits"""
         mock_client = Mock()
@@ -441,7 +441,7 @@ class TestQBittorrentAPIv4Limits:
 class TestQBittorrentAPIv4Priority:
     """Test priority methods."""
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_increase_priority(self, mock_client_class):
         """Should increase priority"""
         mock_client = Mock()
@@ -456,7 +456,7 @@ class TestQBittorrentAPIv4Priority:
 
         assert result is True
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_decrease_priority(self, mock_client_class):
         """Should decrease priority"""
         mock_client = Mock()
@@ -471,7 +471,7 @@ class TestQBittorrentAPIv4Priority:
 
         assert result is True
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_set_top_priority(self, mock_client_class):
         """Should set top priority"""
         mock_client = Mock()
@@ -486,7 +486,7 @@ class TestQBittorrentAPIv4Priority:
 
         assert result is True
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_set_bottom_priority(self, mock_client_class):
         """Should set bottom priority"""
         mock_client = Mock()

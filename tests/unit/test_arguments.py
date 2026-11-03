@@ -259,7 +259,7 @@ class TestProcessArgs:
         assert 'QBT_RULES_DRY_RUN' not in os.environ
 
     def test_does_not_set_bare_log_env_vars(self, monkeypatch):
-        """--log-level/--trace are resolved directly by cli.py's
+        """--log-level/--trace are resolved directly by legacy_cli.py's
         get_logging_config(), not by setting bare LOG_LEVEL/TRACE_MODE
         env vars here."""
         monkeypatch.delenv('LOG_LEVEL', raising=False)
@@ -374,8 +374,8 @@ class TestHandleUtilityArgs:
 
     def test_validate_checks_qbittorrent_config(self):
         """Validate checks qBittorrent configuration via the real
-        get_qbittorrent_config() (cli.py), not a Config method -- the
-        deferred `from qbt_rules.cli import get_qbittorrent_config` inside
+        get_qbittorrent_config() (legacy_cli.py), not a Config method -- the
+        deferred `from qbt_rules.legacy_cli import get_qbittorrent_config` inside
         handle_utility_args() means the patch target is where it's
         defined, not where it's used."""
         args = Mock()
@@ -385,7 +385,7 @@ class TestHandleUtilityArgs:
         mock_config = Mock()
         mock_config.get_rules.return_value = []
 
-        with patch('qbt_rules.cli.get_qbittorrent_config') as mock_get_qbt:
+        with patch('qbt_rules.legacy_cli.get_qbittorrent_config') as mock_get_qbt:
             mock_get_qbt.return_value = {
                 'host': 'localhost',
                 'username': 'admin',
@@ -404,7 +404,7 @@ class TestHandleUtilityArgs:
         mock_config = Mock()
         mock_config.get_rules.return_value = []
 
-        with patch('qbt_rules.cli.get_qbittorrent_config') as mock_get_qbt:
+        with patch('qbt_rules.legacy_cli.get_qbittorrent_config') as mock_get_qbt:
             mock_get_qbt.return_value = {
                 'host': 'localhost',
                 'username': '',
@@ -427,7 +427,7 @@ class TestHandleUtilityArgs:
             {'name': 'Rule 2', 'enabled': True, 'conditions': {'all': []}, 'actions': []},
         ]
 
-        with patch('qbt_rules.cli.get_qbittorrent_config') as mock_get_qbt:
+        with patch('qbt_rules.legacy_cli.get_qbittorrent_config') as mock_get_qbt:
             mock_get_qbt.return_value = {
                 'host': 'localhost',
                 'username': 'admin',
@@ -448,7 +448,7 @@ class TestHandleUtilityArgs:
             {'id': 'bad-rule', 'conditions': {}, 'actions': [{'type': 'set_catgory'}]}
         ]
 
-        with patch('qbt_rules.cli.get_qbittorrent_config') as mock_get_qbt:
+        with patch('qbt_rules.legacy_cli.get_qbittorrent_config') as mock_get_qbt:
             mock_get_qbt.return_value = {
                 'host': 'localhost',
                 'username': 'admin',
@@ -463,7 +463,7 @@ class TestHandleUtilityArgs:
     @pytest.mark.parametrize('action_type, expected', [('set_catgory', 1), ('set_category', 0)])
     def test_validate_checks_actions_after_reference_resolution(self, tmp_path, caplog,
                                                                action_type, expected):
-        from qbt_rules.config import Config
+        from qbt_rules.config_loader import Config
 
         (tmp_path / 'config.yml').write_text('{}\n', encoding='utf-8')
         (tmp_path / 'rules.yml').write_text(
@@ -481,7 +481,7 @@ class TestHandleUtilityArgs:
         args = Mock(validate=True, list_rules=False)
         config = Config(tmp_path)
 
-        with patch('qbt_rules.cli.get_qbittorrent_config') as mock_get_qbt:
+        with patch('qbt_rules.legacy_cli.get_qbittorrent_config') as mock_get_qbt:
             mock_get_qbt.return_value = {
                 'host': 'localhost',
                 'username': 'admin',
@@ -522,7 +522,7 @@ class TestHandleUtilityArgs:
                                                 notifications, expected, diagnostic):
         import yaml
 
-        from qbt_rules.config import Config
+        from qbt_rules.config_loader import Config
 
         (tmp_path / 'config.yml').write_text(yaml.safe_dump({
             'qbittorrent': {'host': 'localhost', 'username': 'admin', 'password': 'example'},
@@ -649,7 +649,7 @@ class TestHandleUtilityArgs:
     @patch('qbt_rules.cli_ui.print_table')
     def test_list_rules_with_rule_missing_id(self, mock_print_table):
         """list_rules handles a rule dict with no 'id' gracefully (defensive
-        fallback here -- real Config loading requires 'id', see config.py)."""
+        fallback here -- real Config loading requires 'id', see config_loader.py)."""
         args = Mock()
         args.validate = False
         args.list_rules = True

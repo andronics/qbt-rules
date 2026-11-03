@@ -7,7 +7,7 @@
 
   WHAT THIS DEMO IS: a richer evolution of the real, currently-shipped top-level
   /dashboard route (src/qbt_rules/templates/dashboard.html + base.html, served by
-  dashboard_overview() in server.py, ~L456-471). Real data shape, read from source:
+  dashboard_overview() in web.py, ~L456-471). Real data shape, read from source:
     queue_backend        -> queue.__class__.__name__
     queue_stats           -> queue.get_stats(): total_jobs/pending/processing/
                              completed/failed/cancelled/average_execution_time
@@ -329,7 +329,7 @@
 
 /* ======================================================================
    Mock data — shapes match the REAL dashboard_overview()/queue.get_stats()/
-   worker.get_status() output (server.py ~L456-471)
+   worker.get_status() output (web.py ~L456-471)
    ====================================================================== */
 const QUEUE_BACKEND = 'SQLiteQueue';
 const VERSION = '0.6.1';

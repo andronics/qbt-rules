@@ -5,7 +5,7 @@ import tempfile
 import yaml
 from pathlib import Path
 
-from qbt_rules.config import Config
+from qbt_rules.config_loader import Config
 from qbt_rules.engine import RulesEngine
 
 

@@ -348,7 +348,7 @@ def process_args(args: argparse.Namespace) -> Path:
         Path to configuration directory
     """
     # Set environment variables from command-line arguments
-    # (--log-level/--trace are handled directly by cli.py's
+    # (--log-level/--trace are handled directly by legacy_cli.py's
     # get_logging_config(), not via this env-var-setting indirection)
     if args.dry_run:
         os.environ['QBT_RULES_DRY_RUN'] = 'true'
@@ -375,7 +375,7 @@ def handle_utility_args(args: argparse.Namespace, config) -> Optional[int]:
     Returns:
         The utility command's exit code, or None if no utility was handled
     """
-    from qbt_rules.logging import get_logger
+    from qbt_rules.log_setup import get_logger
     logger = get_logger(__name__)
 
     # Handle --validate
@@ -384,8 +384,8 @@ def handle_utility_args(args: argparse.Namespace, config) -> Optional[int]:
 
         try:
             # Check qBittorrent config -- deferred import avoids a circular
-            # import (cli.py already imports this module at load time)
-            from qbt_rules.cli import get_notifications_config, get_qbittorrent_config
+            # import (legacy_cli.py already imports this module at load time)
+            from qbt_rules.legacy_cli import get_notifications_config, get_qbittorrent_config
             qbt_config = get_qbittorrent_config(args, config)
             required = ['host', 'username', 'password']
             missing = [k for k in required if not qbt_config.get(k)]

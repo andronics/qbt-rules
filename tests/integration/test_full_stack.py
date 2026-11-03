@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from qbt_rules.server import create_app
+from qbt_rules.web import create_app
 from qbt_rules.worker import Worker
 from qbt_rules.queue_manager import create_queue, JobStatus
 from qbt_rules.__version__ import __version__

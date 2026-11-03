@@ -8,8 +8,8 @@ from unittest.mock import Mock, patch, MagicMock
 
 import pytest
 
-import qbt_rules.logging as qbt_logging
-from qbt_rules.logging import (
+import qbt_rules.log_setup as qbt_logging
+from qbt_rules.log_setup import (
     setup_logging, get_logger, set_file_rotation, LOG_FORMAT_SIMPLE, LOG_FORMAT_DETAILED,
     CONSOLE_FORMAT_BARE, DEFAULT_MAX_BYTES, DEFAULT_BACKUP_COUNT
 )
@@ -17,7 +17,7 @@ from qbt_rules.logging import (
 
 def _logging_config(level="INFO", file=None, trace_mode=False, http_access=False, client_mode=False,
                     max_bytes=DEFAULT_MAX_BYTES, backup_count=DEFAULT_BACKUP_COUNT):
-    """Build a resolved logging_config dict, matching cli.py's get_logging_config() shape."""
+    """Build a resolved logging_config dict, matching legacy_cli.py's get_logging_config() shape."""
     return {
         'level': level,
         'file': file,

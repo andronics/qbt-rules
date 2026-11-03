@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 import qbittorrentapi
 
 from qbt_rules.errors import AuthenticationError, ConnectionError
-from qbt_rules.logging import get_logger
+from qbt_rules.log_setup import get_logger
 
 logger = get_logger(__name__)
 

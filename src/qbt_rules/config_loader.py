@@ -28,7 +28,7 @@ from qbt_rules.rules_validation import check_rules_structure
 # Environment variable mapping
 #
 # Only genuine exceptions live here now. Every section resolved through
-# cli.py's resolve_section_config() (server, client, queue, notifications,
+# legacy_cli.py's resolve_section_config() (server, client, queue, notifications,
 # and any future section) derives its env var name mechanically as
 # QBT_RULES_<SECTION>_<FIELD> and never needs an entry here -- this map
 # exists only for the handful of variables that don't follow that
@@ -44,7 +44,7 @@ ENV_VAR_MAP = {
 }
 
 # Note: logging.* is NOT resolved through this map or resolve_section_config()
-# -- cli.py's get_logging_config() hand-resolves each field directly (its CLI
+# -- legacy_cli.py's get_logging_config() hand-resolves each field directly (its CLI
 # flag names, --log-level/--trace, don't match the mechanical <section>_<field>
 # convention this map/helper assume). Its env vars are QBT_RULES_LOGGING_*,
 # matching the convention exactly -- no exception entry needed here.

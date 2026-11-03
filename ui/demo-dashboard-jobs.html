@@ -6,7 +6,7 @@
 
   WHAT THIS DEMO IS: a richer evolution of the real, currently-shipped, read-only
   /dashboard/jobs + /dashboard/jobs/<id> routes (src/qbt_rules/templates/jobs.html +
-  job_detail.html + base.html; handlers in server.py's dashboard_jobs()/
+  job_detail.html + base.html; handlers in web.py's dashboard_jobs()/
   dashboard_job_detail(), ~L473-509). Same underlying fields as the real templates —
   job_id / status / context / hash / created_at / started_at / completed_at / result /
   error — presented as a denser table with a working client-side status filter +
@@ -30,7 +30,7 @@
     demo-metrics-config-dashboard.html) — not inert stubs, per this round's brief.
   - The failed-job example's traceback uses this project's own bulleted
     ConnectionError format (see src/qbt_rules/errors.py) ending the traceback chain,
-    matching how _summarize_error() in server.py actually extracts a short summary
+    matching how _summarize_error() in web.py actually extracts a short summary
     from a real traceback (last zero-indent exception line(s) to the end of the
     string) — not a generic/invented error shape.
   - No cancel/retry actions on pending/processing rows: those would imply a live
@@ -304,14 +304,14 @@
 
 /* ======================================================================
    Mock data — real field shapes from jobs.html / job_detail.html /
-   server.py's dashboard_jobs()/dashboard_job_detail() handlers
+   web.py's dashboard_jobs()/dashboard_job_detail() handlers
    ====================================================================== */
 const REAL_ERROR_TRACE = `Traceback (most recent call last):
   File "/opt/venv/lib/python3.11/site-packages/qbt_rules/worker.py", line 142, in _run_job
     result = engine.execute(context=job['context'], torrent_hash=job['hash'])
   File "/opt/venv/lib/python3.11/site-packages/qbt_rules/engine.py", line 214, in execute
     torrents = self.api.get_torrents()
-  File "/opt/venv/lib/python3.11/site-packages/qbt_rules/api.py", line 88, in get_torrents
+  File "/opt/venv/lib/python3.11/site-packages/qbt_rules/qbittorrent.py", line 88, in get_torrents
     raise ConnectionError(host=self.host, original_error=str(e))
 qbt_rules.errors.ConnectionError: Cannot reach qBittorrent server
   • Host: http://qbt:8080
@@ -343,7 +343,7 @@ function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-/* Same summary extraction rule as server.py's _summarize_error(): the final
+/* Same summary extraction rule as web.py's _summarize_error(): the final
    zero-indent "SomeError: message" line onward, falling back to the last
    non-empty line if it doesn't look like a traceback. */
 function summarizeError(trace){

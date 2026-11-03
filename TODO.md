@@ -61,7 +61,7 @@ Currently-open items only. Resolved bugs and their postmortems live in
   file order is already sufficient. Revisit only if the ruleset grows
   large enough that physical reordering becomes the actual pain point.
 - **Instance-scoped variable overrides** — `resolver.py` fully implements
-  per-instance variable overrides, but `config.py` hardcodes
+  per-instance variable overrides, but `config_loader.py` hardcodes
   `instance_id=None`, so it's unreachable. Would matter for running one
   shared ruleset across multiple qBittorrent instances. Decided not to
   wire it up: the rest of the app (single `QBittorrentAPI` client, job

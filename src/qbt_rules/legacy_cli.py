@@ -17,12 +17,12 @@ from pathlib import Path
 from typing import Optional
 
 from qbt_rules.arguments import create_parser, process_args, validate_torrent_hash
-from qbt_rules.config import (
+from qbt_rules.config_loader import (
     load_config, resolve_config, parse_int, parse_bool, parse_retention, ENV_VAR_MAP
 )
-from qbt_rules.api import QBittorrentAPI
+from qbt_rules.qbittorrent import QBittorrentAPI
 from qbt_rules.errors import handle_errors
-from qbt_rules.logging import (
+from qbt_rules.log_setup import (
     setup_logging, get_logger, DEFAULT_MAX_BYTES, DEFAULT_BACKUP_COUNT
 )
 from qbt_rules import cli_ui
@@ -379,7 +379,7 @@ def run_server_mode(args, config_obj, logging_config):
     scheduler.start()
 
     # Create Flask app
-    from qbt_rules.server import create_app, run_server
+    from qbt_rules.web import create_app, run_server
     app = create_app(
         queue_manager=queue,
         worker_instance=worker,

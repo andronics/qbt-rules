@@ -6,7 +6,7 @@ Provides clear, actionable error messages without Python stack traces
 import sys
 from typing import Optional
 
-from qbt_rules.logging import get_logger
+from qbt_rules.log_setup import get_logger
 
 logger = get_logger(__name__)
 
