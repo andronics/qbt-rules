@@ -45,6 +45,7 @@ One Docker container, one YAML file, and qBittorrent does the rest. **[Get start
 - [Security](Security)
 - [In-Depth Configuration](In-Depth-Configuration)
 - [Deployment](Deployment)
+- [Upgrading to 0.11](Upgrading-to-0.11)
 - [Scheduling](Scheduling)
 - [Examples](Examples)
 - [Advanced Rules Example](Advanced-Rules-Example)
