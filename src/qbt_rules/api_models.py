@@ -35,7 +35,10 @@ class Job(BaseModel):
         description="A completed job's counters: torrents_processed, rules_matched, "
         "actions_executed, ... and by_rule"
     )
-    error: str | None = Field(description="A failed job's traceback")
+    error: str | None = Field(
+        description="Why a failed job failed: one line naming the exception (the traceback "
+        "is in the server log)"
+    )
 
 
 class JobList(BaseModel):

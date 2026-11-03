@@ -63,7 +63,10 @@ NO_API_KEY_MESSAGE = (
 )
 NO_CONFIG_MESSAGE = "The server was started without a config directory"
 
-# The status names the Flask API used (Werkzeug's, not Python 3.13's newer RFC 9110 ones)
+# The "error" names the Flask API used, as an explicit table: never http.HTTPStatus, whose
+# phrases Python 3.13 changed to RFC 9110's (413 "Content Too Large", 416 "Range Not
+# Satisfiable", 422 "Unprocessable Content"). 414 and 416 never reached 0.10.x's JSON
+# handlers; they get the names clients already know (Werkzeug's 416, RFC 7231's 414).
 STATUS_NAMES = {
     400: "Bad Request",
     401: "Unauthorized",
@@ -72,6 +75,8 @@ STATUS_NAMES = {
     405: "Method Not Allowed",
     412: "Precondition Failed",
     413: "Payload Too Large",
+    414: "URI Too Long",
+    416: "Requested Range Not Satisfiable",
     422: "Unprocessable Entity",
     428: "Precondition Required",
     500: "Internal Server Error",

@@ -8,17 +8,40 @@ Runs in separate thread with graceful shutdown support.
 import logging
 import threading
 import time
-import traceback
 from datetime import UTC, datetime
 from typing import Any
 
 from qbt_rules import metrics
 from qbt_rules.config_loader import Config
 from qbt_rules.engine import RulesEngine
+from qbt_rules.errors import QBittorrentError
 from qbt_rules.qbittorrent import QBittorrentAPI
 from qbt_rules.queue_manager import JobStatus, QueueManager
 
 logger = logging.getLogger(__name__)
+
+# The longest a failed job's error message gets (the traceback is in the server log)
+MAX_ERROR_LENGTH = 500
+
+
+def job_error(e: BaseException) -> str:
+    """A failed job's ``error``: one line naming the exception, never its traceback (#41).
+
+    A QBittorrentError's details and fix are folded onto the line, so ``Cannot reach
+    qBittorrent server`` keeps its host and what to check.
+    """
+    if isinstance(e, QBittorrentError):
+        extra = [f"{key}: {value}" for key, value in e.details.items()]
+        if e.fix:
+            extra.append(f"Fix: {e.fix}")
+        text = f"{e.message} ({'; '.join(extra)})" if extra else e.message
+    else:
+        text = str(e)
+    text = "; ".join(line.strip() for line in text.splitlines() if line.strip())
+    line = f"{type(e).__name__}: {text}" if text else type(e).__name__
+    if len(line) > MAX_ERROR_LENGTH:
+        line = line[: MAX_ERROR_LENGTH - 1] + "\u2026"
+    return line
 
 
 class Worker:
@@ -242,22 +265,19 @@ class Worker:
             )
 
         except Exception as e:
-            # Mark job as failed
-            error_msg = f"{type(e).__name__}: {e!s}"
-            error_trace = traceback.format_exc()
-
+            # Mark job as failed: one line in the job, the traceback in the server log
+            error_msg = job_error(e)
             completed_at = datetime.now(UTC)
             self.queue.update_status(
                 job_id=job_id,
                 status=JobStatus.FAILED,
                 started_at=started_at,
                 completed_at=completed_at,
-                error=error_trace,
+                error=error_msg,
             )
             metrics.record_job_duration((completed_at - started_at).total_seconds())
 
-            logger.error(f"Job {job_id} failed: {error_msg}")
-            logger.debug(f"Job {job_id} traceback:\n{error_trace}")
+            logger.exception(f"Job {job_id} failed: {error_msg}")
 
     def _execute_job(
         self, context: str | None, hash_filter: str | None, job_dry_run: bool = False

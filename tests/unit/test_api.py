@@ -227,3 +227,58 @@ def test_openapi_documents_the_routes(settings: Config) -> None:
     put = paths["/api/rules/source"]["put"]
     assert "requestBody" in put
     assert {"412", "422", "428"} <= set(put["responses"])
+
+
+# -- Error names: an explicit table, not Python 3.13's HTTPStatus phrases ------------------------
+
+OLD_NAMES = {
+    413: "Payload Too Large",
+    414: "URI Too Long",
+    416: "Requested Range Not Satisfiable",
+    422: "Unprocessable Entity",
+}
+
+
+@pytest.mark.parametrize(("status", "name"), OLD_NAMES.items())
+def test_error_names_keep_the_old_phrases(status: int, name: str) -> None:
+    body = api.error_response(status, "m").body
+    assert body == f'{{"error":"{name}","message":"m"}}\n'.encode()
+
+
+def test_python_changed_these_phrases() -> None:
+    """Why the table exists: HTTPStatus would answer 3.13's RFC 9110 names for three of them."""
+    from http import HTTPStatus
+
+    changed = {s for s, name in OLD_NAMES.items() if HTTPStatus(s).phrase != name}
+    assert changed >= {413, 416, 422}
+
+
+@pytest.mark.parametrize("status", [414, 416])
+def test_an_http_exception_gets_the_table_name(settings: Config, status: int) -> None:
+    from fastapi import HTTPException
+
+    app = api.create_app(settings)
+
+    @app.get("/boom")
+    def boom() -> None:
+        raise HTTPException(status, "detail")
+
+    response = TestClient(app).get("/boom")
+    assert response.status_code == status
+    assert response.json() == {"error": OLD_NAMES[status], "message": "detail"}
+
+
+def test_the_goldens_agree() -> None:
+    """The 413 and 422 goldens (the only two statuses 0.10.x answered in JSON) carry the table's
+    names, so the goldens and the table can't drift apart."""
+    import json
+
+    goldens = Path(__file__).parents[1] / "golden" / "responses"
+    for backend in ("sqlite", "redis"):
+        for case, status in (
+            ("rules_validate_413_oversized", 413),
+            ("rules_save_422_invalid", 422),
+        ):
+            golden = json.loads((goldens / backend / f"{case}.json").read_text())
+            assert golden["status"] == status
+            assert json.loads(golden["body"])["error"] == api.STATUS_NAMES[status]

@@ -564,7 +564,7 @@ class TestWorkerProcessJob:
         assert call_args["status"] == JobStatus.FAILED
 
     def test_process_job_sets_error_on_failure(self, worker, mock_queue, mocker):
-        """Should set error traceback on failure"""
+        """One line naming the exception, not the traceback (#41)"""
         job = {"job_id": "job-1", "context": None, "hash": None}
 
         mocker.patch.object(worker, "_execute_job", side_effect=ValueError("Test error"))
@@ -574,9 +574,7 @@ class TestWorkerProcessJob:
         call_args = mock_queue.update_status.call_args[1]
         error = call_args["error"]
 
-        assert "ValueError" in error
-        assert "Test error" in error
-        assert "Traceback" in error
+        assert error == "ValueError: Test error"
 
     def test_process_job_does_not_update_last_job_on_failure(self, worker, mocker):
         """Should not update last_job_completed on failure"""
