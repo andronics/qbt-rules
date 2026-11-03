@@ -1,133 +1,134 @@
 # In-Depth Configuration
 
-This page describes the configuration of the current server: `config.yml` and `rules.yml` in one config directory, overridden by `QBT_RULES_*` environment variables.
+This page describes qbt-rules' configuration: the settings (`config.yaml` and `QBT_RULES_*` environment variables), where its files live, and the rules file (`rules.yml`). Moving from 0.10.x? See [Migrating from 0.10.x](#migrating-from-010x).
 
 ## Where configuration comes from
 
-**The config directory.** The server keeps everything in one directory:
+Every setting can be given in four places, and the first one that has it wins:
 
-| File | What it is |
-|------|------------|
-| `config.yml` | Server, queue, client, qBittorrent connection, scheduling, integrations and logging settings ([reference below](#configyml-reference)) |
-| `rules.yml` | Your automation rules ([reference below](#rulesyml-reference)) |
-| `qbt-rules.db` | The SQLite job queue (`queue.sqlite_path`) |
-| `qbt-rules.log` | The log file and its rotated copies (`logging.file`) |
-| `.history/` | Previous versions of `rules.yml` kept by the dashboard's rules editor |
+1. `QBT_RULES_<KEY>_FILE`: the path of a file holding the value (Docker and Kubernetes secrets)
+2. `QBT_RULES_<KEY>`: an environment variable
+3. the YAML config file: `QBT_RULES_CONFIG` or `--config`, default `/etc/qbt-rules/config.yaml`. A missing file is fine.
+4. the built-in default
 
-`config.yml` and `rules.yml` are copied from the packaged defaults on first start if they're missing.
+`<KEY>` is the setting's key in upper case, with the dots as underscores: `qbittorrent.host` is `QBT_RULES_QBITTORRENT_HOST`. A CLI flag (`--server-port`, `--dry-run`, ...) beats all four for its setting.
+A value of the wrong type, such as `0.5` or `true` for an integer or a list for a string, is an error that names the setting, and the server doesn't start.
+The engine is [interpose](https://github.com/metalayerlab/interpose)'s settings loader; `src/qbt_rules/config.py` declares the settings.
 
-Which directory that is:
+`config.yaml` is read once at startup: restart the server to pick up a change. `rules.yml` is re-read whenever it changes on disk.
 
-1. `--config-dir DIR` on the command line
-2. the `CONFIG_DIR` environment variable
-3. `./config`, if it exists (bare metal)
-4. `/var/lib/qbt-rules`, the image's state directory and volume
+**Where the files are.** Config is in `/etc/qbt-rules`, state in `/var/lib/qbt-rules`:
 
-In the container that's `/var/lib/qbt-rules`: mount it as a volume (see [Deployment](Deployment)). The old `/config` directory is gone, with no fallback. The image also has `/etc/qbt-rules`, and [contrib/docker/compose.yml](https://github.com/andronics/qbt-rules/blob/main/contrib/docker/compose.yml) mounts `./config` there read-only, but the server doesn't read anything from it yet: keep `config.yml` in the state directory.
+| Path | What it is | Setting |
+|------|------------|---------|
+| `/etc/qbt-rules/config.yaml` | The settings. Optional: every setting has a default and an environment variable | `QBT_RULES_CONFIG`, `--config` |
+| `/etc/qbt-rules/rules.yml` | Your rules ([reference below](#rulesyml-reference)). Read beside the config file. **Writable**, if you want to save it from the dashboard's rules editor | `rules.file` |
+| `/var/lib/qbt-rules/qbt-rules.db` | The SQLite job queue | `queue.sqlite_path` (relative to `state_dir`) |
+| `/var/lib/qbt-rules/.history/` | Previous versions of `rules.yml`, kept by the rules editor | `state_dir` |
+| *(the console)* | The log: stderr, which `docker logs` and Kubernetes keep. Set `logging.file` to also write a file (rotated by size); a relative path is under `state_dir` | `logging.file` |
 
-**Overrides.** Every value in `config.yml` can be overridden. Resolution order (highest to lowest priority):
+The image's volume is `/var/lib/qbt-rules`; mount your config directory at `/etc/qbt-rules` (see [Deployment](Deployment)). The old `/config` directory is not read, with no fallback: a path setting under `/config` is refused at startup.
 
-1. CLI flags (e.g. `--server-port 5000`)
-2. `_FILE`-suffixed environment variable (e.g. `QBT_RULES_SERVER_API_KEY_FILE=/run/secrets/api_key`)
-3. Environment variable directly (e.g. `QBT_RULES_SERVER_API_KEY=abc123`)
-4. This config file
-5. Default value
+**First start.** Nothing is copied into place. With no `config.yaml` every setting has its default; with no `rules.yml` there are no rules, and the dashboard's rules editor creates the file on its first save (its directory must be writable). [contrib/rules.example.yml](https://github.com/andronics/qbt-rules/blob/main/contrib/rules.example.yml) and [contrib/qbt-rules.example.yaml](https://github.com/andronics/qbt-rules/blob/main/contrib/qbt-rules.example.yaml) are starting points.
 
-`config.yml` isn't hot-reloaded: restart the server to pick up a change. `rules.yml` is re-read whenever it changes on disk.
+**Starting without an API key.** The server starts with no configuration at all (the image's smoke test runs it that way). Without `server.api_key` it refuses every authenticated request with a `503` that says what to set, the dashboard's login page says so too, and `/api/health` (still `200`: the process is fine) lists it under `config_problems`. The placeholder key the 0.10.x default `config.yml` shipped with (`your-secure-api-key-here-...`) is public, so it counts as unset. qBittorrent credentials aren't checked at startup: qBittorrent can allow logins without a password, and a wrong one shows up as a failed job.
 
-**Listen port and the healthcheck.** The image's `HEALTHCHECK` polls `/api/health` on `QBT_RULES_LISTEN_PORT` (default `5000`), not on `server.port`. If you move the server with `QBT_RULES_SERVER_PORT`, set `QBT_RULES_LISTEN_PORT` to the same value, or the container reports unhealthy.
+**Listen port and the healthcheck.** The image's `HEALTHCHECK` polls `/api/health` on `QBT_RULES_LISTEN_PORT` (default `5000`). `listen.port` is the setting's name; `server.port` and `QBT_RULES_SERVER_PORT` (the 0.10.x names) still work as aliases, but the healthcheck doesn't read them, so use `QBT_RULES_LISTEN_PORT`. The server logs a warning when the alias is used, and refuses to start if both are set to different values. `server.host` / `QBT_RULES_SERVER_HOST` are aliases of `listen.host` the same way.
+
+**`${VAR}` in the file.** `${VAR}` and `${VAR:-default}` inside `config.yaml` are replaced with that environment variable (or the default, or nothing). A `QBT_RULES_*` variable for the setting still wins over the expanded value.
+
+**The schedule.** `schedule:` is a list of `{cron, context}` entries, so it has no single variable. Set it in the file, or with indexed variables, `QBT_RULES_SCHEDULE_<N>_CRON` and `QBT_RULES_SCHEDULE_<N>_CONTEXT` (each with a `_FILE` form), from `N=0` up; the first missing index ends the list. If any are set they replace the file's list entirely. See [Scheduling](Scheduling).
 
 ## Settings
 
-### config.yml Reference
+Generated from the code: don't edit the table, run `uv run scripts/gen-wiki.py`.
 
-`config.yml` contains server, queue, client, qBittorrent connection, and logging settings. It lives in the config directory (see [above](#where-configuration-comes-from)); a default copy is created automatically on first run if one doesn't already exist.
+<!-- generated:start settings -->
+| Key | Environment variable | Default | Description |
+|---|---|---|---|
+| `listen.host` | `QBT_RULES_LISTEN_HOST` | `0.0.0.0` | Address the HTTP server binds to. `server.host` (`QBT_RULES_SERVER_HOST`) is an alias. |
+| `listen.port` | `QBT_RULES_LISTEN_PORT` | `5000` | Port the HTTP server listens on, and the one the image's healthcheck polls. `server.port` (`QBT_RULES_SERVER_PORT`) is an alias, which the healthcheck doesn't read. |
+| `state_dir` | `QBT_RULES_STATE_DIR` | `/var/lib/qbt-rules` | Directory for state: the SQLite job database and the rules editor's history (`.history/`). |
+| `dry_run` | `QBT_RULES_DRY_RUN` | `False` | Log what rules would do without doing it. Replaces 0.10.x's `engine.dry_run`. |
+| `rules.file` | `QBT_RULES_RULES_FILE` | *(none)* | The rules file. Empty: `rules.yml` beside the config file (`/etc/qbt-rules/rules.yml`). A relative path is relative to the config file's directory. It must be writable for the dashboard's editor to save it. |
+| `server.api_key` | `QBT_RULES_SERVER_API_KEY` | *(none)* | Key for the HTTP API and the dashboard login (`openssl rand -hex 32`). Unset, the server starts but refuses every authenticated request, and `/api/health` says so. 🔒 Secret: use the `_FILE` variant. |
+| `server.workers` | `QBT_RULES_SERVER_WORKERS` | `1` | Gunicorn worker processes (1 is enough for home use). |
+| `server.editor_enabled` | `QBT_RULES_SERVER_EDITOR_ENABLED` | `True` | Allow saving `rules.yml` from the dashboard's rules editor. `false` keeps it read-only. |
+| `client.server_url` | `QBT_RULES_CLIENT_SERVER_URL` | `http://localhost:5000` | Server the CLI client submits jobs to. |
+| `client.api_key` | `QBT_RULES_CLIENT_API_KEY` | *(none)* | API key the CLI client sends. Empty: `server.api_key`, right for `docker exec` into the server's own container. 🔒 Secret: use the `_FILE` variant. |
+| `queue.backend` | `QBT_RULES_QUEUE_BACKEND` | `sqlite` | Job queue: `sqlite` or `redis`. |
+| `queue.sqlite_path` | `QBT_RULES_QUEUE_SQLITE_PATH` | *(none)* | SQLite job database. Empty: `qbt-rules.db` in `state_dir`. A relative path is relative to `state_dir`. |
+| `queue.redis_url` | `QBT_RULES_QUEUE_REDIS_URL` | `redis://localhost:6379/0` | Redis URL, for `queue.backend: redis`: `redis://[:password@]host[:port][/db]`. 🔒 Secret: use the `_FILE` variant. |
+| `queue.cleanup_after` | `QBT_RULES_QUEUE_CLEANUP_AFTER` | `7d` | Delete finished jobs older than this: seconds or a duration (`7d`, `2w`, `30 days`). `0` keeps them. |
+| `qbittorrent.host` | `QBT_RULES_QBITTORRENT_HOST` | `http://localhost:8080` | qBittorrent's Web UI address. |
+| `qbittorrent.username` | `QBT_RULES_QBITTORRENT_USERNAME` | `admin` | qBittorrent Web UI user. |
+| `qbittorrent.password` | `QBT_RULES_QBITTORRENT_PASSWORD` | *(none)* | qBittorrent Web UI password. 🔒 Secret: use the `_FILE` variant. |
+| `notifications.webhook_url` | `QBT_RULES_NOTIFICATIONS_WEBHOOK_URL` | *(none)* | Default webhook for the `notify` action when a rule gives no `url`. 🔒 Secret: use the `_FILE` variant. |
+| `notifications.service` | `QBT_RULES_NOTIFICATIONS_SERVICE` | `generic` | Default `notify` service: `generic`, `discord`, `slack` or `ntfy`. |
+| `integrations.sonarr.url` | `QBT_RULES_INTEGRATIONS_SONARR_URL` | *(none)* | Sonarr's address, for the `arr_blocklist` action. |
+| `integrations.sonarr.api_key` | `QBT_RULES_INTEGRATIONS_SONARR_API_KEY` | *(none)* | Sonarr's API key. 🔒 Secret: use the `_FILE` variant. |
+| `integrations.radarr.url` | `QBT_RULES_INTEGRATIONS_RADARR_URL` | *(none)* | Radarr's address, for the `arr_blocklist` action. |
+| `integrations.radarr.api_key` | `QBT_RULES_INTEGRATIONS_RADARR_API_KEY` | *(none)* | Radarr's API key. 🔒 Secret: use the `_FILE` variant. |
+| `integrations.trackie.url` | `QBT_RULES_INTEGRATIONS_TRACKIE_URL` | *(none)* | trackie's address, for the `tracker.*` fields. Empty: not used. |
+| `integrations.trackie.max_age` | `QBT_RULES_INTEGRATIONS_TRACKIE_MAX_AGE` | `3 hours` | Older tracker data counts as no data: seconds or a duration. |
+| `integrations.trackie.timeout` | `QBT_RULES_INTEGRATIONS_TRACKIE_TIMEOUT` | `10` | Seconds for trackie's `/snapshot` request. |
+| `metrics.enabled` | `QBT_RULES_METRICS_ENABLED` | `False` | Serve Prometheus metrics on `/metrics` (needs the `metrics` extra). |
+| `metrics.multiproc_dir` | `QBT_RULES_METRICS_MULTIPROC_DIR` | `/tmp/qbt-rules-metrics` | prometheus_client's multiprocess directory; cleared at startup. |
+| `logging.level` | `QBT_RULES_LOGGING_LEVEL` | `INFO` | Log level: `DEBUG`, `INFO`, `WARNING` or `ERROR`. DEBUG logs every rule evaluation. |
+| `logging.file` | `QBT_RULES_LOGGING_FILE` | *(none)* | Also log to this file, rotated by size. Empty: the console only (`docker logs`). A relative path is relative to `state_dir`. |
+| `logging.max_bytes` | `QBT_RULES_LOGGING_MAX_BYTES` | `10485760` | Rotate the log file at this size; `0` never rotates. |
+| `logging.backup_count` | `QBT_RULES_LOGGING_BACKUP_COUNT` | `5` | Rotated log files to keep. |
+| `logging.trace_mode` | `QBT_RULES_LOGGING_TRACE_MODE` | `False` | Add module, function and line to each log line. |
+| `logging.http_access` | `QBT_RULES_LOGGING_HTTP_ACCESS` | `False` | Log every HTTP request, health checks included. |
+<!-- generated:end settings -->
 
-| Section | Parameter | Type | Default | Description |
-|---------|-----------|------|---------|-------------|
-| **server** | `host` | string | `0.0.0.0` | HTTP API bind address (used with `--serve`) |
-| | `port` | integer | `5000` | HTTP API port |
-| | `api_key` | string | *(required)* | API key clients/webhooks must present |
-| | `workers` | integer | `1` | Gunicorn worker processes |
-| | `editor_enabled` | boolean | `true` | Allow saving `rules.yml` from the dashboard's rules editor (`/rules/edit`). `false` keeps the editor read-only (it still validates); a `rules.yml` made read-only on disk is never written either way |
-| **queue** | `backend` | string | `sqlite` | Job queue backend: `sqlite` or `redis` |
-| | `sqlite_path` | string | `/var/lib/qbt-rules/qbt-rules.db` | SQLite database path (when `backend: sqlite`) |
-| | `redis_url` | string | *(unset)* | Redis connection URL (when `backend: redis`), e.g. `redis://[:password@]host[:port][/db]` |
-| | `cleanup_after` | string/int | `7d` | Job retention period — `Xd`/`Xw` or a raw integer of seconds |
-| **client** | `server_url` | string | `http://localhost:5000` | Server URL the CLI client submits jobs to |
-| | `api_key` | string | *(required)* | Must match `server.api_key` |
-| **qbittorrent** | `host` | string | `http://localhost:8080` | qBittorrent Web UI URL |
-| | `username` | string | `admin` | Web UI username |
-| | `password` | string | *(required)* | Web UI password |
-| **rules** | `file` | string | `/var/lib/qbt-rules/rules.yml` | Path to the rules file |
-| **schedule** | *(list)* | list | `[]` | Internal cron entries (`cron`/`context` pairs) — see [Scheduling](Scheduling). List-structured, so it uses indexed `QBT_RULES_SCHEDULE_<N>_CRON`/`_<N>_CONTEXT` env vars rather than a single variable — see below |
-| **notifications** | `webhook_url` | string | *(unset)* | Default webhook URL for the [`notify`](Actions#notify) action when a rule omits `params.url` |
-| | `service` | string | `generic` | Default service (`discord`/`slack`/`ntfy`/`generic`) when a rule omits `params.service` |
-| **integrations** | `sonarr.url` | string | *(unset)* | Sonarr base URL, for the [`arr_blocklist`](Actions#arr_blocklist) action |
-| | `sonarr.api_key` | string | *(unset)* | Sonarr API key |
-| | `radarr.url` | string | *(unset)* | Radarr base URL, for the [`arr_blocklist`](Actions#arr_blocklist) action |
-| | `radarr.api_key` | string | *(unset)* | Radarr API key |
-| | `trackie.url` | string | *(unset)* | [trackie](https://github.com/andronics/trackie) base URL, for the [`tracker.*`](Available-Fields#tracker-seeding-stats-trackie) fields |
-| | `trackie.max_age` | duration | `3 hours` | Tracker data older than this counts as missing (seconds or a duration) |
-| | `trackie.timeout` | number | `10` | Seconds for the snapshot request |
-| **metrics** | `enabled` | boolean | `false` | Enable the [Prometheus `/metrics` endpoint](Metrics) — requires the `metrics` extra (`uv sync --extra metrics`; the image doesn't include it) |
-| | `multiproc_dir` | string | `/tmp/qbt-rules-metrics` | Shared directory for `prometheus_client`'s multiprocess mode, required for correct metrics under `server.workers > 1` |
-| **logging** | `level` | string | `INFO` | Log level for both the console and the log file: `DEBUG`, `INFO`, `WARNING`, `ERROR`. `DEBUG` logs every rule evaluation per torrent, so the file grows quickly |
-| | `file` | string | `/var/lib/qbt-rules/qbt-rules.log` | Log file path |
-| | `max_bytes` | integer | `10485760` (10 MB) | Rotate the log file when it reaches this size: it is renamed to `qbt-rules.log.1` (older files shift to `.2`, `.3`, ...) and a new file is started. `0` disables rotation. With `server.workers > 1` each Gunicorn worker rotates the same file, so a few lines can land in the wrong file around a rotation |
-| | `backup_count` | integer | `5` | Number of rotated log files to keep |
-| | `trace_mode` | boolean | `false` | Include module/function/line numbers; enables `--trace`-style detail for every job |
-| | `http_access` | boolean | `false` | Log every HTTP request (including health checks) — noisy, off by default |
-| **engine** | `dry_run` | boolean | `false` | Dry-run every job: rules are evaluated and actions logged as "Would …", nothing changes. Env: `QBT_RULES_DRY_RUN` (no section prefix) |
-| *(top-level)* | `version` | integer | `1` | Schema marker (v0.7+), read via `config.get('version', 1)`. Not consulted by qbt-rules today — a forward-compat hook for future migrations. Safe to leave as-is |
+`schedule` isn't in the table: see [the schedule](#where-configuration-comes-from) above and [Scheduling](Scheduling).
 
-### Environment Variable Overrides
+A few settings need more than a line:
 
-There is no `${VARIABLE_NAME}` or `${VARIABLE_NAME:-default}` expansion syntax inside `config.yml` — every config key instead has a matching `QBT_RULES_*` environment variable that overrides it directly:
+- **`server.editor_enabled`**: `false` keeps the rules editor read-only (it still validates). A `rules.yml` made read-only on disk (`chmod 444`) is never written either way.
+- **`queue.cleanup_after`**: finished jobs older than this are removed once at startup and then hourly.
+- **`metrics.enabled`**: needs the `metrics` extra (`uv sync --extra metrics`; the image doesn't include it). See [Metrics](Metrics). `metrics.multiproc_dir` is what makes the numbers right under `server.workers > 1`.
+- **`logging.level`**: applies to the console and the log file. `DEBUG` logs every rule evaluation per torrent.
+- **`logging.max_bytes`**: the file is renamed to `qbt-rules.log.1` (older ones shift to `.2`, `.3`, ...) and a new one started. With `server.workers > 1` each Gunicorn worker writes the same file and only one rotates it.
 
-| Config key | Environment variable |
-|------------|----------------------|
-| `server.host` | `QBT_RULES_SERVER_HOST` |
-| `server.port` | `QBT_RULES_SERVER_PORT` |
-| `server.api_key` | `QBT_RULES_SERVER_API_KEY` |
-| `server.workers` | `QBT_RULES_SERVER_WORKERS` |
-| `server.editor_enabled` | `QBT_RULES_SERVER_EDITOR_ENABLED` |
-| `queue.backend` | `QBT_RULES_QUEUE_BACKEND` |
-| `queue.sqlite_path` | `QBT_RULES_QUEUE_SQLITE_PATH` |
-| `queue.redis_url` | `QBT_RULES_QUEUE_REDIS_URL` |
-| `queue.cleanup_after` | `QBT_RULES_QUEUE_CLEANUP_AFTER` |
-| `client.server_url` | `QBT_RULES_CLIENT_SERVER_URL` |
-| `client.api_key` | `QBT_RULES_CLIENT_API_KEY` |
-| `qbittorrent.host` | `QBT_RULES_QBITTORRENT_HOST` |
-| `qbittorrent.username` | `QBT_RULES_QBITTORRENT_USERNAME` |
-| `qbittorrent.password` | `QBT_RULES_QBITTORRENT_PASSWORD` |
-| `rules.file` | `QBT_RULES_RULES_FILE` |
-| `notifications.webhook_url` | `QBT_RULES_NOTIFICATIONS_WEBHOOK_URL` |
-| `notifications.service` | `QBT_RULES_NOTIFICATIONS_SERVICE` |
-| `integrations.sonarr.url` | `QBT_RULES_INTEGRATIONS_SONARR_URL` |
-| `integrations.sonarr.api_key` | `QBT_RULES_INTEGRATIONS_SONARR_API_KEY` |
-| `integrations.radarr.url` | `QBT_RULES_INTEGRATIONS_RADARR_URL` |
-| `integrations.radarr.api_key` | `QBT_RULES_INTEGRATIONS_RADARR_API_KEY` |
-| `integrations.trackie.url` | `QBT_RULES_INTEGRATIONS_TRACKIE_URL` |
-| `integrations.trackie.max_age` | `QBT_RULES_INTEGRATIONS_TRACKIE_MAX_AGE` |
-| `integrations.trackie.timeout` | `QBT_RULES_INTEGRATIONS_TRACKIE_TIMEOUT` |
-| `metrics.enabled` | `QBT_RULES_METRICS_ENABLED` |
-| `metrics.multiproc_dir` | `QBT_RULES_METRICS_MULTIPROC_DIR` |
-| `logging.level` | `QBT_RULES_LOGGING_LEVEL` |
-| `logging.file` | `QBT_RULES_LOGGING_FILE` |
-| `logging.max_bytes` | `QBT_RULES_LOGGING_MAX_BYTES` |
-| `logging.backup_count` | `QBT_RULES_LOGGING_BACKUP_COUNT` |
-| `logging.trace_mode` | `QBT_RULES_LOGGING_TRACE_MODE` |
-| `logging.http_access` | `QBT_RULES_LOGGING_HTTP_ACCESS` |
-| `engine.dry_run` | `QBT_RULES_DRY_RUN` |
+### Migrating from 0.10.x
 
-Every one of these follows a mechanical `QBT_RULES_<SECTION>_<FIELD>` naming convention, with one intentional exception: `engine.dry_run` has no section prefix at all (`QBT_RULES_DRY_RUN`). (`qbittorrent.user`/`.pass` were undocumented legacy aliases for `.username`/`.password` in older versions — removed; `username`/`password` are the only accepted keys now.)
+0.11 moves the configuration onto the template's layout: config in `/etc/qbt-rules`, state in `/var/lib/qbt-rules`. Nothing reads `/config` any more, and nothing is moved for you. Copy (don't move: keep `/config` as it is until you're happy, so rolling back is just the old image) each file:
 
-**`schedule:` is the one section above that doesn't fit this table** — being a list rather than a single value, it uses **indexed** environment variables instead: `QBT_RULES_SCHEDULE_<N>_CRON` / `QBT_RULES_SCHEDULE_<N>_CONTEXT`, starting at `N=0` and counting up contiguously (enumeration stops at the first missing index). See [Scheduling](Scheduling) for the full pattern, including `_FILE` support and the "environment entirely replaces config.yml, not merged" precedence rule.
+| 0.10.x | 0.11 | Notes |
+|--------|------|-------|
+| `/config/config.yml` | `/etc/qbt-rules/config.yaml` | Renamed: `.yaml`. Optional: drop it if you configure with variables. Edit it as below |
+| `/config/rules.yml` | `/etc/qbt-rules/rules.yml` | Keep it writable for the rules editor |
+| `/config/qbt-rules.db` | `/var/lib/qbt-rules/qbt-rules.db` | The job history; optional (a new, empty one is created) |
+| `/config/.history/` | `/var/lib/qbt-rules/.history/` | The rules editor's backups; optional |
+| `/config/qbt-rules.log` (and `.1`, `.2`, ...) | *(the console)* | Not copied. Set `QBT_RULES_LOGGING_FILE=/var/lib/qbt-rules/qbt-rules.log` to keep a file |
+
+In `config.yaml`:
+
+- **Delete every path under `/config`**: `queue.sqlite_path`, `rules.file`, `logging.file`. The defaults already point at the new places; a path under `/config` is refused at startup.
+- **`engine.dry_run` is now `dry_run`** (top level). `engine:` is refused with that message. The variable, `QBT_RULES_DRY_RUN`, is unchanged.
+- **`server.host` and `server.port`** still work (aliases of `listen.host` and `listen.port`); rename them when convenient.
+- **`server.api_key` and `client.api_key`** still holding the shipped placeholder count as unset: set a real key.
+- `version: 1` can stay or go; nothing reads it.
+
+Environment variables:
+
+| 0.10.x | 0.11 |
+|--------|------|
+| Every `QBT_RULES_<SECTION>_<FIELD>` and its `_FILE` form | Unchanged |
+| `QBT_RULES_DRY_RUN`, `QBT_RULES_RULES_FILE`, `QBT_RULES_SCHEDULE_<N>_CRON` / `_CONTEXT` | Unchanged (`QBT_RULES_RULES_FILE` now works: 0.10.x documented it but never read it) |
+| `QBT_RULES_SERVER_PORT`, `QBT_RULES_SERVER_HOST` | Aliases of `QBT_RULES_LISTEN_PORT` and `QBT_RULES_LISTEN_HOST`. Set `QBT_RULES_LISTEN_PORT` instead: the healthcheck reads only that |
+| `CONFIG_DIR` | Refused at startup: remove it (use `QBT_RULES_CONFIG` for another config file) |
+| `QBT_RULES_CONFIG_DIR` | Refused at startup: remove it (use `QBT_RULES_CONFIG` and `QBT_RULES_STATE_DIR`) |
+| `--config-dir DIR` | Refused: use `--config FILE` |
+| *(new)* | `QBT_RULES_CONFIG` (the config file), `QBT_RULES_STATE_DIR` (state) |
+
+A Kubernetes deployment that keeps its old volume can mount it twice with `subPath`s: one directory at `/etc/qbt-rules` holding `config.yaml` and `rules.yml`, another at `/var/lib/qbt-rules` holding `qbt-rules.db` and `.history/`. Mount directories, not single files, so the rules editor can replace `rules.yml` atomically.
 
 ## Secrets
 
-**Every** `QBT_RULES_*` variable has a `_FILE` counterpart that reads the value from a file instead of taking it literally — the standard pattern for Docker/Compose secrets:
+A secret setting (🔒 in the table) is read from all four places, like any other, so nothing stops it being set in the config file or a plain environment variable. Don't: `docker inspect` and `ps` show the variable. Use the `_FILE` variant and mount the value as a file:
 
 ```yaml
 # compose.yml
@@ -146,9 +147,7 @@ secrets:
     file: ./secrets/qbt_password.txt
 ```
 
-In a typical Docker deployment, most people set the required values (`server.api_key`, `qbittorrent.username`/`password`) via environment variables in `compose.yml` and leave `config.yml` at its defaults for everything else.
-
-The secrets qbt-rules uses, and what each one grants:
+Secrets are never logged. The secrets qbt-rules uses, and what each one grants:
 
 | Setting | Grants |
 |---------|--------|
@@ -156,73 +155,15 @@ The secrets qbt-rules uses, and what each one grants:
 | `qbittorrent.password` | Full control of qBittorrent |
 | `notifications.webhook_url` | Posting to your Discord/Slack/ntfy channel (the token is in the URL) |
 | `integrations.sonarr.api_key`, `integrations.radarr.api_key` | Full control of that Sonarr/Radarr instance |
+| `queue.redis_url` | The Redis queue, when the URL holds a password |
 
 See [Security](Security#credential-management) for how to keep them out of `docker inspect`, and how to rotate the API key.
 
 ## Examples
 
-**Example config.yml:**
+A complete config file with every default is in [contrib/qbt-rules.example.yaml](https://github.com/andronics/qbt-rules/blob/main/contrib/qbt-rules.example.yaml).
 
-```yaml
-server:
-  host: 0.0.0.0
-  port: 5000
-  api_key: your-secure-api-key-here
-  workers: 1
-
-queue:
-  backend: sqlite
-  sqlite_path: /var/lib/qbt-rules/qbt-rules.db
-  cleanup_after: 7d
-
-client:
-  server_url: http://localhost:5000
-  api_key: your-secure-api-key-here
-
-qbittorrent:
-  host: http://qbittorrent:8080
-  username: admin
-  password: adminpass
-
-rules:
-  file: /var/lib/qbt-rules/rules.yml
-
-# Optional -- see Scheduling
-schedule:
-  - cron: "*/30 * * * *"
-    context: cron
-
-# Optional -- see Actions#notify
-notifications:
-  webhook_url: https://discord.com/api/webhooks/your-webhook-here
-  service: discord
-
-# Optional -- see Actions#arr_blocklist
-integrations:
-  sonarr:
-    url: http://sonarr:8989
-    api_key: your-sonarr-api-key-here
-  radarr:
-    url: http://radarr:7878
-    api_key: your-radarr-api-key-here
-  trackie:
-    url: http://trackie:8080
-
-# Optional -- see Metrics
-metrics:
-  enabled: false
-  multiproc_dir: /tmp/qbt-rules-metrics
-
-logging:
-  level: INFO
-  file: /var/lib/qbt-rules/qbt-rules.log
-  max_bytes: 10485760
-  backup_count: 5
-  trace_mode: false
-  http_access: false
-```
-
-A minimal Docker setup sets only what differs from the defaults, as environment variables, and leaves `config.yml` as created on first start:
+A minimal Docker setup needs no config file: only what differs from the defaults, as environment variables.
 
 ```yaml
 environment:
@@ -232,12 +173,30 @@ environment:
   QBT_RULES_QBITTORRENT_PASSWORD_FILE: /run/secrets/qbt_password
 ```
 
-A busier setup with a Redis queue and an internal schedule:
+A config file for the integrations and a schedule, with the secrets still in files:
+
+```yaml
+# /etc/qbt-rules/config.yaml
+qbittorrent:
+  host: http://qbittorrent:8080
+schedule:
+  - cron: "*/30 * * * *"
+    context: cron
+notifications:
+  service: discord        # webhook_url from QBT_RULES_NOTIFICATIONS_WEBHOOK_URL_FILE
+integrations:
+  sonarr:
+    url: http://sonarr:8989   # api_key from QBT_RULES_INTEGRATIONS_SONARR_API_KEY_FILE
+  trackie:
+    url: http://trackie:8080
+```
+
+A busier setup with a Redis queue and an internal schedule, all in variables:
 
 ```yaml
 environment:
   QBT_RULES_QUEUE_BACKEND: redis
-  QBT_RULES_QUEUE_REDIS_URL: redis://redis:6379/0
+  QBT_RULES_QUEUE_REDIS_URL_FILE: /run/secrets/redis_url
   QBT_RULES_SCHEDULE_0_CRON: "*/30 * * * *"
   QBT_RULES_SCHEDULE_0_CONTEXT: cron
   QBT_RULES_SCHEDULE_1_CRON: "0 3 * * *"

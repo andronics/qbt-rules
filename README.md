@@ -53,7 +53,7 @@ services:
     container_name: qbt-rules
     restart: unless-stopped
     ports: ["127.0.0.1:5000:5000"]
-    volumes: ["./state:/var/lib/qbt-rules"]
+    volumes: ["./config:/etc/qbt-rules", "./state:/var/lib/qbt-rules"]
     environment:
       QBT_RULES_QBITTORRENT_HOST: http://qbittorrent:8080
       QBT_RULES_QBITTORRENT_USERNAME: admin
@@ -68,13 +68,16 @@ curl http://127.0.0.1:5000/api/health
 docker exec qbt-rules qbt-rules --context torrent-imported --wait   # run the torrent-imported rules now
 ```
 
-Default `config.yml` and `rules.yml` are created in `./state` on first start, next to the job queue and the log.
-**The default rules include some that delete torrents**: read `rules.yml` (or open the dashboard at
-`http://127.0.0.1:5000` and log in with the API key) before turning dry-run off. The container runs as
-`PUID:PGID` (default `1000:1000`; Unraid uses `99`/`100`).
+Rules live in `./config/rules.yml` (start from [contrib/rules.example.yml](contrib/rules.example.yml), or
+write them in the dashboard's editor at `http://127.0.0.1:5000/rules/edit`, logging in with the API key); the job
+queue lives in `./state`. Nothing is copied in on first start, and every setting has an environment variable, so
+`config.yaml` is optional. Read your rules before turning dry-run off. The container runs as `PUID:PGID` (default
+`1000:1000`; Unraid uses `99`/`100`).
 
-> **Upgrading from a release that mounted `/config`?** The volume is now `/var/lib/qbt-rules`, and `/config` is
-> no longer read. See the wiki's [Deployment](https://github.com/andronics/qbt-rules/wiki/Deployment#upgrading) page.
+> **Upgrading from a release that mounted `/config`?** Config is now in `/etc/qbt-rules` and state in
+> `/var/lib/qbt-rules`, and `/config` is no longer read. The wiki's
+> [Migrating from 0.10.x](https://github.com/andronics/qbt-rules/wiki/In-Depth-Configuration#migrating-from-010x)
+> lists which file goes where.
 
 The full walk-through, including your first rule and triggering rules from qBittorrent's "Run external program"
 setting, is in the wiki's [Quick Start](https://github.com/andronics/qbt-rules/wiki/Quick-Start). A hardened Compose

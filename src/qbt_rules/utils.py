@@ -8,6 +8,11 @@ import time
 from typing import Any
 
 
+def parse_bool(value: str | None) -> bool:
+    """A boolean query parameter: true, 1, yes or on (any case) is True; absent is False"""
+    return value is not None and value.strip().lower() in ("true", "1", "yes", "on")
+
+
 def parse_tags(torrent: dict[str, Any]) -> list[str]:
     """
     Parse tags from torrent dictionary into list

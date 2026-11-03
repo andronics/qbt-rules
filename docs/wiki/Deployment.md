@@ -14,8 +14,10 @@ The container runs `qbt-rules serve`: the Flask HTTP API under **Gunicorn**, plu
 
 [contrib/docker/compose.yml](https://github.com/andronics/qbt-rules/blob/main/contrib/docker/compose.yml) is the reference deployment. It mounts:
 
-- `./state` at `/var/lib/qbt-rules`, the image's state directory and its only volume. For now it holds everything: `config.yml` and `rules.yml` (copied from the packaged defaults on first start if missing), the SQLite queue `qbt-rules.db`, the log `qbt-rules.log`, and the rules editor's `.history/`.
-- `./config` at `/etc/qbt-rules`, read-only. The current server doesn't read anything from it yet: keep `config.yml` in `./state`.
+- `./config` at `/etc/qbt-rules`, read-only: `config.yaml` (optional: every setting also has a variable) and `rules.yml`. Read-only, the dashboard's rules editor still opens and validates but can't save; edit `rules.yml` on the host. To save from the dashboard (which also creates `rules.yml` on its first save if it's missing), drop the `:ro` and give `./config` to `PUID:PGID`.
+- `./state` at `/var/lib/qbt-rules`, the image's state directory and its only volume: the SQLite queue `qbt-rules.db` and the rules editor's `.history/`.
+
+The log goes to the console (`docker compose logs`); set `QBT_RULES_LOGGING_FILE` to also write a file. Nothing is copied into place on first start: see [In-Depth Configuration](In-Depth-Configuration#where-configuration-comes-from) for every path.
 
 The file carries no qBittorrent settings: add them, and the API key, to its `environment:` before the first start:
 
@@ -39,13 +41,13 @@ openssl rand -hex 32 > secrets/api_key
 printf '%s' 'your-qbittorrent-password' > secrets/qbt_password
 docker compose -f contrib/docker/compose.yml up -d
 docker compose -f contrib/docker/compose.yml logs -f
-docker exec qbt-rules qbt-rules --validate     # config.yml and rules.yml
+docker exec qbt-rules qbt-rules --validate     # config.yaml and rules.yml
 ```
 
 - The port binds to `127.0.0.1` only: put a reverse proxy (Traefik) in front for TLS and remote access (see [Security](Security#network-exposure)).
 - The container starts as root only to give `/var/lib/qbt-rules` to `PUID:PGID` (default `1000:1000`; Unraid uses `99:100`), then drops to that user. `docker exec qbt-rules qbt-rules ...` goes through the same wrapper, so the CLI runs as that user too.
 - Secrets go in files mounted read-only, passed as `QBT_RULES_<SECTION>_<FIELD>_FILE` (see [In-Depth Configuration](In-Depth-Configuration#secrets)).
-- The image's healthcheck polls `GET /api/health` on `QBT_RULES_LISTEN_PORT` (default `5000`). If you change `QBT_RULES_SERVER_PORT`, set `QBT_RULES_LISTEN_PORT` to match.
+- The image's healthcheck polls `GET /api/health` on `QBT_RULES_LISTEN_PORT` (default `5000`): move the port with that variable. `QBT_RULES_SERVER_PORT` still works as an alias, but the healthcheck doesn't read it. `/api/health` answers `200` while the process works, and lists settings it's missing (no API key) under `config_problems`.
 
 ### Redis queue
 
@@ -60,7 +62,9 @@ services:
     ports:
       - "127.0.0.1:5000:5000"
     volumes:
-      # config.yml, rules.yml and the log (the queue is in Redis)
+      # config.yaml and rules.yml (the queue is in Redis)
+      - ./config:/etc/qbt-rules
+      # the rules editor's history
       - ./state:/var/lib/qbt-rules
       # Optional: Docker secrets
       # - ./secrets:/run/secrets/qbt-rules:ro
@@ -188,19 +192,19 @@ For anything long-running, pin to the exact version tag rather than `latest` or 
 
 ## Upgrading
 
-Read the [CHANGELOG](https://github.com/andronics/qbt-rules/blob/main/CHANGELOG.md) entries between your version and the new one; breaking changes are marked ⚠. Then change the image tag and `docker compose up -d`. `config.yml`, `rules.yml` and the queue database carry over as they are.
+Read the [CHANGELOG](https://github.com/andronics/qbt-rules/blob/main/CHANGELOG.md) entries between your version and the new one; breaking changes are marked ⚠. Then change the image tag and `docker compose up -d`. `config.yaml`, `rules.yml` and the queue database carry over as they are.
 
-### From `/config` to `/var/lib/qbt-rules`
+### From 0.10.x (`/config`)
 
-The image no longer uses `/config`, and doesn't fall back to it: a container still mounting only `/config` ignores it and starts with fresh default files (and an empty queue) in an anonymous volume. Move the volume:
+0.11 no longer reads `/config`, and doesn't fall back to it: config is in `/etc/qbt-rules`, state in `/var/lib/qbt-rules`. [In-Depth Configuration](In-Depth-Configuration#migrating-from-010x) lists which file goes where and which settings and variables changed. With Compose:
 
 1. Stop the container: `docker compose down`.
-2. Change the volume from `./config:/config` to `./config:/var/lib/qbt-rules` (or move the directory's contents to `./state` and mount that, like [contrib/docker/compose.yml](https://github.com/andronics/qbt-rules/blob/main/contrib/docker/compose.yml)).
-3. If your `config.yml` or environment names paths under `/config` (`queue.sqlite_path`, `rules.file`, `logging.file`, `QBT_RULES_QUEUE_SQLITE_PATH`, ...), change them to `/var/lib/qbt-rules/...`, or delete them to use the defaults, which already point there. Drop `CONFIG_DIR=/config` if you set it.
-4. Start it again, then check: `docker exec qbt-rules qbt-rules --validate` and `docker exec qbt-rules qbt-rules --list-jobs`.
+2. Copy, don't move, so the old directory still works with the old image: `mkdir -p config state`, then `cp -p old/config.yml config/config.yaml` (optional), `cp -p old/rules.yml config/`, `cp -p old/qbt-rules.db state/` and `cp -pr old/.history state/` (both optional).
+3. In `config/config.yaml`, delete every path under `/config` (`queue.sqlite_path`, `rules.file`, `logging.file`) and rename `engine.dry_run` to a top-level `dry_run`. Drop `CONFIG_DIR` and `QBT_RULES_CONFIG_DIR` from the environment, and rename `QBT_RULES_SERVER_PORT` to `QBT_RULES_LISTEN_PORT`. The server refuses to start, naming the fix, if any of these is left.
+4. Mount `./config:/etc/qbt-rules` and `./state:/var/lib/qbt-rules` (as [contrib/docker/compose.yml](https://github.com/andronics/qbt-rules/blob/main/contrib/docker/compose.yml) does), start it, then check: `docker exec qbt-rules qbt-rules --validate` and `docker exec qbt-rules qbt-rules --list-jobs`.
 
-The container `chown`s the state directory to `PUID:PGID` on start, so ownership sorts itself out.
+The container `chown`s the state directory to `PUID:PGID` on start; the config directory is yours, so give it to `PUID:PGID` if the rules editor should save `rules.yml`.
 
 ### Rolling back
 
-Put the previous image tag back and `docker compose up -d`. Keep a copy of the state directory before an upgrade, so you can restore it alongside the older image. Rolling back past the `/config` change means mounting the directory at `/config` again.
+Put the previous image tag back and `docker compose up -d`. Keep a copy of the state directory before an upgrade, so you can restore it alongside the older image. Rolling back past 0.11 means the old image with the old `/config` mount, which step 2 above left untouched.

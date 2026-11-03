@@ -46,7 +46,7 @@ A `torrent-imported`-only content filter is a best-effort first pass, not a guar
 
 ## Secrets
 
-- Give each secret through `QBT_RULES_<SECTION>_<FIELD>_FILE`, a mounted file. A secret setting is also read from its plain variable and `config.yml`, like any setting, so keep it out of both: `docker inspect` and `ps` show variables. See [In-Depth Configuration](In-Depth-Configuration#secrets) for the list of secrets and what each grants.
+- Give each secret through `QBT_RULES_<SECTION>_<FIELD>_FILE`, a mounted file. A secret setting is also read from its plain variable and `config.yaml`, like any setting, so keep it out of both: `docker inspect` and `ps` show variables. See [In-Depth Configuration](In-Depth-Configuration#secrets) for the list of secrets and what each grants.
 - CI scans every commit with gitleaks, and secrets in history fail the build.
 - The dashboard's config view (`/api/config/source`) masks credentials.
 
@@ -65,7 +65,7 @@ The optional [`/metrics`](Metrics) endpoint (off by default) also requires this 
 
 ### Credential Management
 
-Never hardcode qBittorrent credentials in `config.yml`. Every config key has a matching `QBT_RULES_*` environment variable, and every one of those has a `_FILE`-suffixed counterpart that reads the value from a file — the standard pattern for Docker/Compose secrets:
+Never hardcode qBittorrent credentials in `config.yaml`. Every config key has a matching `QBT_RULES_*` environment variable, and every one of those has a `_FILE`-suffixed counterpart that reads the value from a file — the standard pattern for Docker/Compose secrets:
 
 ```bash
 # Plaintext env var — fine for local testing, avoid in production
@@ -75,19 +75,19 @@ export QBT_RULES_QBITTORRENT_PASSWORD="secure_password"
 export QBT_RULES_QBITTORRENT_PASSWORD_FILE="/run/secrets/qbt_password"
 ```
 
-Resolution order is CLI args → `_FILE` env var → direct env var → config file → default, so a secret always wins over whatever's left in `config.yml`. See [In-Depth Configuration](In-Depth-Configuration) for the complete environment variable reference.
+Resolution order is CLI args → `_FILE` env var → direct env var → config file → default, so a secret always wins over whatever's left in `config.yaml`. See [In-Depth Configuration](In-Depth-Configuration) for the complete environment variable reference.
 
 This applies beyond qBittorrent credentials too — a Discord/Slack webhook URL (set via `notifications.webhook_url` for the [`notify`](Actions#notify) action) embeds a bearer token in the URL path itself, just as sensitive as a password. Use the `_FILE` variant for it in production, the same as `qbittorrent.password`. The same goes for `integrations.sonarr.api_key`/`integrations.radarr.api_key` (used by the [`arr_blocklist`](Actions#arr_blocklist) action) — an arr API key grants full control over that instance's library and downloads, not just read access.
 
-If you do keep any credential in `config.yml` directly (not recommended), restrict the host file's permissions:
+If you do keep any credential in `config.yaml` directly (not recommended), restrict the host file's permissions:
 
 ```bash
-chmod 600 ./state/config.yml
+chmod 600 ./config/config.yaml
 ```
 
 ### Log Hygiene
 
-`--trace` (or `logging.trace_mode: true`) logs every field access and API response, which can include tracker URLs with embedded passkeys, torrent names, and tag contents. Before sharing trace logs — in a bug report, a support channel, or a GitHub issue — scrub anything that looks like a tracker announce URL or credential, the same way you'd sanitize `config.yml` before sharing it (see [Contributing](Contributing)'s issue-reporting guidance).
+`--trace` (or `logging.trace_mode: true`) logs every field access and API response, which can include tracker URLs with embedded passkeys, torrent names, and tag contents. Before sharing trace logs — in a bug report, a support channel, or a GitHub issue — scrub anything that looks like a tracker announce URL or credential, the same way you'd sanitize `config.yaml` before sharing it (see [Contributing](Contributing)'s issue-reporting guidance).
 
 ## Hardening
 

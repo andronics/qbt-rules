@@ -7,9 +7,15 @@ Supports two modes:
 2. Client mode (default): Submits jobs to server via HTTP API
 
 Job management commands: --list-jobs, --job-status, --cancel-job, --stats
+
+The settings come from config.py (interpose); a CLI flag overrides its
+setting (apply_cli_overrides). The get_*_config() functions hand the legacy
+server, worker and engine the plain dicts they take, revealing secrets only
+there, at the edge (TODO(4f): the Typer CLI passes config.Config instead).
 """
 
 import argparse
+import dataclasses
 import os
 import sys
 import time
@@ -17,368 +23,204 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from interpose.secret import Secret
 
 from qbt_rules import cli_ui
+from qbt_rules import config as settings_module
 from qbt_rules.arguments import create_parser, process_args, validate_torrent_hash
-from qbt_rules.config_loader import (
-    ENV_VAR_MAP,
-    Config,
-    load_config,
-    parse_bool,
-    parse_int,
-    parse_retention,
-    resolve_config,
-)
+from qbt_rules.config_loader import Config
 from qbt_rules.errors import handle_errors
-from qbt_rules.log_setup import DEFAULT_BACKUP_COUNT, DEFAULT_MAX_BYTES, get_logger, setup_logging
+from qbt_rules.log_setup import get_logger, setup_logging
 from qbt_rules.qbittorrent import QBittorrentAPI
 
 # logging.getLogger() returns the same object before and after setup_logging()
 logger = get_logger(__name__)
 
+# CLI flag (argparse dest) -> (setting key, config.Config field, conversion).
+# Each flag beats every other source of its setting.
+CLI_OVERRIDES: dict[str, tuple[str, str, Any]] = {
+    "server_host": ("listen.host", "host", str),
+    "server_port": ("listen.port", "port", int),
+    "server_api_key": ("server.api_key", "api_key", Secret),
+    "server_workers": ("server.workers", "workers", int),
+    "client_server_url": ("client.server_url", "client_server_url", str),
+    "client_api_key": ("client.api_key", "client_api_key", Secret),
+    "queue_backend": ("queue.backend", "queue_backend", str),
+    "queue_sqlite_path": ("queue.sqlite_path", "sqlite_path", Path),
+    "queue_redis_url": ("queue.redis_url", "redis_url", Secret),
+    "log_level": ("logging.level", "log_level", str),
+}
 
-def resolve_section_config(
-    args: argparse.Namespace,
-    config_obj: Config,
-    section: str,
-    fields: dict[str, Any],
-    parsers: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """
-    Generic resolver for a config.yml section's scalar fields
 
-    Env var names auto-derive as QBT_RULES_<SECTION>_<FIELD> (dots in
-    `section` become underscores, e.g. section='integrations.sonarr' ->
-    QBT_RULES_INTEGRATIONS_SONARR_<FIELD>) unless ENV_VAR_MAP has an
-    explicit override for "<section>.<field>" -- needed for the handful
-    of genuine naming exceptions (logging.*'s QBT_RULES_LOG_* prefix,
-    engine.dry_run's bare QBT_RULES_DRY_RUN). CLI arg names auto-derive as
-    <section>_<field> (dots become underscores), matching this codebase's
-    existing --server-port style flag naming.
+def apply_cli_overrides(
+    args: argparse.Namespace, settings: settings_module.Config
+) -> settings_module.Config:
+    """The settings with every CLI flag given applied over them"""
+    changes: dict[str, Any] = {}
+    sources = dict(settings.sources)
+    for dest, (key, field_name, convert) in CLI_OVERRIDES.items():
+        value = getattr(args, dest, None)
+        if value is not None:
+            changes[field_name] = convert(value)
+            sources[key] = f"--{dest.replace('_', '-')}"
+    if getattr(args, "trace", False):
+        changes["trace_mode"] = True
+        sources["logging.trace_mode"] = "--trace"
+    if getattr(args, "dry_run", False):
+        changes["dry_run"] = True
+        sources["dry_run"] = "--dry-run"
+    if not changes:
+        return settings
+    return dataclasses.replace(settings, **changes, sources=sources)
 
-    Args:
-        args: Parsed CLI arguments
-        config_obj: Loaded Config instance
-        section: Config section name, e.g. 'server' (dotted for nested
-                 sections, e.g. 'integrations.sonarr')
-        fields: {field_name: default_value}
-        parsers: Optional {field_name: callable} for fields needing type
-                 coercion (e.g. {'port': parse_int})
 
-    Returns:
-        Dictionary with the section's resolved configuration
-    """
-    parsers = parsers or {}
-    result = {}
-    for field, default in fields.items():
-        config_key = f"{section}.{field}"
-        env_var = ENV_VAR_MAP.get(
-            config_key, f"QBT_RULES_{section.upper().replace('.', '_')}_{field.upper()}"
-        )
-        cli_value = getattr(args, f"{section.replace('.', '_')}_{field}", None)
-        value = resolve_config(cli_value, env_var, config_obj.config, config_key, default=default)
-        if field in parsers and value is not None:
-            value = parsers[field](value)
-        result[field] = value
-    return result
+def load_config(config_path: Path | None, args: argparse.Namespace) -> Config:
+    """The settings (with the CLI flags applied) and rules.yml"""
+    settings = apply_cli_overrides(args, settings_module.load_config(config_path))
+    return Config(settings)
 
 
 def get_logging_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
-    Get logging configuration from CLI args, env vars, or config file
-
-    Doesn't use resolve_section_config()'s mechanical CLI-arg-name
-    convention -- the established flag names are --log-level/--trace,
-    not --logging-level/--logging-trace-mode, so each field is resolved
-    by hand rather than via the generic helper. Every field still gets
-    full CLI > _FILE env var > env var > config.yml > default resolution
-    via resolve_config(), matching every other section.
+    The logging settings, for setup_logging()
 
     Returns:
-        Dictionary with 'level' (str, uppercased), 'file' (Path, resolved
-        relative to config_dir when given as a relative path), 'trace_mode'
-        (bool), 'http_access' (bool), 'client_mode' (bool -- True for any
-        invocation other than --serve, used by setup_logging() to keep
-        console output bare in client mode while the log file still gets
-        full diagnostic detail), 'max_bytes' (int -- rotate the log file
-        once it reaches this size, 0 disables rotation), 'backup_count'
-        (int -- rotated files to keep)
+        Dictionary with 'level' (str), 'file' (Path, or None for the
+        console only), 'trace_mode' (bool), 'http_access' (bool),
+        'client_mode' (bool -- True for any invocation other than --serve,
+        used by setup_logging() to keep console output bare in client mode
+        while the log file still gets full diagnostic detail), 'max_bytes'
+        (int -- rotate the log file once it reaches this size, 0 disables
+        rotation), 'backup_count' (int -- rotated files to keep)
     """
-    level = resolve_config(
-        getattr(args, "log_level", None),
-        "QBT_RULES_LOGGING_LEVEL",
-        config_obj.config,
-        "logging.level",
-        default="INFO",
-    )
-
-    file_str = resolve_config(
-        None,
-        "QBT_RULES_LOGGING_FILE",
-        config_obj.config,
-        "logging.file",
-        default="logs/qbittorrent.log",
-    )
-    file_path = Path(file_str)
-    if not file_path.is_absolute():
-        file_path = config_obj.config_dir / file_path
-
-    trace_mode = parse_bool(
-        resolve_config(
-            True if getattr(args, "trace", False) else None,
-            "QBT_RULES_LOGGING_TRACE_MODE",
-            config_obj.config,
-            "logging.trace_mode",
-            default=False,
-        )
-    )
-
-    http_access = parse_bool(
-        resolve_config(
-            None,
-            "QBT_RULES_LOGGING_HTTP_ACCESS",
-            config_obj.config,
-            "logging.http_access",
-            default=False,
-        )
-    )
-
-    max_bytes = parse_int(
-        resolve_config(
-            None,
-            "QBT_RULES_LOGGING_MAX_BYTES",
-            config_obj.config,
-            "logging.max_bytes",
-            default=DEFAULT_MAX_BYTES,
-        )
-    )
-
-    backup_count = parse_int(
-        resolve_config(
-            None,
-            "QBT_RULES_LOGGING_BACKUP_COUNT",
-            config_obj.config,
-            "logging.backup_count",
-            default=DEFAULT_BACKUP_COUNT,
-        )
-    )
-
+    s = config_obj.settings
     return {
-        "level": level.upper(),
-        "file": file_path,
-        "trace_mode": trace_mode,
-        "http_access": http_access,
+        "level": s.log_level,
+        "file": s.log_file,
+        "trace_mode": s.trace_mode,
+        "http_access": s.http_access,
         "client_mode": not getattr(args, "serve", False),
-        "max_bytes": max_bytes,
-        "backup_count": backup_count,
+        "max_bytes": s.log_max_bytes,
+        "backup_count": s.log_backup_count,
     }
 
 
 def get_qbittorrent_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
-    Get qBittorrent connection configuration from CLI args, env vars, or
-    config file
+    qBittorrent's Web UI address and login
 
     Returns:
         Dictionary with 'host', 'username', 'password'
     """
-    return resolve_section_config(
-        args,
-        config_obj,
-        "qbittorrent",
-        {
-            "host": "http://localhost:8080",
-            "username": "admin",
-            "password": "",
-        },
-    )
+    s = config_obj.settings
+    return {"host": s.qbt_host, "username": s.qbt_username, "password": s.qbt_password.reveal()}
 
 
 def get_server_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
-    Get server configuration from CLI args, env vars, or config file
+    The HTTP server's settings
 
     Returns:
-        Dictionary with server configuration
+        Dictionary with 'host', 'port', 'api_key' ("" when none is
+        configured), 'workers', 'editor_enabled'
     """
-    return resolve_section_config(
-        args,
-        config_obj,
-        "server",
-        {
-            "host": "0.0.0.0",  # noqa: S104  container default; set server.host to narrow
-            "port": 5000,
-            "api_key": None,
-            "workers": 1,
-            "editor_enabled": True,
-        },
-        parsers={"port": parse_int, "workers": parse_int, "editor_enabled": parse_bool},
-    )
-
-
-# The api_key value config.default.yml ships with, for both server and client
-PLACEHOLDER_API_KEY = "your-secure-api-key-here-generate-a-random-key"
+    s = config_obj.settings
+    return {
+        "host": s.host,
+        "port": s.port,
+        "api_key": s.api_key.reveal(),
+        "workers": s.workers,
+        "editor_enabled": s.editor_enabled,
+    }
 
 
 def get_client_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
-    Get client configuration from CLI args, env vars, or config file
+    The CLI client's settings
 
-    When no client key is set -- or it's still the placeholder from the
-    copied config.default.yml -- the server's key is used instead. The
+    When no client key is set (or it's the 0.10.x placeholder, which
+    config.py treats as unset), the server's key is used instead. The
     usual client is `docker exec <container> qbt-rules ...` inside the
-    server's own container, where the server key is right there; without
-    this, a setup that only sets QBT_RULES_SERVER_API_KEY sent the
-    placeholder and every CLI command failed authentication.
+    server's own container, where the server key is right there.
 
     Returns:
-        Dictionary with client configuration
+        Dictionary with 'server_url' and 'api_key' ("" when neither is set)
     """
-    client = resolve_section_config(
-        args,
-        config_obj,
-        "client",
-        {
-            "server_url": "http://localhost:5000",
-            "api_key": None,
-        },
-    )
-    if not client["api_key"] or client["api_key"] == PLACEHOLDER_API_KEY:
-        server_key = get_server_config(args, config_obj)["api_key"]
-        if server_key:
-            client["api_key"] = server_key
-    return client
+    s = config_obj.settings
+    api_key = s.client_api_key or s.api_key
+    return {"server_url": s.client_server_url, "api_key": api_key.reveal()}
 
 
 def get_queue_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
-    Get queue configuration from CLI args, env vars, or config file
+    The job queue's settings
 
     Returns:
-        Dictionary with queue configuration
+        Dictionary with 'backend', 'sqlite_path' (str), 'redis_url' and
+        'cleanup_after' (seconds, or None to keep finished jobs)
     """
-    return resolve_section_config(
-        args,
-        config_obj,
-        "queue",
-        {
-            "backend": "sqlite",
-            "sqlite_path": "/var/lib/qbt-rules/qbt-rules.db",
-            "redis_url": "redis://localhost:6379/0",
-            "cleanup_after": "7d",
-        },
-        parsers={"cleanup_after": parse_retention},
-    )
+    s = config_obj.settings
+    return {
+        "backend": s.queue_backend,
+        "sqlite_path": str(s.sqlite_path),
+        "redis_url": s.redis_url.reveal(),
+        "cleanup_after": s.cleanup_after,
+    }
 
 
 def get_notifications_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
-    Get notifications configuration from CLI args, env vars, or config file
+    The notify action's defaults
 
-    Resolved once at server startup (same as server_config/queue_config)
-    so the notify action's default webhook URL supports _FILE secrets --
-    ActionExecutor never has access to CLI args, so it can't do this
-    resolution itself; it's threaded down as an already-resolved dict.
+    Resolved once at server startup and threaded down as a dict, since
+    ActionExecutor never sees the settings itself.
 
     Returns:
-        Dictionary with notifications configuration
+        Dictionary with 'webhook_url' (None when unset) and 'service'
     """
-    return resolve_section_config(
-        args,
-        config_obj,
-        "notifications",
-        {
-            "webhook_url": None,
-            "service": "generic",
-        },
-    )
+    s = config_obj.settings
+    return {"webhook_url": s.webhook_url.reveal() or None, "service": s.notify_service}
 
 
 def get_integrations_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
-    Get integrations configuration (Sonarr/Radarr) from CLI args, env vars,
-    or config file
-
-    Resolved once at server startup, same as notifications_config -- the
-    arr_blocklist action has no access to CLI args, so its
-    config (including _FILE-resolved API keys) is threaded down as an
-    already-resolved dict. 'integrations' is a two-level nested section
-    (integrations.sonarr.*, integrations.radarr.*), so resolve_section_config
-    is called once per service with a dotted section name -- it derives
-    QBT_RULES_INTEGRATIONS_SONARR_URL/_API_KEY and
-    QBT_RULES_INTEGRATIONS_RADARR_URL/_API_KEY automatically, no ENV_VAR_MAP
-    entries needed.
+    The integrations: Sonarr/Radarr (arr_blocklist) and trackie (tracker.*)
 
     Returns:
-        Dictionary with 'sonarr' and 'radarr' keys, each {'url', 'api_key'},
-        and 'trackie' ({'url', 'max_age', 'timeout'})
+        Dictionary with 'sonarr' and 'radarr' keys, each {'url', 'api_key'}
+        (None when unset), and 'trackie' ({'url', 'max_age', 'timeout'})
     """
+    s = config_obj.settings
     return {
-        "sonarr": resolve_section_config(
-            args,
-            config_obj,
-            "integrations.sonarr",
-            {
-                "url": None,
-                "api_key": None,
-            },
-        ),
-        "radarr": resolve_section_config(
-            args,
-            config_obj,
-            "integrations.radarr",
-            {
-                "url": None,
-                "api_key": None,
-            },
-        ),
+        "sonarr": {"url": s.sonarr_url or None, "api_key": s.sonarr_api_key.reveal() or None},
+        "radarr": {"url": s.radarr_url or None, "api_key": s.radarr_api_key.reveal() or None},
         # Not an arr: trackie serves tracker-side seeding stats for the
         # tracker.* field namespace. No API key -- it's read-only and meant
         # to sit on the same internal network as qbt-rules.
-        "trackie": resolve_section_config(
-            args,
-            config_obj,
-            "integrations.trackie",
-            {
-                "url": None,
-                "max_age": None,
-                "timeout": None,
-            },
-        ),
+        "trackie": {
+            "url": s.trackie_url or None,
+            "max_age": s.trackie_max_age,
+            "timeout": s.trackie_timeout,
+        },
     }
 
 
 def get_metrics_config(args: argparse.Namespace, config_obj: Config) -> dict[str, Any]:
     """
-    Get Prometheus metrics configuration from CLI args, env vars, or config file
+    Prometheus metrics settings
 
     Returns:
         Dictionary with 'enabled' (bool) and 'multiproc_dir' (str)
     """
-    return resolve_section_config(
-        args,
-        config_obj,
-        "metrics",
-        {
-            "enabled": False,
-            "multiproc_dir": "/tmp/qbt-rules-metrics",  # noqa: S108  default, configurable
-        },
-        parsers={"enabled": parse_bool},
-    )
+    s = config_obj.settings
+    return {"enabled": s.metrics_enabled, "multiproc_dir": str(s.metrics_multiproc_dir)}
 
 
 def get_schedule_config(args: argparse.Namespace, config_obj: Config) -> list[dict[str, Any]]:
     """
-    Get the schedule configuration (list of {cron, context} entries)
-
-    Unlike the other get_*_config functions, this has no CLI-arg or
-    per-field env-var override -- a list of recurring jobs doesn't map to
-    a single flag/variable the way scalar config does. It's config.yml's
-    'schedule' section as-is, already validated at load time by
-    Config._load_schedule().
-
-    Returns:
-        List of schedule entry dicts (possibly empty)
+    The schedule: a list of {cron, context} entries (possibly empty), from
+    the config file or the QBT_RULES_SCHEDULE_<N>_CRON/_CONTEXT variables,
+    already validated by config.load_config()
     """
     return config_obj.schedule
 
@@ -424,13 +266,15 @@ def run_server_mode(
     if metrics_config["enabled"]:
         logger.info(f"Metrics enabled (multiproc dir: {metrics_config['multiproc_dir']})")
 
-    # Validate API key
-    if not server_config["api_key"]:
-        logger.error("Server API key is required. Set via:")
-        logger.error("  - CLI: --server-api-key <key>")
-        logger.error("  - Env: QBT_RULES_SERVER_API_KEY or QBT_RULES_SERVER_API_KEY_FILE")
-        logger.error("  - Config: server.api_key in config.yml")
-        sys.exit(1)
+    # Settings it can start without but not fully work without (no API
+    # key): start anyway, so /api/health can say what's missing
+    for problem in config_obj.settings.problems:
+        logger.error(f"Configuration: {problem}")
+    if config_obj.settings.sources.get("listen.port", "").startswith("QBT_RULES_SERVER_PORT"):
+        logger.warning(
+            "QBT_RULES_SERVER_PORT is an alias of QBT_RULES_LISTEN_PORT, the one the image's "
+            "healthcheck polls: set QBT_RULES_LISTEN_PORT instead"
+        )
 
     # Initialize queue
     from qbt_rules.queue_manager import create_queue
@@ -526,7 +370,7 @@ def run_client_mode(args: argparse.Namespace, config_obj: Config) -> None:
         logger.error("Client API key is required. Set via:")
         logger.error("  - CLI: --client-api-key <key>")
         logger.error("  - Env: QBT_RULES_CLIENT_API_KEY or QBT_RULES_CLIENT_API_KEY_FILE")
-        logger.error("  - Config: client.api_key in config.yml")
+        logger.error("  - Config: client.api_key (or server.api_key) in config.yaml")
         sys.exit(1)
 
     # Determine context and hash
@@ -883,11 +727,11 @@ def main() -> None:
     parser = create_parser()
     args = parser.parse_args(argv)
 
-    # Process arguments and get config directory
-    config_dir = process_args(args)
+    # The config file (--config, else QBT_RULES_CONFIG, else /etc/qbt-rules/config.yaml)
+    config_path = process_args(args)
 
     # Load configuration
-    config = load_config(config_dir)
+    config = load_config(config_path, args)
 
     # Setup logging
     logging_config = get_logging_config(args, config)

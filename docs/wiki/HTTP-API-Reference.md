@@ -128,6 +128,8 @@ No authentication required — safe to use as a Docker/Compose healthcheck or lo
 }
 ```
 
+A server started without a setting it needs (no `server.api_key`) is still healthy, since restarting it wouldn't help, but adds `"config_problems": ["server.api_key is not set, ..."]`, one sentence per problem naming what to set. The key is absent when there are none.
+
 **Response — `503` (unhealthy)** if the queue backend is unreachable, the worker thread has died, or more than 5 jobs are stuck in `processing` at once — the `errors` array names which.
 
 ### GET /api/stats
@@ -182,8 +184,8 @@ The dashboard's rules editor (`/rules/edit`) is a static page; everything it sho
 | `PUT /api/rules/source` | Save `rules.yml`. Body `{"content": "<yaml>"}` plus an `If-Match` header (or `"etag"` in the body) holding the ETag the edit started from. `200` saved or unchanged; `400` no content; `403` saving is turned off (`server.editor_enabled: false`) or the file isn't writable; `412` the file changed since that ETag (the response carries the current version); `422` validation found errors; `428` no ETag sent |
 | `GET /api/rules/history` | Previous versions kept by editor saves, newest first: `{versions: [{id, saved_at, size}]}` |
 | `GET /api/rules/history/<id>` | One previous version's content (restore it by saving it); `404` if there's no such version |
-| `GET /api/rules/catalog` | The fields, operators and action types the engine supports (the editor's autocomplete), plus the contexts `config.yml`'s schedule fires |
-| `GET /api/config/source` | `config.yml` as text, read-only, with credentials masked |
+| `GET /api/rules/catalog` | The fields, operators and action types the engine supports (the editor's autocomplete), plus the contexts `config.yaml`'s schedule fires |
+| `GET /api/config/source` | `config.yaml` as text, read-only, with credentials masked |
 
 They answer `503` when the server was started without a config to edit.
 
@@ -217,6 +219,6 @@ Every non-2xx response follows the same shape:
 | `401` | Missing or incorrect API key |
 | `404` | Job ID (or endpoint) not found |
 | `500` | Unhandled server-side error — check `docker logs` |
-| `503` | `/api/health` reporting the server itself is unhealthy |
+| `503` | `/api/health` reporting the server itself is unhealthy, or, on any authenticated endpoint, no API key configured on the server (`"message": "No API key is configured on the server: ..."`) |
 
 The rules editor's endpoints add `403` (saving turned off, or a session request without its CSRF token), `412` (stale ETag), `422` (invalid rules), `428` (no ETag) and `503` (no config): see [above](#rules-editor-endpoints).

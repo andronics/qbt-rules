@@ -936,51 +936,6 @@ def mock_config():
     return config
 
 
-@pytest.fixture
-def tmp_config_dir(tmp_path):
-    """Create temporary config directory with example files."""
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-
-    # Create config.yml
-    config_yml = config_dir / "config.yml"
-    config_yml.write_text("""
-qbittorrent:
-  host: http://localhost:8080
-  username: admin
-  password: adminpass
-
-logging:
-  level: INFO
-  trace: false
-
-dry_run: false
-""")
-
-    # Create rules.yml
-    rules_yml = config_dir / "rules.yml"
-    rules_yml.write_text("""
-rules:
-  - id: test-rule
-    meta:
-      description: "Test rule"
-    enabled: true
-    stop_on_match: false
-    conditions:
-      context: adhoc-run
-      all:
-        - field: info.ratio
-          operator: ">="
-          value: 1.0
-    actions:
-      - type: add_tag
-        params:
-          tag: "test"
-""")
-
-    return config_dir
-
-
 # ============================================================================
 # Redis Test Infrastructure
 # ============================================================================

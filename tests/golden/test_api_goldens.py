@@ -277,7 +277,7 @@ class Env:
         )
         monkeypatch.setattr(web, "__version__", FIXED_VERSION)
 
-        # config.yml redaction and Config() both read QBT_RULES_* overrides
+        # config.yaml redaction and load_config() both read QBT_RULES_* overrides
         for name in list(os.environ):
             if name.startswith("QBT_RULES_") or name == "CONFIG_DIR":
                 monkeypatch.delenv(name)
@@ -296,7 +296,9 @@ class Env:
 
         self.config_dir = tmp_path / "config"
         self.config_dir.mkdir()
-        (self.config_dir / "config.yml").write_text(CONFIG)
+        (self.config_dir / "config.yaml").write_text(CONFIG)
+        # The editor's history (.history/) goes in the state directory
+        self.state_dir = tmp_path / "state"
         self.write_rules(RULES)
 
         self.queue = _make_queue(backend, tmp_path)
@@ -309,9 +311,10 @@ class Env:
         os.utime(path, (ts, ts))
 
     def client(self, with_config: bool = True, metrics_on: bool = False, **kwargs):
-        from qbt_rules.config_loader import Config
+        from qbt_rules.config_loader import load_config
 
-        config = Config(self.config_dir) if with_config else None
+        environ = {"QBT_RULES_STATE_DIR": str(self.state_dir)}
+        config = load_config(self.config_dir / "config.yaml", environ) if with_config else None
         metrics_config = None
         if metrics_on:
             metrics.init(enabled=True)

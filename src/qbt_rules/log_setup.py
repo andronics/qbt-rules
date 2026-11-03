@@ -29,12 +29,15 @@ def setup_logging(logging_config: dict[str, Any]) -> None:
     """
     Setup logging configuration with fallback to console-only
 
-    Configures both file and console handlers, each with its own format.
-    Falls back gracefully to console-only logging if file logging fails.
+    Configures the console handler and, when logging.file is set, a file
+    handler, each with its own format. Falls back gracefully to
+    console-only logging if file logging fails. The console (stderr) is the
+    template's convention, and the default: in a container it's what
+    `docker logs` and Kubernetes keep.
 
     Args:
         logging_config: Pre-resolved dict from legacy_cli.py's get_logging_config()
-            -- {'level': str, 'file': Path, 'trace_mode': bool,
+            -- {'level': str, 'file': Path or None, 'trace_mode': bool,
                 'http_access': bool, 'client_mode': bool,
                 'max_bytes': int, 'backup_count': int}
     """
@@ -72,23 +75,24 @@ def setup_logging(logging_config: dict[str, Any]) -> None:
     # without bound on a long-running server.
     file_handler = None
     _file_settings = None
-    try:
-        log_file = logging_config["file"]
-        log_file.parent.mkdir(parents=True, exist_ok=True)
+    log_file = logging_config.get("file")
+    if log_file is not None:
+        try:
+            log_file.parent.mkdir(parents=True, exist_ok=True)
 
-        settings = {
-            "file": log_file,
-            "level": getattr(logging, log_level),
-            "formatter": logging.Formatter(file_log_format, datefmt=DATE_FORMAT),
-            "max_bytes": logging_config.get("max_bytes", DEFAULT_MAX_BYTES),
-            "backup_count": logging_config.get("backup_count", DEFAULT_BACKUP_COUNT),
-        }
-        file_handler = _build_file_handler(settings, rotate=True)
-        _file_settings = settings
-    except (PermissionError, OSError) as e:
-        # Fall back to console-only logging
-        print(f"Cannot setup file logging: {e}", file=sys.stderr)  # noqa: T201  logging not set up yet
-        print("Continuing with console-only logging", file=sys.stderr)  # noqa: T201  logging not set up yet
+            settings = {
+                "file": log_file,
+                "level": getattr(logging, log_level),
+                "formatter": logging.Formatter(file_log_format, datefmt=DATE_FORMAT),
+                "max_bytes": logging_config.get("max_bytes", DEFAULT_MAX_BYTES),
+                "backup_count": logging_config.get("backup_count", DEFAULT_BACKUP_COUNT),
+            }
+            file_handler = _build_file_handler(settings, rotate=True)
+            _file_settings = settings
+        except (PermissionError, OSError) as e:
+            # Fall back to console-only logging
+            print(f"Cannot setup file logging: {e}", file=sys.stderr)  # noqa: T201  logging not set up yet
+            print("Continuing with console-only logging", file=sys.stderr)  # noqa: T201  logging not set up yet
 
     # Console handler (always works) -- stderr, not stdout, so diagnostic
     # logging never contaminates stdout data output (tables/JSON) from the

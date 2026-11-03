@@ -2,665 +2,178 @@
 Tests for qbt_rules.legacy_cli module (v0.4.0 client-server architecture)
 """
 
-import os
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 
+from qbt_rules.config import PLACEHOLDER_API_KEY
+from qbt_rules.config import load_config as load_settings
+from qbt_rules.config_loader import Config
 from qbt_rules.legacy_cli import (
-    PLACEHOLDER_API_KEY,
+    apply_cli_overrides,
     cancel_job_command,
     get_client_config,
+    get_integrations_config,
     get_logging_config,
+    get_metrics_config,
     get_notifications_config,
     get_qbittorrent_config,
     get_queue_config,
     get_server_config,
     job_status_command,
     list_jobs_command,
-    resolve_section_config,
     run_client_mode,
     run_server_mode,
     stats_command,
     wait_for_job,
 )
 
+# No config file and no rules.yml: every setting from its default or the given environment
+MISSING = Path("/nonexistent/qbt-rules/config.yaml")
 
-class TestResolveSectionConfig:
-    """Test resolve_section_config() -- the generic per-section resolver
-    the get_*_config accessors above are all built on."""
 
-    def test_uses_field_defaults(self):
-        """No args/env/config -- each field falls back to its own default."""
-        args = Namespace()
-        config_obj = Mock(config={})
+def make_config(args=None, environ=None, path=MISSING):
+    """The running configuration legacy_cli.main() would build from these flags"""
+    settings = load_settings(path, environ=environ or {})
+    return Config(apply_cli_overrides(args or Namespace(), settings))
 
-        result = resolve_section_config(
-            args,
-            config_obj,
-            "server",
-            {
-                "host": "0.0.0.0",  # noqa: S104  test fixture value
-                "port": 5000,
-            },
-        )
 
-        assert result == {"host": "0.0.0.0", "port": 5000}  # noqa: S104  test fixture value
+def with_config(args):
+    """(args, the configuration built from them), for run_client_mode(*...)"""
+    return args, make_config(args)
 
-    def test_cli_arg_name_auto_derives_from_section_and_field(self):
-        """section='server', field='port' -> getattr(args, 'server_port')."""
-        args = Namespace(server_port=9000)
-        config_obj = Mock(config={})
 
-        result = resolve_section_config(args, config_obj, "server", {"port": 5000})
+class TestApplyCliOverrides:
+    """A CLI flag beats every other source of its setting"""
 
-        assert result["port"] == 9000
+    def test_no_flags_changes_nothing(self):
+        settings = load_settings(MISSING, environ={})
+        assert apply_cli_overrides(Namespace(), settings) is settings
 
-    def test_env_var_name_auto_derives_from_convention(self):
-        """section='widgets', field='color' -> QBT_RULES_WIDGETS_COLOR, with
-        no ENV_VAR_MAP entry needed."""
-        args = Namespace()
-        config_obj = Mock(config={})
-
-        with patch.dict(os.environ, {"QBT_RULES_WIDGETS_COLOR": "blue"}):
-            result = resolve_section_config(args, config_obj, "widgets", {"color": "red"})
-
-        assert result["color"] == "blue"
-
-    def test_config_file_value_used_when_no_cli_or_env(self):
-        args = Namespace()
-        config_obj = Mock(config={"widgets": {"color": "green"}})
-
-        result = resolve_section_config(args, config_obj, "widgets", {"color": "red"})
-
-        assert result["color"] == "green"
-
-    def test_parser_applied_to_resolved_value(self):
-        """parsers={'port': int} coerces a string CLI value to an int."""
-        args = Namespace(server_port="8080")
-        config_obj = Mock(config={})
-
-        result = resolve_section_config(
-            args, config_obj, "server", {"port": 5000}, parsers={"port": int}
-        )
-
-        assert result["port"] == 8080
-        assert isinstance(result["port"], int)
-
-    def test_parser_not_applied_when_value_is_none(self):
-        """A None default (e.g. an optional field) is never handed to the parser."""
-        args = Namespace()
-        config_obj = Mock(config={})
-
-        result = resolve_section_config(
-            args, config_obj, "server", {"api_key": None}, parsers={"api_key": int}
-        )
-
-        assert result["api_key"] is None
-
-    def test_dotted_section_name_for_nested_config(self):
-        """section='integrations.sonarr' -> config key 'integrations.sonarr.url'
-        and env var QBT_RULES_INTEGRATIONS_SONARR_URL -- the shape a future
-        nested section (e.g. Sonarr/Radarr) would use."""
-        args = Namespace()
-        config_obj = Mock(config={"integrations": {"sonarr": {"url": "http://sonarr.local"}}})
-
-        result = resolve_section_config(
-            args,
-            config_obj,
-            "integrations.sonarr",
-            {
-                "url": None,
-                "api_key": None,
-            },
-        )
-
-        assert result == {"url": "http://sonarr.local", "api_key": None}
-
-    def test_dotted_section_env_var_derivation(self):
-        args = Namespace()
-        config_obj = Mock(config={})
-
-        with patch.dict(os.environ, {"QBT_RULES_INTEGRATIONS_SONARR_API_KEY": "secret"}):
-            result = resolve_section_config(
-                args,
-                config_obj,
-                "integrations.sonarr",
-                {
-                    "api_key": None,
-                },
-            )
-
-        assert result["api_key"] == "secret"
-
-    def test_env_var_map_override_takes_precedence_over_convention(self):
-        """A config_key present in ENV_VAR_MAP wins over the mechanical
-        QBT_RULES_<SECTION>_<FIELD> guess -- this is how the one remaining
-        genuine naming exception (engine.dry_run, no section prefix at
-        all) stays working."""
-        args = Namespace()
-        config_obj = Mock(config={})
-
-        # engine.dry_run is mapped to the bare QBT_RULES_DRY_RUN in
-        # ENV_VAR_MAP, not the mechanically-derived QBT_RULES_ENGINE_DRY_RUN
-        with patch.dict(os.environ, {"QBT_RULES_DRY_RUN": "true"}):
-            result = resolve_section_config(args, config_obj, "engine", {"dry_run": False})
-
-        assert result["dry_run"] == "true"
-
-    def test_cli_value_takes_precedence_over_env(self):
-        args = Namespace(server_port=1111)
-        config_obj = Mock(config={})
-
-        with patch.dict(os.environ, {"QBT_RULES_SERVER_PORT": "2222"}):
-            result = resolve_section_config(args, config_obj, "server", {"port": 5000})
-
-        assert result["port"] == 1111
-
-
-class TestGetLoggingConfig:
-    """Test get_logging_config() function
-
-    Doesn't use resolve_section_config() directly -- --log-level/--trace
-    are the established CLI flag names, not --logging-level/
-    --logging-trace-mode, so each field is hand-resolved. Still gets full
-    CLI > _FILE env var > env var > config.yml > default resolution via
-    resolve_config() for every field, matching every other section
-    (previously, this all went through bare, unprefixed env vars --
-    LOG_LEVEL/LOG_FILE/TRACE_MODE -- with no _FILE support at all, despite
-    config.default.yml documenting QBT_RULES_LOG_* with _FILE support)."""
-
-    def test_returns_default_config(self, tmp_path):
-        """Should return defaults when nothing is set"""
-        args = Namespace()
-        config_obj = Mock(config={}, config_dir=tmp_path)
-
-        config = get_logging_config(args, config_obj)
-
-        assert config["level"] == "INFO"
-        assert config["file"] == tmp_path / "logs" / "qbittorrent.log"
-        assert config["trace_mode"] is False
-        assert config["http_access"] is False
-        assert config["client_mode"] is True
-        assert config["max_bytes"] == 10 * 1024 * 1024
-        assert config["backup_count"] == 5
-
-    def test_client_mode_false_when_serving(self, tmp_path):
-        """--serve should mark client_mode False, so setup_logging() keeps
-        the full console format for server-mode operational output."""
-        args = Namespace(serve=True)
-        config_obj = Mock(config={}, config_dir=tmp_path)
-
-        config = get_logging_config(args, config_obj)
-
-        assert config["client_mode"] is False
-
-    def test_client_mode_true_when_not_serving(self, tmp_path):
-        """Any invocation with --serve not set is client mode."""
-        args = Namespace(serve=False)
-        config_obj = Mock(config={}, config_dir=tmp_path)
-
-        config = get_logging_config(args, config_obj)
-
-        assert config["client_mode"] is True
-
-    def test_uses_config_file_values(self, tmp_path):
-        """Should use config.yml values"""
-        args = Namespace()
-        config_obj = Mock(
-            config={
-                "logging": {
-                    "level": "debug",
-                    "file": "custom/path.log",
-                    "trace_mode": True,
-                    "http_access": True,
-                    "max_bytes": 2048,
-                    "backup_count": 2,
-                }
-            },
-            config_dir=tmp_path,
-        )
-
-        config = get_logging_config(args, config_obj)
-
-        assert config["max_bytes"] == 2048
-        assert config["backup_count"] == 2
-
-        assert config["level"] == "DEBUG"
-        assert config["file"] == tmp_path / "custom" / "path.log"
-        assert config["trace_mode"] is True
-        assert config["http_access"] is True
-
-    def test_absolute_file_path_used_as_is(self, tmp_path):
-        """An absolute logging.file path isn't rebased under config_dir"""
-        args = Namespace()
-        config_obj = Mock(
-            config={"logging": {"file": "/var/log/qbt-rules.log"}}, config_dir=tmp_path
-        )
-
-        config = get_logging_config(args, config_obj)
-
-        assert config["file"] == Path("/var/log/qbt-rules.log")
-
-    def test_uses_cli_args(self, tmp_path):
-        """--log-level and --trace (args.log_level / args.trace) should win"""
-        args = Namespace(log_level="WARNING", trace=True)
-        config_obj = Mock(config={}, config_dir=tmp_path)
-
-        config = get_logging_config(args, config_obj)
-
-        assert config["level"] == "WARNING"
-        assert config["trace_mode"] is True
-
-    def test_trace_flag_false_does_not_override_config_yml(self, tmp_path):
-        """--trace not passed (False) must not clobber a true value from
-        config.yml -- only an explicit --trace should force True via CLI"""
-        args = Namespace(trace=False)
-        config_obj = Mock(config={"logging": {"trace_mode": True}}, config_dir=tmp_path)
-
-        config = get_logging_config(args, config_obj)
-
-        assert config["trace_mode"] is True
-
-    def test_uses_env_vars(self, tmp_path):
-        """The bug this replaces: QBT_RULES_LOGGING_* env vars used to have
-        zero effect -- only bare, unprefixed LOG_LEVEL/LOG_FILE/TRACE_MODE
-        worked. Confirm the documented, prefixed names now actually work."""
-        args = Namespace()
-        config_obj = Mock(config={}, config_dir=tmp_path)
-
-        env = {
-            "QBT_RULES_LOGGING_LEVEL": "error",
-            "QBT_RULES_LOGGING_FILE": "/env/qbt-rules.log",
-            "QBT_RULES_LOGGING_TRACE_MODE": "true",
-            "QBT_RULES_LOGGING_HTTP_ACCESS": "true",
-            "QBT_RULES_LOGGING_MAX_BYTES": "1000000",
-            "QBT_RULES_LOGGING_BACKUP_COUNT": "0",
-        }
-        with patch.dict(os.environ, env):
-            config = get_logging_config(args, config_obj)
-
-        assert config["max_bytes"] == 1000000
-        assert config["backup_count"] == 0
-
-        assert config["level"] == "ERROR"
-        assert config["file"] == Path("/env/qbt-rules.log")
-        assert config["trace_mode"] is True
-        assert config["http_access"] is True
-
-    def test_uses_file_env_var(self, tmp_path):
-        """QBT_RULES_LOGGING_LEVEL_FILE -- previously unsupported at all
-        for logging config, unlike every other section."""
-        secret_file = tmp_path / "log_level"
-        secret_file.write_text("debug\n")
-
-        args = Namespace()
-        config_obj = Mock(config={}, config_dir=tmp_path)
-
-        with patch.dict(os.environ, {"QBT_RULES_LOGGING_LEVEL_FILE": str(secret_file)}):
-            config = get_logging_config(args, config_obj)
-
-        assert config["level"] == "DEBUG"
-
-    def test_rotation_settings_from_file_env_vars(self, tmp_path):
-        """logging.max_bytes / logging.backup_count support the _FILE variant too."""
-        (tmp_path / "max_bytes").write_text("4096\n")
-        (tmp_path / "backup_count").write_text("7\n")
-
-        args = Namespace()
-        config_obj = Mock(config={}, config_dir=tmp_path)
-
-        env = {
-            "QBT_RULES_LOGGING_MAX_BYTES_FILE": str(tmp_path / "max_bytes"),
-            "QBT_RULES_LOGGING_BACKUP_COUNT_FILE": str(tmp_path / "backup_count"),
-        }
-        with patch.dict(os.environ, env):
-            config = get_logging_config(args, config_obj)
-
-        assert config["max_bytes"] == 4096
-        assert config["backup_count"] == 7
-
-    def test_bare_unprefixed_env_vars_no_longer_work(self, tmp_path):
-        """The old (undocumented, no _FILE support) bare LOG_LEVEL/LOG_FILE/
-        TRACE_MODE env vars must no longer have any effect."""
-        args = Namespace()
-        config_obj = Mock(config={}, config_dir=tmp_path)
-
-        env = {
-            "LOG_LEVEL": "DEBUG",
-            "LOG_FILE": "/should/be/ignored.log",
-            "TRACE_MODE": "true",
-        }
-        with patch.dict(os.environ, env):
-            config = get_logging_config(args, config_obj)
-
-        assert config["level"] == "INFO"  # default, NOT 'DEBUG'
-        assert config["trace_mode"] is False  # default, NOT True
-        assert (
-            config["file"] == tmp_path / "logs" / "qbittorrent.log"
-        )  # default, NOT the ignored path
-
-
-class TestGetQbittorrentConfig:
-    """Test get_qbittorrent_config() function
-
-    This replaces Config.get_qbittorrent_config(), which read config.yml
-    directly and never supported CLI args, env vars, or _FILE secrets at
-    all for host/username/password -- silently ignoring every documented
-    QBT_RULES_QBITTORRENT_* environment variable. These tests assert real
-    resolved *values*, not just key presence, specifically because the
-    bug this replaces was masked by tests that only checked keys existed."""
-
-    def test_returns_default_config(self):
-        """Should return default configuration when nothing is set"""
-        args = Namespace()
-        config_obj = Mock(config={})
-
-        config = get_qbittorrent_config(args, config_obj)
-
-        assert config["host"] == "http://localhost:8080"
-        assert config["username"] == "admin"
-        assert config["password"] == ""
-
-    def test_uses_config_file_values(self):
-        """Should use config.yml values -- this is the path that always
-        worked, even before the fix"""
-        args = Namespace()
-        config_obj = Mock(
-            config={
-                "qbittorrent": {
-                    "host": "http://qbittorrent:8080",
-                    "username": "myuser",
-                    "password": "mypass",
-                }
-            }
-        )
-
-        config = get_qbittorrent_config(args, config_obj)
-
-        assert config["host"] == "http://qbittorrent:8080"
-        assert config["username"] == "myuser"
-        assert config["password"] == "mypass"  # noqa: S105  test fixture value
-
-    def test_uses_args_values(self):
-        """Should use CLI argument values when provided"""
-        args = Namespace(
-            qbittorrent_host="http://cli-host:8080",
-            qbittorrent_username="cliuser",
-            qbittorrent_password="clipass",  # noqa: S106  test fixture value
-        )
-        config_obj = Mock(config={})
-
-        config = get_qbittorrent_config(args, config_obj)
-
-        assert config["host"] == "http://cli-host:8080"
-        assert config["username"] == "cliuser"
-        assert config["password"] == "clipass"  # noqa: S105  test fixture value
-
-    def test_uses_env_vars(self):
-        """The bug this replaces: QBT_RULES_QBITTORRENT_* env vars used to
-        have zero effect, regardless of key name. Confirm they now
-        actually resolve -- host, username, AND password."""
-        args = Namespace()
-        config_obj = Mock(config={})
-
-        env = {
-            "QBT_RULES_QBITTORRENT_HOST": "http://env-host:8080",
-            "QBT_RULES_QBITTORRENT_USERNAME": "envuser",
-            "QBT_RULES_QBITTORRENT_PASSWORD": "envpass",
-        }
-        with patch.dict(os.environ, env):
-            config = get_qbittorrent_config(args, config_obj)
-
-        assert config["host"] == "http://env-host:8080"
-        assert config["username"] == "envuser"
-        assert config["password"] == "envpass"  # noqa: S105  test fixture value
-
-    def test_uses_file_env_var_for_password(self, tmp_path):
-        """QBT_RULES_QBITTORRENT_PASSWORD_FILE, the documented
-        production-secrets pattern -- also used to have zero effect."""
-        secret_file = tmp_path / "qbt_password"
-        secret_file.write_text("file-secret-pass\n")
-
-        args = Namespace()
-        config_obj = Mock(config={})
-
-        with patch.dict(os.environ, {"QBT_RULES_QBITTORRENT_PASSWORD_FILE": str(secret_file)}):
-            config = get_qbittorrent_config(args, config_obj)
-
-        assert config["password"] == "file-secret-pass"  # noqa: S105  test fixture value
-
-    def test_legacy_user_pass_keys_no_longer_work(self):
-        """The undocumented 'user'/'pass' config.yml key aliases are gone
-        -- a config.yml using only those now resolves to the default,
-        not the value that was actually set."""
-        args = Namespace()
-        config_obj = Mock(
-            config={
-                "qbittorrent": {
-                    "user": "legacyuser",
-                    "pass": "legacypass",
-                }
-            }
-        )
-
-        config = get_qbittorrent_config(args, config_obj)
-
-        assert config["username"] == "admin"  # default, NOT 'legacyuser'
-        assert config["password"] == ""  # default, NOT 'legacypass'
-
-
-class TestGetServerConfig:
-    """Test get_server_config() function"""
-
-    def test_returns_default_config(self):
-        """Should return default configuration when no args provided"""
-        args = Namespace()
-        config_obj = Mock(config={})
-
-        config = get_server_config(args, config_obj)
-
-        assert config["host"] == "0.0.0.0"  # noqa: S104  test fixture value
-        assert config["port"] == 5000
-        assert config["api_key"] is None
-        assert config["workers"] == 1
-
-    def test_uses_args_values(self):
-        """Should use CLI argument values when provided"""
+    def test_flags_win_and_are_named_as_the_source(self):
         args = Namespace(
             server_host="127.0.0.1",
-            server_port="8000",
-            server_api_key="test-key",
-            server_workers="2",
-        )
-        config_obj = Mock(config={})
-
-        config = get_server_config(args, config_obj)
-
-        assert config["host"] == "127.0.0.1"
-        assert config["port"] == 8000
-        assert config["api_key"] == "test-key"
-        assert config["workers"] == 2
-
-    def test_uses_config_file_values(self):
-        """Should use config file values when args not provided"""
-        args = Namespace()
-        config_obj = Mock(
-            config={
-                "server": {
-                    "host": "192.168.1.1",
-                    "port": 9000,
-                    "api_key": "config-key",
-                    "workers": 4,
-                }
-            }
-        )
-
-        config = get_server_config(args, config_obj)
-
-        assert config["host"] == "192.168.1.1"
-        assert config["port"] == 9000
-        assert config["api_key"] == "config-key"
-        assert config["workers"] == 4
-
-    def test_editor_enabled_defaults_on(self):
-        config = get_server_config(Namespace(), Mock(config={}))
-        assert config["editor_enabled"] is True
-
-    def test_editor_enabled_from_config_and_env(self, monkeypatch):
-        config_obj = Mock(config={"server": {"editor_enabled": False}})
-        assert get_server_config(Namespace(), config_obj)["editor_enabled"] is False
-
-        monkeypatch.setenv("QBT_RULES_SERVER_EDITOR_ENABLED", "true")
-        assert get_server_config(Namespace(), config_obj)["editor_enabled"] is True
-
-
-class TestGetNotificationsConfig:
-    """Test get_notifications_config() function"""
-
-    def test_returns_default_config(self):
-        """Should return defaults when nothing is set"""
-        args = Namespace()
-        config_obj = Mock(config={})
-
-        config = get_notifications_config(args, config_obj)
-
-        assert config["webhook_url"] is None
-        assert config["service"] == "generic"
-
-    def test_uses_config_file_values(self):
-        """Should use config file values when present"""
-        args = Namespace()
-        config_obj = Mock(
-            config={
-                "notifications": {
-                    "webhook_url": "https://example.com/webhook",
-                    "service": "discord",
-                }
-            }
-        )
-
-        config = get_notifications_config(args, config_obj)
-
-        assert config["webhook_url"] == "https://example.com/webhook"
-        assert config["service"] == "discord"
-
-
-class TestGetClientConfig:
-    """Test get_client_config() function"""
-
-    def test_returns_default_config(self):
-        """Should return default configuration when no args provided"""
-        args = Namespace()
-        config_obj = Mock(config={})
-
-        config = get_client_config(args, config_obj)
-
-        assert config["server_url"] == "http://localhost:5000"
-        assert config["api_key"] is None
-
-    def test_uses_args_values(self):
-        """Should use CLI argument values when provided"""
-        args = Namespace(client_server_url="http://server.local:8000", client_api_key="client-key")
-        config_obj = Mock(config={})
-
-        config = get_client_config(args, config_obj)
-
-        assert config["server_url"] == "http://server.local:8000"
-        assert config["api_key"] == "client-key"
-
-    def test_falls_back_to_server_key_when_unset(self, monkeypatch):
-        """docker exec inside the server's container: only the server key is set"""
-        monkeypatch.delenv("QBT_RULES_CLIENT_API_KEY", raising=False)
-        monkeypatch.setenv("QBT_RULES_SERVER_API_KEY", "server-key")
-
-        config = get_client_config(Namespace(), Mock(config={}))
-
-        assert config["api_key"] == "server-key"
-
-    def test_falls_back_when_client_key_is_the_shipped_placeholder(self, monkeypatch):
-        """The copied config.default.yml carries a placeholder client key"""
-        monkeypatch.delenv("QBT_RULES_CLIENT_API_KEY", raising=False)
-        monkeypatch.setenv("QBT_RULES_SERVER_API_KEY", "server-key")
-        config_obj = Mock(
-            config={
-                "client": {"api_key": PLACEHOLDER_API_KEY},
-                "server": {"api_key": PLACEHOLDER_API_KEY},
-            }
-        )
-
-        config = get_client_config(Namespace(), config_obj)
-
-        assert config["api_key"] == "server-key"
-
-    def test_explicit_client_key_wins_over_server_key(self, monkeypatch):
-        monkeypatch.setenv("QBT_RULES_CLIENT_API_KEY", "client-key")
-        monkeypatch.setenv("QBT_RULES_SERVER_API_KEY", "server-key")
-
-        config = get_client_config(Namespace(), Mock(config={}))
-
-        assert config["api_key"] == "client-key"
-
-    def test_placeholder_stays_when_no_server_key_either(self, monkeypatch):
-        monkeypatch.delenv("QBT_RULES_CLIENT_API_KEY", raising=False)
-        monkeypatch.delenv("QBT_RULES_SERVER_API_KEY", raising=False)
-        config_obj = Mock(config={"client": {"api_key": PLACEHOLDER_API_KEY}})
-
-        config = get_client_config(Namespace(), config_obj)
-
-        assert config["api_key"] == PLACEHOLDER_API_KEY
-
-    def test_shipped_default_config_has_the_placeholder(self):
-        """PLACEHOLDER_API_KEY must track config.default.yml"""
-        import yaml
-
-        from tests.examples import DEFAULT_CONFIG
-
-        default = yaml.safe_load(DEFAULT_CONFIG.read_text())
-        assert default["client"]["api_key"] == PLACEHOLDER_API_KEY
-
-
-class TestGetQueueConfig:
-    """Test get_queue_config() function"""
-
-    def test_returns_default_config(self):
-        """Should return default configuration when no args provided"""
-        args = Namespace()
-        config_obj = Mock(config={})
-
-        config = get_queue_config(args, config_obj)
-
-        assert config["backend"] == "sqlite"
-        assert config["sqlite_path"] == "/var/lib/qbt-rules/qbt-rules.db"
-        assert config["redis_url"] == "redis://localhost:6379/0"
-        assert config["cleanup_after"] == 7 * 86400
-
-    def test_cleanup_after_from_config_file(self):
-        """queue.cleanup_after is parsed to seconds, and 0 disables cleanup"""
-        args = Namespace()
-
-        config = get_queue_config(args, Mock(config={"queue": {"cleanup_after": "2w"}}))
-        assert config["cleanup_after"] == 14 * 86400
-
-        config = get_queue_config(args, Mock(config={"queue": {"cleanup_after": 0}}))
-        assert config["cleanup_after"] is None
-
-    def test_uses_args_values(self):
-        """Should use CLI argument values when provided"""
-        args = Namespace(
+            server_port=8080,
+            server_api_key="cli-key",
+            server_workers=2,
+            client_server_url="http://remote:5000",
+            client_api_key="client-key",
             queue_backend="redis",
-            queue_sqlite_path="/tmp/test.db",  # noqa: S108  test fixture value
-            queue_redis_url="redis://redis:6379/1",
+            queue_sqlite_path="/srv/q.db",
+            queue_redis_url="redis://r:6379/2",
+            log_level="DEBUG",
+            trace=True,
+            dry_run=True,
         )
-        config_obj = Mock(config={})
+        env = {"QBT_RULES_LISTEN_PORT": "9000", "QBT_RULES_SERVER_API_KEY": "env-key"}
+        s = make_config(args, env).settings
+        assert (s.host, s.port, s.workers) == ("127.0.0.1", 8080, 2)
+        assert s.api_key.reveal() == "cli-key"
+        assert s.client_api_key.reveal() == "client-key"
+        assert (s.client_server_url, s.queue_backend) == ("http://remote:5000", "redis")
+        assert s.sqlite_path == Path("/srv/q.db")
+        assert s.redis_url.reveal() == "redis://r:6379/2"
+        assert (s.log_level, s.trace_mode, s.dry_run) == ("DEBUG", True, True)
+        assert s.sources["listen.port"] == "--server-port"
+        assert s.sources["dry_run"] == "--dry-run"
+        assert s.problems == ()
 
-        config = get_queue_config(args, config_obj)
+    def test_false_flags_leave_the_settings(self):
+        args = Namespace(trace=False, dry_run=False)
+        s = make_config(args, {"QBT_RULES_DRY_RUN": "true"}).settings
+        assert (s.dry_run, s.trace_mode) == (True, False)
 
-        assert config["backend"] == "redis"
-        assert config["sqlite_path"] == "/tmp/test.db"  # noqa: S108  test fixture value
-        assert config["redis_url"] == "redis://redis:6379/1"
+
+class TestGetConfigDicts:
+    """The plain dicts the legacy server, worker and engine take"""
+
+    def test_logging(self):
+        config = make_config(environ={"QBT_RULES_LOGGING_FILE": "qbt.log"})
+        assert get_logging_config(Namespace(serve=True), config) == {
+            "level": "INFO",
+            "file": Path("/var/lib/qbt-rules/qbt.log"),
+            "trace_mode": False,
+            "http_access": False,
+            "client_mode": False,
+            "max_bytes": 10 * 1024 * 1024,
+            "backup_count": 5,
+        }
+        assert get_logging_config(Namespace(), make_config())["file"] is None
+        assert get_logging_config(Namespace(), make_config())["client_mode"] is True
+
+    def test_qbittorrent_password_is_revealed_here(self):
+        env = {"QBT_RULES_QBITTORRENT_PASSWORD": "pw", "QBT_RULES_QBITTORRENT_HOST": "http://q"}
+        assert get_qbittorrent_config(Namespace(), make_config(environ=env)) == {
+            "host": "http://q",
+            "username": "admin",
+            "password": "pw",
+        }
+
+    def test_server(self):
+        assert get_server_config(Namespace(), make_config()) == {
+            "host": "0.0.0.0",  # noqa: S104  the default
+            "port": 5000,
+            "api_key": "",
+            "workers": 1,
+            "editor_enabled": True,
+        }
+        env = {"QBT_RULES_SERVER_EDITOR_ENABLED": "false"}
+        assert get_server_config(Namespace(), make_config(environ=env))["editor_enabled"] is False
+
+    def test_queue(self):
+        assert get_queue_config(Namespace(), make_config()) == {
+            "backend": "sqlite",
+            "sqlite_path": "/var/lib/qbt-rules/qbt-rules.db",
+            "redis_url": "redis://localhost:6379/0",
+            "cleanup_after": 7 * 86400,
+        }
+        env = {"QBT_RULES_QUEUE_CLEANUP_AFTER": "0"}
+        assert get_queue_config(Namespace(), make_config(environ=env))["cleanup_after"] is None
+
+    def test_notifications(self):
+        assert get_notifications_config(Namespace(), make_config()) == {
+            "webhook_url": None,
+            "service": "generic",
+        }
+
+    def test_integrations(self):
+        env = {
+            "QBT_RULES_INTEGRATIONS_SONARR_URL": "http://sonarr:8989",
+            "QBT_RULES_INTEGRATIONS_SONARR_API_KEY_FILE": "/dev/null",
+        }
+        assert get_integrations_config(Namespace(), make_config(environ=env)) == {
+            "sonarr": {"url": "http://sonarr:8989", "api_key": None},
+            "radarr": {"url": None, "api_key": None},
+            "trackie": {"url": None, "max_age": 3 * 3600, "timeout": 10.0},
+        }
+
+    def test_metrics(self):
+        assert get_metrics_config(Namespace(), make_config()) == {
+            "enabled": False,
+            "multiproc_dir": "/tmp/qbt-rules-metrics",  # noqa: S108  the default
+        }
+
+    @pytest.mark.parametrize(
+        ("environ", "expected"),
+        [
+            ({}, ""),
+            ({"QBT_RULES_SERVER_API_KEY": "server"}, "server"),
+            ({"QBT_RULES_SERVER_API_KEY": "server", "QBT_RULES_CLIENT_API_KEY": "own"}, "own"),
+            (
+                {
+                    "QBT_RULES_SERVER_API_KEY": "server",
+                    "QBT_RULES_CLIENT_API_KEY": PLACEHOLDER_API_KEY,
+                },
+                "server",
+            ),
+        ],
+    )
+    def test_client_key_falls_back_to_the_server_key(self, environ, expected):
+        # The usual client is `docker exec <container> qbt-rules ...`, beside the server's key
+        client = get_client_config(Namespace(), make_config(environ=environ))
+        assert client == {"server_url": "http://localhost:5000", "api_key": expected}
 
 
 class TestRunServerMode:
@@ -711,17 +224,7 @@ class TestRunServerMode:
             queue_sqlite_path="/tmp/test.db",  # noqa: S108  test fixture value
             queue_redis_url=None,
         )
-        config_obj = Mock(
-            config={
-                "qbittorrent": {
-                    "host": "http://localhost:8080",
-                    "username": "admin",
-                    "password": "password",
-                }
-            },
-            schedule=[],
-            config_dir=Path("/config"),
-        )
+        config_obj = make_config(args, {"QBT_RULES_QBITTORRENT_PASSWORD": "password"})
 
         run_server_mode(args, config_obj, {"http_access": False})
 
@@ -749,7 +252,7 @@ class TestRunServerMode:
             integrations_config={
                 "sonarr": {"url": None, "api_key": None},
                 "radarr": {"url": None, "api_key": None},
-                "trackie": {"url": None, "max_age": None, "timeout": None},
+                "trackie": {"url": None, "max_age": 3 * 3600, "timeout": 10.0},
             },
             cleanup_after=7 * 86400,  # queue.cleanup_after default (7d)
         )
@@ -780,26 +283,58 @@ class TestRunServerMode:
         )
 
     @patch("qbt_rules.legacy_cli.logger")
-    @patch("qbt_rules.legacy_cli.sys.exit")
-    def test_exits_without_api_key(self, mock_exit, mock_logger):
-        """Should exit if server API key not provided"""
-        # Make sys.exit raise SystemExit to stop execution
-        mock_exit.side_effect = SystemExit(1)
+    @patch("qbt_rules.web.run_server")
+    @patch("qbt_rules.web.create_app")
+    @patch("qbt_rules.scheduler.Scheduler")
+    @patch("qbt_rules.worker.Worker")
+    @patch("qbt_rules.queue_manager.create_queue")
+    @patch("qbt_rules.legacy_cli.QBittorrentAPI")
+    def test_starts_without_api_key(
+        self,
+        mock_api_class,
+        mock_create_queue,
+        mock_worker_class,
+        mock_scheduler_class,
+        mock_create_app,
+        mock_run_server,
+        mock_logger,
+    ):
+        """With no API key the server still starts (the image's smoke test runs it with no
+        configuration): the problem is logged, and /api/health reports it"""
+        mock_create_queue.return_value = Mock()
 
-        args = Namespace(
-            server_host="0.0.0.0",  # noqa: S104  test fixture value
-            server_port=5000,
-            server_api_key=None,  # No API key
-            server_workers=1,
-        )
-        config_obj = Mock(config={})
+        run_server_mode(Namespace(), make_config(), {"http_access": False})
 
-        with pytest.raises(SystemExit):
-            run_server_mode(args, config_obj, {"http_access": False})
+        assert mock_run_server.called
+        assert mock_create_app.call_args.kwargs["api_key"] == ""
+        logged = " ".join(str(c.args[0]) for c in mock_logger.error.call_args_list)
+        assert "server.api_key is not set" in logged
 
-        mock_exit.assert_called_once_with(1)
-        # Verify error was logged
-        assert mock_logger.error.called
+    @patch("qbt_rules.legacy_cli.logger")
+    @patch("qbt_rules.web.run_server")
+    @patch("qbt_rules.web.create_app")
+    @patch("qbt_rules.scheduler.Scheduler")
+    @patch("qbt_rules.worker.Worker")
+    @patch("qbt_rules.queue_manager.create_queue")
+    @patch("qbt_rules.legacy_cli.QBittorrentAPI")
+    def test_warns_about_the_port_alias(
+        self,
+        mock_api_class,
+        mock_create_queue,
+        mock_worker_class,
+        mock_scheduler_class,
+        mock_create_app,
+        mock_run_server,
+        mock_logger,
+    ):
+        """QBT_RULES_SERVER_PORT works, but the image's healthcheck reads QBT_RULES_LISTEN_PORT"""
+        mock_create_queue.return_value = Mock()
+        env = {"QBT_RULES_SERVER_PORT": "8080", "QBT_RULES_SERVER_API_KEY": "k"}
+
+        run_server_mode(Namespace(), make_config(environ=env), {"http_access": False})
+
+        assert mock_run_server.call_args.kwargs["port"] == 8080
+        assert "set QBT_RULES_LISTEN_PORT instead" in mock_logger.warning.call_args.args[0]
 
     @patch("qbt_rules.legacy_cli.logger")
     @patch("qbt_rules.web.run_server")
@@ -847,7 +382,7 @@ class TestRunServerMode:
             queue_sqlite_path="/tmp/test.db",  # noqa: S108  test fixture value
             queue_redis_url=None,
         )
-        config_obj = Mock(config={}, schedule=[], config_dir=Path("/config"))
+        config_obj = make_config(args)
 
         run_server_mode(args, config_obj, {"http_access": False})
 
@@ -889,7 +424,7 @@ class TestRunClientMode:
         """--dry-run used to be dropped, so the job ran for real"""
         mock_post.return_value = self._accepted({"dry_run": True})
 
-        run_client_mode(self._args(dry_run=True), Mock(config={}))
+        run_client_mode(*with_config(self._args(dry_run=True)))
 
         assert mock_post.call_args[1]["params"]["dry_run"] == "true"
 
@@ -898,7 +433,7 @@ class TestRunClientMode:
     def test_no_dry_run_param_without_flag(self, mock_post, mock_logger):
         mock_post.return_value = self._accepted({"dry_run": False})
 
-        run_client_mode(self._args(), Mock(config={}))
+        run_client_mode(*with_config(self._args()))
 
         assert "dry_run" not in mock_post.call_args[1]["params"]
 
@@ -911,7 +446,7 @@ class TestRunClientMode:
         mock_delete.return_value = Mock(status_code=200)
 
         with pytest.raises(SystemExit) as exc:
-            run_client_mode(self._args(dry_run=True, wait=True), Mock(config={}))
+            run_client_mode(*with_config(self._args(dry_run=True, wait=True)))
 
         assert exc.value.code == 1
         assert mock_delete.call_args[0][0] == "http://localhost:5000/api/jobs/job-123"
@@ -941,7 +476,7 @@ class TestRunClientMode:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         run_client_mode(args, config_obj)
 
@@ -975,7 +510,7 @@ class TestRunClientMode:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         with pytest.raises(SystemExit):
             run_client_mode(args, config_obj)
@@ -997,7 +532,7 @@ class TestRunClientMode:
             client_server_url="http://localhost:5000",
             client_api_key=None,  # No API key
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         with pytest.raises(SystemExit):
             run_client_mode(args, config_obj)
@@ -1025,7 +560,7 @@ class TestRunClientMode:
             client_server_url="http://localhost:5000",
             client_api_key="wrong-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         with pytest.raises(SystemExit):
             run_client_mode(args, config_obj)
@@ -1055,7 +590,7 @@ class TestRunClientMode:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         run_client_mode(args, config_obj)
 
@@ -1081,7 +616,7 @@ class TestRunClientMode:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         with pytest.raises(SystemExit):
             run_client_mode(args, config_obj)
@@ -1108,7 +643,7 @@ class TestRunClientMode:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         with pytest.raises(SystemExit):
             run_client_mode(args, config_obj)
@@ -1131,7 +666,7 @@ class TestRunClientMode:
         args = Namespace(
             wait=False, client_server_url="http://localhost:5000", client_api_key="test-key"
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         run_client_mode(args, config_obj)
 
@@ -1159,7 +694,7 @@ class TestRunClientMode:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         with pytest.raises(SystemExit):
             run_client_mode(args, config_obj)
@@ -1283,7 +818,7 @@ class TestListJobsCommand:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         list_jobs_command(args, config_obj)
 
@@ -1328,7 +863,7 @@ class TestListJobsCommand:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         list_jobs_command(args, config_obj)
 
@@ -1347,7 +882,7 @@ class TestListJobsCommand:
         args = Namespace(
             output="table", client_server_url="http://localhost:5000", client_api_key="test-key"
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         list_jobs_command(args, config_obj)
 
@@ -1362,7 +897,7 @@ class TestListJobsCommand:
         mock_get.side_effect = Exception("Network error")
 
         args = Namespace(client_server_url="http://localhost:5000", client_api_key="test-key")
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         list_jobs_command(args, config_obj)
 
@@ -1396,7 +931,7 @@ class TestJobStatusCommand:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         job_status_command(args, config_obj)
 
@@ -1428,7 +963,7 @@ class TestJobStatusCommand:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         job_status_command(args, config_obj)
 
@@ -1448,7 +983,7 @@ class TestJobStatusCommand:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         job_status_command(args, config_obj)
 
@@ -1467,7 +1002,7 @@ class TestJobStatusCommand:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         job_status_command(args, config_obj)
 
@@ -1496,7 +1031,7 @@ class TestJobStatusCommand:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         job_status_command(args, config_obj)
 
@@ -1522,7 +1057,7 @@ class TestCancelJobCommand:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         cancel_job_command(args, config_obj)
 
@@ -1551,7 +1086,7 @@ class TestCancelJobCommand:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         cancel_job_command(args, config_obj)
 
@@ -1572,7 +1107,7 @@ class TestCancelJobCommand:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         cancel_job_command(args, config_obj)
 
@@ -1592,7 +1127,7 @@ class TestCancelJobCommand:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         cancel_job_command(args, config_obj)
 
@@ -1611,7 +1146,7 @@ class TestCancelJobCommand:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         cancel_job_command(args, config_obj)
 
@@ -1646,7 +1181,7 @@ class TestStatsCommand:
         args = Namespace(
             output="table", client_server_url="http://localhost:5000", client_api_key="test-key"
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         stats_command(args, config_obj)
 
@@ -1685,7 +1220,7 @@ class TestStatsCommand:
         args = Namespace(
             output="json", client_server_url="http://localhost:5000", client_api_key="test-key"
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         stats_command(args, config_obj)
 
@@ -1701,7 +1236,7 @@ class TestStatsCommand:
         mock_get.return_value = mock_response
 
         args = Namespace(client_server_url="http://localhost:5000", client_api_key="test-key")
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         stats_command(args, config_obj)
 
@@ -1716,7 +1251,7 @@ class TestStatsCommand:
         mock_get.side_effect = Exception("Network error")
 
         args = Namespace(client_server_url="http://localhost:5000", client_api_key="test-key")
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         stats_command(args, config_obj)
 
@@ -1743,7 +1278,7 @@ class TestRunClientModeEdgeCases:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         with pytest.raises(SystemExit):
             run_client_mode(args, config_obj)
@@ -1791,7 +1326,7 @@ class TestCommandEdgeCases:
         mock_get.return_value = mock_response
 
         args = Namespace(client_server_url="http://localhost:5000", client_api_key="test-key")
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         list_jobs_command(args, config_obj)
 
@@ -1811,7 +1346,7 @@ class TestCommandEdgeCases:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         job_status_command(args, config_obj)
 
@@ -1831,7 +1366,7 @@ class TestCommandEdgeCases:
             client_server_url="http://localhost:5000",
             client_api_key="test-key",
         )
-        config_obj = Mock(config={})
+        config_obj = make_config(args)
 
         cancel_job_command(args, config_obj)
 

@@ -22,13 +22,13 @@ From source, for development or a bare-metal install:
 uv tool install git+https://github.com/andronics/qbt-rules
 ```
 
-Bare metal, the config directory is `./config` if it exists, otherwise `/var/lib/qbt-rules`; `--config-dir DIR` or `CONFIG_DIR` picks another.
+Bare metal, the config file is `/etc/qbt-rules/config.yaml` (missing is fine), with `rules.yml` beside it; `--config FILE` or `QBT_RULES_CONFIG` picks another. State goes in `/var/lib/qbt-rules` (`QBT_RULES_STATE_DIR`).
 
 ### Docker Compose
 
 ```sh
 # Create directory structure
-mkdir -p qbt-rules/state
+mkdir -p qbt-rules/config qbt-rules/state
 cd qbt-rules
 ```
 
@@ -43,7 +43,8 @@ services:
     ports:
       - "127.0.0.1:5000:5000"
     volumes:
-      - ./state:/var/lib/qbt-rules
+      - ./config:/etc/qbt-rules      # rules.yml (and config.yaml, if you want one)
+      - ./state:/var/lib/qbt-rules   # the job queue and the rules editor's history
     environment:
       # Server configuration
       QBT_RULES_SERVER_API_KEY: "your-secure-api-key-here"  # Change this!
@@ -57,10 +58,11 @@ services:
       QBT_RULES_QUEUE_BACKEND: "sqlite"
 
       # Start in dry-run: rules only log what they would do. Set to "false"
-      # once you've reviewed rules.yml -- the default rules include deletes
+      # once you've reviewed rules.yml
       QBT_RULES_DRY_RUN: "true"
 
-      # User/group the container runs as and that owns ./state
+      # User/group the container runs as and that owns ./state (give it
+      # ./config too, so the rules editor can save rules.yml)
       # (default 1000:1000; Unraid uses 99:100)
       # PUID: 1000
       # PGID: 1000
@@ -70,9 +72,9 @@ The repository's [contrib/docker/compose.yml](https://github.com/andronics/qbt-r
 
 The CLI client (`docker exec qbt-rules qbt-rules ...`) uses the server's API key automatically, so one key is enough.
 
-The volume is the image's state directory, `/var/lib/qbt-rules`. On first run, the packaged default configuration files are copied into it as `config.yml` and `rules.yml` if those don't already exist — you don't need to fetch example configs yourself before starting the container. The job queue (`qbt-rules.db`), the log (`qbt-rules.log`) and the rules editor's `.history/` live there too.
+Config lives in `/etc/qbt-rules` (`config.yaml` is optional: the variables above are enough, and `rules.yml` sits beside it); state lives in `/var/lib/qbt-rules`, the image's volume (the job queue, `qbt-rules.db`, and the rules editor's `.history/`). The log goes to the console (`docker compose logs`). Nothing is copied in on first start: with no `rules.yml` there are no rules until you write one, in `./config/rules.yml` or in the dashboard's rules editor, which creates the file on its first save. [contrib/rules.example.yml](https://github.com/andronics/qbt-rules/blob/main/contrib/rules.example.yml) is a starting point.
 
-> **Upgrading from a release that used `/config`?** That volume is gone, with no fallback: mount the old directory at `/var/lib/qbt-rules` instead. See [Deployment](Deployment#upgrading).
+> **Upgrading from a release that used `/config`?** That volume is no longer read, with no fallback. See [In-Depth Configuration](In-Depth-Configuration#migrating-from-010x) for which file goes where.
 
 ## First run
 
@@ -98,7 +100,7 @@ docker compose logs -f qbt-rules
 
 ### Your First Rule
 
-Edit `state/rules.yml` (mounted from your host at `./state/rules.yml`), or open the dashboard's rules editor at `http://localhost:5000/rules/edit`:
+Edit `config/rules.yml` (mounted at `/etc/qbt-rules/rules.yml`), or open the dashboard's rules editor at `http://localhost:5000/rules/edit`:
 
 ```yaml
 rules:

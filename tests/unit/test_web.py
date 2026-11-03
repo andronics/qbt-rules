@@ -1925,7 +1925,7 @@ class TestEditorRoutes:
 
     @pytest.fixture
     def config_dir(self, tmp_path):
-        (tmp_path / "config.yml").write_text(
+        (tmp_path / "config.yaml").write_text(
             "server:\n  api_key: hunter2\nqbittorrent:\n  host: http://localhost:8080\n"
             "schedule:\n  - {cron: '0 * * * *', context: hourly}\n"
         )
@@ -1934,9 +1934,11 @@ class TestEditorRoutes:
 
     @pytest.fixture
     def real_config(self, config_dir):
-        from qbt_rules.config_loader import Config
+        from qbt_rules.config_loader import load_config
 
-        return Config(config_dir)
+        # The editor's history goes in the state directory
+        environ = {"QBT_RULES_STATE_DIR": str(config_dir / "state")}
+        return load_config(config_dir / "config.yaml", environ)
 
     @pytest.fixture
     def make_client(self, mock_queue, mock_worker, real_config):
