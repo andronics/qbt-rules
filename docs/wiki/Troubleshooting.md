@@ -188,12 +188,12 @@ ConnectionError: Failed to connect to qBittorrent at http://localhost:8080
 **Symptoms:** a job fails with
 
 ```text
-RequestTimeoutError: qBittorrent did not answer in time (Host: http://qbittorrent:8080; Timeout: 10 s to connect, 60 s to answer; Fix: ...)
+RequestTimeoutError: qBittorrent did not answer in time (Host: http://qbittorrent:8080; Timeout: 10 s to connect, 30 s to answer; Fix: ...)
 ```
 
 or an action is logged as failed with the same message.
 
-Every request to qBittorrent has a timeout (from 0.11.1): 10 s to connect and 60 s for the answer. qbittorrent-api retries a failed request, so a qBittorrent that accepts connections but never answers fails the job after several minutes, rather than holding the worker for good. Check that its Web UI loads and that it isn't overloaded (a very large library, a slow disk, a recheck of many torrents). The timeout isn't configurable.
+Every request to qBittorrent has a timeout (from 0.11.1): 10 s to connect and 30 s for the answer. qbittorrent-api retries a failed request, so a qBittorrent that accepts connections but never answers fails the job after about 4 minutes, rather than holding the worker for good. Check that its Web UI loads and that it isn't overloaded (a very large library, a slow disk, a recheck of many torrents). The timeout isn't configurable.
 
 ### Issue: Rules not matching expected torrents
 

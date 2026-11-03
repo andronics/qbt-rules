@@ -29,7 +29,7 @@ class TestQBittorrentAPIv4Init:
             host="http://localhost:8080",
             username="admin",
             password="password",  # noqa: S106  test fixture value
-            REQUESTS_ARGS={"timeout": (10.0, 60.0)},
+            REQUESTS_ARGS={"timeout": (10.0, 30.0)},
         )
 
     @patch("qbt_rules.qbittorrent.qbittorrentapi.Client")

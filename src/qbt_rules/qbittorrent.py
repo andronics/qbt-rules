@@ -25,8 +25,10 @@ logger = get_logger(__name__)
 # torrents/info on a large library can take a while on a busy server. qbittorrent-api
 # retries (urllib3's retry, its own second attempt, and the HTTP/HTTPS detection before
 # each), so a qBittorrent that accepts connections but never answers fails a call after
-# several reads: measured, about 4 connect and 6 read timeouts, some 6-7 minutes.
-REQUEST_TIMEOUT = (10.0, 60.0)
+# several waits: measured against a socket that accepts and never answers, 6 read timeouts
+# (HTTP probes and login) and 4 connect timeouts (the HTTPS probes' TLS handshakes), so
+# 6 x 30 + 4 x 10 = 220 s, about 3.7 minutes.
+REQUEST_TIMEOUT = (10.0, 30.0)
 
 
 def _is_timeout(e: qbittorrentapi.APIConnectionError) -> bool:
