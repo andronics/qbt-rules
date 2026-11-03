@@ -9,8 +9,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    # TODO(migrate/templates): the integration branch's PRs; remove when it merges to main
-    branches: [main, migrate/templates]
+    branches: [main]
   workflow_dispatch:
 
 permissions:

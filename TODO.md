@@ -6,12 +6,9 @@ v0.4.0 architecture notes that were in `PLAN.md` are in the git history.
 
 ## Open
 
-- [ ] Finish the template migration on `migrate/templates`: bring the templates up to date (template-python
-  v2.4.2 or newer). Then drop the `migrate/templates` branch from the
-  `pull_request` triggers in base-ci.yml, container-build.yml and python-wiki.yml (each marked
-  `TODO(migrate/templates)`).
-- [ ] #28 item 7 (Redis queue depth counts only the pending list) is still open.
-- [ ] Write docs/design/0001-initial-design.md (docs/ai/prompts.md, prompt 1)
+- [ ] Redis queue depth counts only the pending list, so a status change that bypasses dequeue or
+  cancel makes the depth disagree with the status counts (#28 item 7; #28 is closed, so this wants
+  its own issue).
 - [ ] Annotate the legacy tests for strict mypy and empty the override in pyproject.toml (#35)
 
 - **Kubernetes-style `kind:`/`metadata:`/`spec:` envelope for rules.yml
@@ -43,7 +40,7 @@ v0.4.0 architecture notes that were in `PLAN.md` are in the git history.
   resources, and ruamel.yaml round-tripping to patch them without losing
   comments (PyYAML stays the parser that decides meaning; ruamel reads some
   scalars differently). Other follow-ups:
-  - config.yml editing. Read-only today: it holds credentials (shown
+  - config.yaml editing. Read-only today: it holds credentials (shown
     masked), is only read at startup, and a bad save stops the server from
     starting instead of leaving old rules running. Needs masked values
     merged back on save, a restart-required flow, and stricter validation

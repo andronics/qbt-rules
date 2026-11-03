@@ -208,6 +208,8 @@ Read the [CHANGELOG](https://github.com/andronics/qbt-rules/blob/main/CHANGELOG.
 
 ### From 0.10.x (`/config`)
 
+Everything that changed in 0.11, the settings, the CLI and the qBittorrent hook line included, is on [Upgrading to 0.11](Upgrading-to-0.11). The Compose steps:
+
 0.11 no longer reads `/config`, and doesn't fall back to it: `config.yaml` is in `/etc/qbt-rules`, and `rules.yml`, the database and the editor's history are in `/var/lib/qbt-rules`. [In-Depth Configuration](In-Depth-Configuration#migrating-from-010x) lists which file goes where, the exact `config.yaml` edits and which variables changed. With Compose:
 
 1. Stop the container: `docker compose down`. (Stopped, the database can be copied as a file; see step 2.)
