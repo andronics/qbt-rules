@@ -33,7 +33,7 @@ The image's volume is `/var/lib/qbt-rules`; mount your config directory at `/etc
 
 **Starting without an API key.** The server starts with no configuration at all (the image's smoke test runs it that way). Without `server.api_key` it refuses every authenticated request with a `503` that says what to set, the dashboard's login page says so too, and `/api/health` (still `200`: the process is fine) lists it under `config_problems`. The placeholder key the 0.10.x default `config.yml` shipped with (`your-secure-api-key-here-...`) is public, so it counts as unset. qBittorrent credentials aren't checked at startup: qBittorrent can allow logins without a password, and a wrong one shows up as a failed job.
 
-**Listen port and the healthcheck.** The image's `HEALTHCHECK` polls `/api/health` on `QBT_RULES_LISTEN_PORT` (default `5000`). `listen.port` is the setting's name; `server.port` and `QBT_RULES_SERVER_PORT` (the 0.10.x names) still work as aliases, but the healthcheck doesn't read them, so use `QBT_RULES_LISTEN_PORT`. The server logs a warning when the alias is used, and refuses to start if both are set to different values. `server.host` / `QBT_RULES_SERVER_HOST` are aliases of `listen.host` the same way.
+**Listen port and the healthcheck.** The image's `HEALTHCHECK` polls `/healthz` (liveness, which depends on nothing) on `QBT_RULES_LISTEN_PORT` (default `5000`); `/readyz` and `/api/health` are described in [Deployment](Deployment#probes). `listen.port` is the setting's name; `server.port` and `QBT_RULES_SERVER_PORT` (the 0.10.x names) still work as aliases, but the healthcheck doesn't read them, so use `QBT_RULES_LISTEN_PORT`. The server logs a warning when the alias is used, and refuses to start if both are set to different values. `server.host` / `QBT_RULES_SERVER_HOST` are aliases of `listen.host` the same way.
 
 **`${VAR}` in the file.** `${VAR}` and `${VAR:-default}` inside `config.yaml` are replaced with that environment variable (or the default, or nothing). A `QBT_RULES_*` variable for the setting still wins over the expanded value.
 
@@ -52,7 +52,7 @@ Generated from the code: don't edit the table, run `uv run scripts/gen-wiki.py`.
 | `dry_run` | `QBT_RULES_DRY_RUN` | `False` | Log what rules would do without doing it. Replaces 0.10.x's `engine.dry_run`. |
 | `rules.file` | `QBT_RULES_RULES_FILE` | *(none)* | The rules file. Empty: `rules.yml` beside the config file (`/etc/qbt-rules/rules.yml`). A relative path is relative to the config file's directory. It must be writable for the dashboard's editor to save it. |
 | `server.api_key` | `QBT_RULES_SERVER_API_KEY` | *(none)* | Key for the HTTP API and the dashboard login (`openssl rand -hex 32`). Unset, the server starts but refuses every authenticated request, and `/api/health` says so. 🔒 Secret: use the `_FILE` variant. |
-| `server.workers` | `QBT_RULES_SERVER_WORKERS` | `1` | Gunicorn worker processes (1 is enough for home use). |
+| `server.workers` | `QBT_RULES_SERVER_WORKERS` | `1` | Must be 1: the server is one process, so its worker and scheduler run once. Kept so a 0.10.x config that sets it to 1 still loads. |
 | `server.editor_enabled` | `QBT_RULES_SERVER_EDITOR_ENABLED` | `True` | Allow saving `rules.yml` from the dashboard's rules editor. `false` keeps it read-only. |
 | `client.server_url` | `QBT_RULES_CLIENT_SERVER_URL` | `http://localhost:5000` | Server the CLI client submits jobs to. |
 | `client.api_key` | `QBT_RULES_CLIENT_API_KEY` | *(none)* | API key the CLI client sends. Empty: `server.api_key`, right for `docker exec` into the server's own container. 🔒 Secret: use the `_FILE` variant. |
@@ -88,9 +88,11 @@ A few settings need more than a line:
 
 - **`server.editor_enabled`**: `false` keeps the rules editor read-only (it still validates). A `rules.yml` made read-only on disk (`chmod 444`) is never written either way.
 - **`queue.cleanup_after`**: finished jobs older than this are removed once at startup and then hourly.
-- **`metrics.enabled`**: needs the `metrics` extra (`uv sync --extra metrics`; the image doesn't include it). See [Metrics](Metrics). `metrics.multiproc_dir` is what makes the numbers right under `server.workers > 1`.
+- **`metrics.enabled`**: needs the `metrics` extra (`uv sync --extra metrics`; the image doesn't include it). See [Metrics](Metrics). `metrics.multiproc_dir` is where prometheus_client keeps its counters (a writable directory; cleared at startup).
 - **`logging.level`**: applies to the console and the log file. `DEBUG` logs every rule evaluation per torrent.
-- **`logging.max_bytes`**: the file is renamed to `qbt-rules.log.1` (older ones shift to `.2`, `.3`, ...) and a new one started. With `server.workers > 1` each Gunicorn worker writes the same file and only one rotates it.
+- **`logging.max_bytes`**: the file is renamed to `qbt-rules.log.1` (older ones shift to `.2`, `.3`, ...) and a new one started. The server is one process, so one handler writes and rotates it.
+- **`logging.http_access`**: off, the access log leaves out the requests that only poll (`/healthz`, `/readyz`, `/api/health`, `/metrics`, `/static/...`); on, every request is logged. Either way every logged URL has its `key=` value replaced with `[REDACTED]`.
+- **`server.workers`**: must be `1`. The server is one uvicorn process (no Gunicorn), so a 0.10.x config with a higher value is refused at startup; remove the setting.
 
 ### Migrating from 0.10.x
 
@@ -109,6 +111,7 @@ In `config.yaml`:
 - **Delete every path under `/config`**: `queue.sqlite_path`, `rules.file`, `logging.file`. The defaults already point at the new places; a path under `/config` is refused at startup.
 - **`engine.dry_run` is now `dry_run`** (top level). `engine:` is refused with that message. The variable, `QBT_RULES_DRY_RUN`, is unchanged.
 - **`server.host` and `server.port`** still work (aliases of `listen.host` and `listen.port`); rename them when convenient.
+- **`server.workers`** above `1` is refused (one process now): delete it.
 - **`server.api_key` and `client.api_key`** still holding the shipped placeholder count as unset: set a real key.
 - `version: 1` can stay or go; nothing reads it.
 

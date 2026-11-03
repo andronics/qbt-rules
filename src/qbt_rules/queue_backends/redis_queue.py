@@ -225,8 +225,15 @@ class RedisQueue(QueueManager):
 
         return jobs
 
-    def count_jobs(self, status: str | None = None) -> int:
-        """Count jobs by status"""
+    def count_jobs(self, status: str | None = None, context: str | None = None) -> int:
+        """Count jobs by status and context (the same filters as list_jobs)"""
+        if status and context:
+            members = self.redis.sinter(
+                [self._key("jobs", "status", status), self._key("jobs", "context", context)]
+            )
+            return len(cast("set[str]", members))
+        if context:
+            return self.redis.scard(self._key("jobs", "context", context))
         if status:
             return self.redis.scard(self._key("jobs", "status", status))
         else:

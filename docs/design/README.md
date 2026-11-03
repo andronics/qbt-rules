@@ -9,3 +9,4 @@ Approved (by a human) → Implemented; supersede an implemented record with a ne
 | # | Title | Status | Decision in one line |
 |---|---|---|---|
 | [0001](0001-config-on-interpose.md) | Configuration on interpose, config in /etc/qbt-rules, state in /var/lib/qbt-rules | Approved | interpose settings keeping every variable name; new paths only; starts with no configuration |
+| [0002](0002-fastapi.md) | The JSON API on FastAPI and uvicorn | Proposed | Byte-compatible JSON, ISO timestamps, `{error, message}` errors, Starlette sessions, one uvicorn process; the Flask dashboard mounted until 4d |

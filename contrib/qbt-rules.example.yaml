@@ -32,7 +32,7 @@ server:
   # REQUIRED for the API and dashboard (openssl rand -hex 32). Secret: use
   # QBT_RULES_SERVER_API_KEY_FILE.
   api_key: ""
-  # Gunicorn worker processes
+  # Must be 1: the server is one process (kept so a 0.10.x config still loads)
   workers: 1
   # Allow saving rules.yml from the dashboard's rules editor
   editor_enabled: true

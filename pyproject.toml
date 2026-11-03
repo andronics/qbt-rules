@@ -12,10 +12,10 @@ dependencies = [
     "typer>=0.15",
     "fastapi>=0.115",
     "uvicorn>=0.34",
-    # The legacy Flask/gunicorn server still serves the dashboard and JSON API
-    # (TODO(4c, 4d): FastAPI replaces Flask and gunicorn)
+    # The dashboard pages are still Flask, mounted under FastAPI through a2wsgi
+    # (TODO(4d): the FastAPI dashboard replaces both)
     "flask>=3.0",
-    "gunicorn>=21.2",
+    "a2wsgi>=1.10",
     # qBittorrent's Web API, the scheduler's cron expressions, the trackie client
     "qbittorrent-api>=2024.12.0",
     "croniter>=2.0",
@@ -29,8 +29,8 @@ redis = ["redis>=5.0"]
 metrics = ["prometheus-client>=0.20"]
 
 [project.scripts]
-# TODO(4f): the Typer CLI in qbt_rules.cli takes over (`qbt-rules serve`); until then the
-# legacy argparse CLI answers, and takes `serve` as a synonym of `--serve`.
+# TODO(4f): the Typer CLI in qbt_rules.cli takes over; until then the legacy argparse CLI
+# answers, and takes `serve` as a synonym of `--serve` (uvicorn and the FastAPI app).
 qbt-rules = "qbt_rules.legacy_cli:main"
 
 [project.urls]
@@ -53,7 +53,6 @@ dev = [
     "prometheus-client>=0.20",
     "types-requests>=2.31",
     "types-croniter",
-    "types-gunicorn",
 ]
 
 [build-system]

@@ -11,5 +11,5 @@
     "jobs[0].started_at"
   ],
   "masked": [],
-  "body": "{\"jobs\":[{\"completed_at\":\"Tue, 03 Nov 2026 12:01:02 GMT\",\"context\":\"torrent-imported\",\"created_at\":\"Tue, 03 Nov 2026 12:01:00 GMT\",\"dry_run\":false,\"error\":\"Traceback (most recent call last):\\n  File \\\"worker.py\\\", line 170, in _process_job\\nqbt_rules.errors.ConnectionError: Cannot reach qBittorrent\\n\",\"hash\":\"abc123def456\",\"job_id\":\"00000000-0000-4000-8000-000000000002\",\"result\":null,\"started_at\":\"Tue, 03 Nov 2026 12:01:01 GMT\",\"status\":\"failed\"}],\"limit\":50,\"offset\":0,\"total\":3}\n"
+  "body": "{\"jobs\":[{\"completed_at\":\"2026-11-03T12:01:02+00:00\",\"context\":\"torrent-imported\",\"created_at\":\"2026-11-03T12:01:00+00:00\",\"dry_run\":false,\"error\":\"Traceback (most recent call last):\\n  File \\\"worker.py\\\", line 170, in _process_job\\nqbt_rules.errors.ConnectionError: Cannot reach qBittorrent\\n\",\"hash\":\"abc123def456\",\"job_id\":\"00000000-0000-4000-8000-000000000002\",\"result\":null,\"started_at\":\"2026-11-03T12:01:01+00:00\",\"status\":\"failed\"}],\"limit\":50,\"offset\":0,\"total\":1}\n"
 }

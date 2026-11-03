@@ -5,17 +5,19 @@ that says what to set, the dashboard's login page says it too, and the rules edi
 rules.yml on its first save.
 """
 
+import dataclasses
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
 
+import httpx2
 import pytest
-from flask.testing import FlaskClient
+from fastapi.testclient import TestClient
+from interpose.secret import Secret
 
+from qbt_rules import api
 from qbt_rules.config_loader import Config, load_config
 from qbt_rules.queue_manager import QueueManager
-from qbt_rules.web import create_app
-from qbt_rules.worker import Worker
 
 
 @pytest.fixture
@@ -26,7 +28,7 @@ def config(tmp_path: Path) -> Config:
     return load_config(tmp_path / "etc" / "config.yaml", environ)
 
 
-def _client(config: Config, api_key: str = "") -> FlaskClient:
+def _client(config: Config, api_key: str = "") -> TestClient:
     queue = MagicMock()
     queue.health_check.return_value = True
     queue.count_jobs.return_value = 0
@@ -34,13 +36,16 @@ def _client(config: Config, api_key: str = "") -> FlaskClient:
     worker = MagicMock()
     worker.is_alive.return_value = True
     worker.get_status.return_value = {"running": True, "last_job_completed": None}
-    app = create_app(cast(QueueManager, queue), cast(Worker, worker), api_key, config=config)
-    app.config["TESTING"] = True
-    return app.test_client()
+    if api_key:
+        config.settings = dataclasses.replace(config.settings, api_key=Secret(api_key))
+    services = api.Services(
+        queue=cast(QueueManager, queue), worker=cast(api.WorkerLike, worker), rules=config
+    )
+    return TestClient(api.create_app(config.settings, services), follow_redirects=False)
 
 
-def _json(response: Any) -> dict[str, Any]:
-    data = response.get_json()
+def _json(response: httpx2.Response) -> dict[str, Any]:
+    data = response.json()
     assert isinstance(data, dict)
     return data
 
@@ -72,7 +77,7 @@ def test_health_has_no_problems_key_when_configured(tmp_path: Path) -> None:
 )
 def test_authenticated_requests_are_503(config: Config, method: str, path: str) -> None:
     # Any key, even an empty one, must not match an unset API key
-    response = _client(config).open(path, method=method, headers={"X-API-Key": ""})
+    response = _client(config).request(method, path, headers={"X-API-Key": ""})
     assert response.status_code == 503
     assert "No API key is configured" in _json(response)["message"]
 
@@ -80,7 +85,7 @@ def test_authenticated_requests_are_503(config: Config, method: str, path: str) 
 def test_dashboard_and_login_say_why(config: Config) -> None:
     client = _client(config)
     assert client.get("/").status_code == 302
-    page = client.get("/login").get_data(as_text=True)
+    page = client.get("/login").text
     assert "No API key is configured on the server" in page
     # And no key logs in
     assert client.post("/login", data={"key": "anything", "next": "/"}).status_code == 302

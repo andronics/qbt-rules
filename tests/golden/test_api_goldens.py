@@ -1,10 +1,11 @@
 """
 Golden responses for the JSON API -- the safety net for the Flask -> FastAPI port
 
-Every JSON route in web.py (plus /metrics and the 404/405/413/500
-handlers) is driven through the Flask test client against a real queue --
-SQLite and fakeredis -- and its status, Content-Type, selected headers
-(SELECTED_HEADERS) and exact body are compared with a stored golden file:
+Every JSON route in api.py (plus /metrics, still the Flask dashboard's, and
+the 404/405/413/500 handlers) is driven through FastAPI's TestClient against
+a real queue -- SQLite and fakeredis -- and its status, Content-Type,
+selected headers (SELECTED_HEADERS) and exact body are compared with a
+stored golden file:
 
     tests/golden/responses/<backend>/<case>.json
 
@@ -23,7 +24,7 @@ nothing is written.
 
 Determinism
 -----------
-- Time is frozen: every ``datetime.now()`` in web.py, queue_manager.py,
+- Time is frozen: every ``datetime.now()`` in api.py, queue_manager.py,
   both queue backends and config_store.py reads a settable Clock (seeded
   jobs get distinct, whole-second timestamps; requests run at FROZEN_AT).
   rules.yml's mtime -- the editor's ``modified_at`` -- is pinned to the
@@ -43,38 +44,32 @@ Masked -- the only values not captured as-is (each listed in the golden's
   multiprocess event counters/histograms aggregate every request made in
   the whole pytest session, so their values depend on test order.
 
-- The ``Allow`` header's methods are sorted: Werkzeug builds it from a
-  set, so its order changes from run to run.
+- The ``Allow`` header's methods are sorted, so a set's order can't
+  change a golden.
 
 Session cookies (Set-Cookie) are not captured: itsdangerous signs them
 with the real wall clock.
 
-Timestamps: SQLite vs Redis (READ THIS BEFORE THE PORT)
--------------------------------------------------------
-The goldens hold today's real output, which differs between backends:
-SQLite returns job timestamps as datetime objects, which Flask's jsonify
-renders as RFC 822 dates ("Tue, 03 Nov 2026 12:00:00 GMT" -- second
-precision, zone dropped), while Redis returns the stored ISO 8601 strings
-("2026-11-03T12:00:00+00:00"). The FastAPI port will emit ISO 8601 for
-both backends. Every field that is a timestamp is named in
-TIMESTAMP_FIELDS, and each golden lists the concrete JSON paths under
-"timestamp_paths". ``normalise_timestamps()`` rewrites RFC 822 values at
-those fields to ISO 8601 -- it is the one place the port's comparison
-should change (compare against ``normalise_timestamps(json.loads(body))``
-for the SQLite goldens). Seeded times are whole seconds, so that
-conversion is lossless. test_backends_agree_after_timestamp_normalisation
-proves that, once normalised, the two backends' goldens are identical
-apart from the backend class name.
+Timestamps
+----------
+Both backends write ISO 8601 ("2026-11-03T12:00:00+00:00"). Under Flask,
+SQLite's job timestamps were datetime objects that jsonify rendered as RFC
+822 dates ("Tue, 03 Nov 2026 12:00:00 GMT"); the port regenerated those
+goldens, and ``normalise_timestamps()`` (which rewrites RFC 822 values at
+TIMESTAMP_FIELDS as ISO 8601) is how that change was checked to touch
+nothing else. Every timestamp field is named in TIMESTAMP_FIELDS, and each
+golden lists the concrete JSON paths under "timestamp_paths".
+test_backends_agree_after_timestamp_normalisation proves the two backends'
+goldens are identical apart from the backend class name.
 
-JSON encoding (the port must match)
------------------------------------
-create_app() sets ``JSON_SORT_KEYS = False``, but Flask 3 ignores that
-config key (it moved to ``app.json.sort_keys``), so every JSON body today
-has its keys sorted, is compact (no spaces after ``,``/``:``) and ends
-with a newline. The goldens capture exactly that; FastAPI's default
-JSONResponse does neither sorting nor the trailing newline.
+JSON encoding
+-------------
+Flask's jsonify, kept byte for byte by api.CompatJSONResponse: keys
+sorted, compact (no spaces after ``,``/``:``), non-ASCII escaped, and a
+trailing newline.
 """
 
+import dataclasses
 import json
 import os
 import re
@@ -86,11 +81,12 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from fastapi.testclient import TestClient
+from interpose.secret import Secret
 
-from qbt_rules import config_store, metrics, queue_manager, web
+from qbt_rules import api, config_store, metrics, queue_manager
 from qbt_rules.queue_backends import sqlite_queue
 from qbt_rules.queue_manager import JobStatus, QueueManager
-from qbt_rules.worker import Worker
 
 GOLDEN_DIR = Path(__file__).parent / "responses"  # not data/: .gitignore excludes it
 UPDATE_GOLDENS = os.environ.get("QBT_RULES_UPDATE_GOLDENS") == "1"
@@ -228,6 +224,9 @@ class StubWorker:
         self.running = True
         self.alive = True
 
+    def run(self, stop):  # registered as a thread, never started: no lifespan here
+        stop.wait()
+
     def is_alive(self):
         return self.alive
 
@@ -262,7 +261,7 @@ class Env:
         self.monkeypatch = monkeypatch
 
         frozen = _frozen_datetime(self.clock)
-        for module in (web, queue_manager, config_store, sqlite_queue):
+        for module in (api, queue_manager, config_store, sqlite_queue):
             monkeypatch.setattr(module, "datetime", frozen)
         if backend == "redis":
             from qbt_rules.queue_backends import redis_queue
@@ -275,7 +274,7 @@ class Env:
             "generate_job_id",
             staticmethod(lambda: f"00000000-0000-4000-8000-{next(ids):012d}"),
         )
-        monkeypatch.setattr(web, "__version__", FIXED_VERSION)
+        monkeypatch.setattr(api, "__version__", FIXED_VERSION)
 
         # config.yaml redaction and load_config() both read QBT_RULES_* overrides
         for name in list(os.environ):
@@ -310,29 +309,27 @@ class Env:
         ts = self.clock.value.timestamp()
         os.utime(path, (ts, ts))
 
-    def client(self, with_config: bool = True, metrics_on: bool = False, **kwargs):
-        from qbt_rules.config_loader import load_config
+    def client(self, with_config: bool = True, metrics_on: bool = False, editor: bool = True):
+        from qbt_rules.config import load_config
+        from qbt_rules.config_loader import Config as RulesConfig
 
         environ = {"QBT_RULES_STATE_DIR": str(self.state_dir)}
-        config = load_config(self.config_dir / "config.yaml", environ) if with_config else None
-        metrics_config = None
+        settings = dataclasses.replace(
+            load_config(self.config_dir / "config.yaml", environ),
+            api_key=Secret(API_KEY),
+            editor_enabled=editor,
+            metrics_enabled=metrics_on,
+        )
         if metrics_on:
             metrics.init(enabled=True)
-            metrics_config = {
-                "enabled": True,
-                "multiproc_dir": os.environ["PROMETHEUS_MULTIPROC_DIR"],
-            }
-        app = web.create_app(
-            self.queue,
-            cast(Worker, self.worker),  # StubWorker duck-types the parts the API reads
-            API_KEY,
-            config=config,
-            metrics_config=metrics_config,
-            **kwargs,
+        services = api.Services(
+            queue=self.queue,
+            worker=cast(api.WorkerLike, self.worker),
+            rules=RulesConfig(settings) if with_config else None,
         )
-        # TESTING stays off: with it on, Flask re-raises unhandled errors
-        # instead of running the 500 handler a real deployment would
-        return app.test_client()
+        app = api.create_app(settings, services)
+        # Redirects are part of what's captured, so they aren't followed
+        return Client(app)
 
     def seed_jobs(self):
         """Completed, failed and pending jobs a minute apart, moved through the
@@ -376,7 +373,7 @@ class Env:
         client.post("/login", data={"key": API_KEY, "next": "/rules/edit"})
 
     def etag(self, client) -> str:
-        etag: str = client.get("/api/rules/source", headers=KEY).get_json()["etag"]
+        etag: str = client.get("/api/rules/source", headers=KEY).json()["etag"]
         return etag
 
 
@@ -393,6 +390,16 @@ def case(name: str):
         return fn
 
     return register
+
+
+class Client(TestClient):
+    """TestClient with the Flask test client's open(url, method=...) the cases use"""
+
+    def __init__(self, app):
+        super().__init__(app, follow_redirects=False)
+
+    def open(self, url: str, method: str = "GET", **kwargs):
+        return self.request(method, url, **kwargs)
 
 
 def _call(client, method: str, url: str, **kwargs):
@@ -493,9 +500,9 @@ def _(env):
     return _call(env.client(), "GET", "/api/jobs")
 
 
-@case("jobs_list_500_non_integer_limit")
+@case("jobs_list_400_non_integer_limit")
 def _(env):
-    # int('abc') is unhandled -> the generic 500 handler, not a 400
+    # A 500 under Flask (int('abc') was unhandled): #28 item 1
     return _call(env.client(), "GET", "/api/jobs?limit=abc", headers=KEY)
 
 
@@ -732,7 +739,7 @@ def _(env):
 def _(env):
     client = env.client()
     env.login(client)
-    etag = client.get("/api/rules/source").get_json()["etag"]
+    etag = client.get("/api/rules/source").json()["etag"]
     return _call(
         client,
         "PUT",
@@ -817,7 +824,7 @@ def _(env):
 def _(env):
     client = env.client()
     _save_once(env, client)
-    version_id = client.get("/api/rules/history", headers=KEY).get_json()["versions"][0]["id"]
+    version_id = client.get("/api/rules/history", headers=KEY).json()["versions"][0]["id"]
     return _call(client, "GET", f"/api/rules/history/{version_id}", headers=KEY)
 
 
@@ -885,7 +892,7 @@ def _(env):
 
 @case("error_405_wrong_method")
 def _(env):
-    # No 405 handler is registered: Werkzeug's HTML page, not JSON
+    # Werkzeug's HTML page under Flask; JSON like every other error now (#28 item 5)
     return _call(env.client(), "POST", "/api/jobs", headers=KEY)
 
 
@@ -922,14 +929,14 @@ def _mask(env: Env, body: str, content_type: str) -> "tuple[str, list[str]]":
 def _selected_headers(response) -> dict[str, str]:
     headers = {h: response.headers[h] for h in SELECTED_HEADERS if h in response.headers}
     if "Allow" in headers:
-        # Werkzeug builds Allow from a set, so its order varies run to run
+        # Built from a set, so its order could vary run to run
         headers["Allow"] = ", ".join(sorted(m.strip() for m in headers["Allow"].split(",")))
     return headers
 
 
 def _record(env: Env, name: str, request: str, response) -> dict[str, Any]:
     content_type = response.headers.get("Content-Type", "")
-    body, masked = _mask(env, response.get_data(as_text=True), content_type)
+    body, masked = _mask(env, response.text, content_type)
     paths: list[str] = []
     if content_type.startswith("application/json"):
         paths = timestamp_paths(json.loads(body))

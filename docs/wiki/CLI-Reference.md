@@ -21,7 +21,7 @@ docker exec qbt-rules qbt-rules --context manual --wait
 | `--server-host HOST` | `0.0.0.0` | Bind address (`listen.host`) |
 | `--server-port PORT` | `5000` | Port (`listen.port`). In the container, set `QBT_RULES_LISTEN_PORT` instead, which the healthcheck reads too: see [In-Depth Configuration](In-Depth-Configuration#where-configuration-comes-from) |
 | `--server-api-key KEY` | | API key clients must present (`server.api_key`). Prefer `QBT_RULES_SERVER_API_KEY_FILE` |
-| `--server-workers NUM` | `1` | Gunicorn worker processes (`server.workers`) |
+| `--server-workers NUM` | `1` | Must be `1` (`server.workers`): the server is one process. Any other value is refused |
 | `--queue-backend BACKEND` | `sqlite` | `sqlite` or `redis` (`queue.backend`) |
 | `--queue-sqlite-path PATH` | `qbt-rules.db` in `state_dir` (`/var/lib/qbt-rules`) | SQLite database (`queue.sqlite_path`) |
 | `--queue-redis-url URL` | `redis://localhost:6379/0` | Redis connection URL (`queue.redis_url`) |

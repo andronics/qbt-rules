@@ -416,44 +416,65 @@ class TestWorkerRunLoop:
 
         process_spy.assert_called_once_with(job)
 
-    def test_run_loop_sleeps_when_queue_empty(self, worker, mock_queue, mocker):
-        """Should sleep when queue is empty"""
+    def test_run_loop_waits_when_queue_empty(self, worker, mock_queue):
+        """Should wait poll_interval on the stop event (waking at once on stop)"""
         mock_queue.dequeue.return_value = None
+        stop = _StopAfterFirstWait()
 
-        sleep_spy = mocker.patch("time.sleep")
+        worker._run_loop(stop)
 
-        worker.start()
-        time.sleep(0.05)
-        worker.stop()
+        assert stop.waits == [worker.poll_interval]
 
-        # Should have slept with poll_interval
-        sleep_calls = [c for c in sleep_spy.call_args_list if c[0][0] == worker.poll_interval]
-        assert len(sleep_calls) > 0
-
-    def test_run_loop_handles_dequeue_error(self, worker, mock_queue, mocker):
-        """Should handle and log dequeue errors"""
+    def test_run_loop_handles_dequeue_error(self, worker, mock_queue):
+        """Should log a dequeue error, wait, and carry on"""
         mock_queue.dequeue.side_effect = Exception("Queue error")
+        stop = _StopAfterFirstWait()
 
-        sleep_spy = mocker.patch("time.sleep")
+        worker._run_loop(stop)
 
-        worker.start()
-        time.sleep(0.1)
-        worker.stop()
+        assert stop.waits == [worker.poll_interval]
 
-        # Should still be running and sleeping after error
-        sleep_calls = [c for c in sleep_spy.call_args_list if c[0][0] == worker.poll_interval]
-        assert len(sleep_calls) > 0
-
-    def test_run_loop_exits_when_running_false(self, worker, mock_queue):
-        """Should exit loop when running flag becomes False"""
+    def test_run_loop_exits_when_stopped(self, worker, mock_queue):
+        """Should exit as soon as stop() sets the event, not after a poll"""
         mock_queue.dequeue.return_value = None
+        worker.poll_interval = 60
 
         worker.start()
         time.sleep(0.05)
-        worker.running = False
-        time.sleep(0.1)  # Let it exit
+        worker.stop(timeout=2)
 
         assert not worker.thread.is_alive()
+
+    def test_run_is_the_background_thread_target(self, worker, mock_queue):
+        """run(stop) loops in the calling thread: is_alive() and running follow it"""
+        mock_queue.dequeue.return_value = None
+        stop = threading.Event()
+        thread = threading.Thread(target=worker.run, args=(stop,), name="worker")
+        thread.start()
+        deadline = time.monotonic() + 5
+        while not worker.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert worker.running is True
+        assert worker.thread is thread
+
+        stop.set()
+        thread.join(5)
+
+        assert not worker.is_alive()
+        assert worker.running is False
+
+
+class _StopAfterFirstWait(threading.Event):
+    """A stop event that records each wait and is set by the first one"""
+
+    def __init__(self):
+        super().__init__()
+        self.waits = []
+
+    def wait(self, timeout=None):
+        self.waits.append(timeout)
+        self.set()
+        return True
 
 
 class TestWorkerProcessJob:

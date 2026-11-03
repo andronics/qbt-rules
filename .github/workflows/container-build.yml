@@ -125,16 +125,16 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Smoke test (/api/health)
+      - name: Smoke test (/healthz)
         run: |
           docker run -d --name smoke -p 127.0.0.1:5000:5000 smoke:ci
           for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:5000/api/health; then
+            if curl -fsS http://127.0.0.1:5000/healthz; then
               echo; echo "✓ healthy"; docker rm -f smoke > /dev/null; exit 0
             fi
             sleep 1
           done
-          echo "::error::no answer on /api/health after 30s"
+          echo "::error::no answer on /healthz after 30s"
           docker logs smoke
           exit 1
 

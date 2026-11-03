@@ -6,10 +6,14 @@ v0.4.0 architecture notes that were in `PLAN.md` are in the git history.
 
 ## Open
 
-- [ ] Finish the template migration on `migrate/templates`: the FastAPI JSON API
-  (4c), the dashboard (4d), metrics and logging (4e), the Typer CLI (4f). Then drop the
-  `migrate/templates` branch from the `pull_request` triggers in base-ci.yml, container-build.yml and
-  python-wiki.yml (each marked `TODO(migrate/templates)`).
+- [ ] Finish the template migration on `migrate/templates`: the dashboard (4d: replace the Flask app
+  mounted under FastAPI through a2wsgi, `api.DASHBOARD_PATHS`, and `web.ScopeSessionInterface`; the
+  login calls `sessions.log_in`, pages get `sessions.csrf_token`; then drop Flask and a2wsgi), metrics
+  and logging (4e: interpose's Registry replaces prometheus_client, the Flask `/metrics` and
+  `api.HttpMetrics`; #28 item 4), the Typer CLI (4f). Then drop the `migrate/templates` branch from the
+  `pull_request` triggers in base-ci.yml, container-build.yml and python-wiki.yml (each marked
+  `TODO(migrate/templates)`).
+- [ ] #28 item 7 (Redis queue depth counts only the pending list) is still open.
 - [ ] Write docs/design/0001-initial-design.md (docs/ai/prompts.md, prompt 1)
 - [ ] Annotate the legacy tests for strict mypy and empty the override in pyproject.toml (#35)
 

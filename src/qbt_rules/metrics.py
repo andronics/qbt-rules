@@ -9,10 +9,11 @@ scheduler.py, web.py) can therefore do `from qbt_rules import metrics` at
 its own top level unconditionally and call the record_*() functions, which
 silently no-op until init(enabled=True) has actually run.
 
-Fork-safety: prometheus_client's default in-process registry breaks under
-Gunicorn's preload_app + fork model, the same way a naively-written thread
-would -- each forked worker gets its own independent, unsynchronized copy of
-every counter. The fix is prometheus_client's own "multiprocess mode": set
+Multiprocess mode: written for Gunicorn's preload_app + fork model, where
+each forked worker had its own unsynchronised copy of every counter. The
+server is one uvicorn process now, and multiprocess mode still works there
+(one per-PID file); TODO(4e) replaces all of this with interpose's Registry.
+The mechanism: set
 the PROMETHEUS_MULTIPROC_DIR environment variable (this exact name is
 mandated by the library) to a shared writable directory *before*
 prometheus_client is first imported anywhere in the process; every process

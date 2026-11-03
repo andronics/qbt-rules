@@ -116,6 +116,17 @@ _ENV_REF = re.compile(r"\$\{([^}:]+)(?::-([^}]*))?\}")
 _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
 
 
+def one_process(value: Value) -> None:
+    """server.workers: only 1. Gunicorn's worker processes are gone (template-python 0008)."""
+    positive(value)
+    if value != 1:
+        raise ValueError(
+            f"must be 1, got {value}: qbt-rules runs one process now (uvicorn, no Gunicorn), "
+            "so its worker and scheduler run exactly once. Remove server.workers (or "
+            "QBT_RULES_SERVER_WORKERS); jobs run one at a time either way"
+        )
+
+
 def duration_seconds(value: str) -> int | None:
     """Seconds in a duration: ``604800``, ``7d`` (s, m, h, d, w) or ``30 days``. None: invalid."""
     text = value.strip().lower()
@@ -202,8 +213,9 @@ SETTINGS = Settings(
         Setting(
             "server.workers",
             1,
-            "Gunicorn worker processes (1 is enough for home use).",
-            check=positive,
+            "Must be 1: the server is one process, so its worker and scheduler run once. "
+            "Kept so a 0.10.x config that sets it to 1 still loads.",
+            check=one_process,
         ),
         Setting(
             "server.editor_enabled",

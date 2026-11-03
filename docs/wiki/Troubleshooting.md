@@ -6,7 +6,7 @@
 - **What the container resolved:** `docker exec qbt-rules env | grep QBT_RULES_`, and the files in the state directory (`/var/lib/qbt-rules`).
 - **More logging:** `QBT_RULES_LOGGING_LEVEL=DEBUG` on the server, or `--log-level DEBUG --trace` on a single client run.
 - **Health:** `curl http://127.0.0.1:5000/api/health`: `200` and `"status": "healthy"`, or `503` with an `errors` array naming what's wrong.
-- **Container:** `docker logs qbt-rules`, and `docker inspect --format '{{json .State.Health}}' qbt-rules`.
+- **Container:** `docker logs qbt-rules`, and `docker inspect --format '{{json .State.Health}}' qbt-rules`. The image's healthcheck polls `/healthz`, which only says the process answers HTTP; `/readyz` says whether the worker and scheduler threads are running, and `/api/health` gives the detail.
 
 ### Debugging Commands
 
@@ -127,7 +127,15 @@ docker logs -f qbt-rules
 
 ### Container shows "unhealthy" after changing the port
 
-The image's healthcheck polls `QBT_RULES_LISTEN_PORT` (default `5000`). `QBT_RULES_SERVER_PORT` is an alias the server accepts but the healthcheck doesn't read: set `QBT_RULES_LISTEN_PORT` instead.
+The image's healthcheck polls `/healthz` on `QBT_RULES_LISTEN_PORT` (default `5000`). `QBT_RULES_SERVER_PORT` is an alias the server accepts but the healthcheck doesn't read: set `QBT_RULES_LISTEN_PORT` instead.
+
+### Logged out after upgrading to 0.11
+
+Expected, once: the dashboard's session cookie changed (it's now `qbt_rules_session`, signed by the server's session middleware), so a 0.10.x login isn't recognised. Log in again with the API key.
+
+### `docker stop` takes 10 seconds
+
+0.10.x ignored SIGTERM, so Docker waited and then killed it. 0.11 stops within a few seconds: it finishes the request in flight, gives a running job a few seconds, and joins the worker and scheduler threads. If it still takes the full timeout, check `docker logs` for "did not stop in time".
 
 ### Every API request answers `503 No API key is configured`
 
@@ -350,13 +358,7 @@ ConnectionError: Failed to connect to qBittorrent at http://localhost:8080
    0 */6 * * * curl -s -X POST -H "X-API-KEY: $QBT_RULES_API_KEY" "http://qbt-rules:5000/api/execute?context=scheduled"
    ```
 
-5. **Increase worker concurrency** if multiple jobs are queuing up faster than they're processed:
-
-   ```yaml
-   # config.yaml
-   server:
-     workers: 4  # default is 1
-   ```
+5. **Scope jobs** if they queue up faster than they're processed: jobs run one at a time (the server is one process, and `server.workers` must be `1`), so a `&hash=%I` webhook job is far cheaper than a whole-library sweep.
 
 #### High memory usage
 
@@ -369,4 +371,4 @@ The engine already evaluates torrents one at a time rather than loading everythi
 
 1. **Check the queue backend** — a very large backlog of completed jobs in SQLite/Redis can grow the queue database over time; confirm `queue.cleanup_after` (in `config.yaml`) is set to prune old job records
 2. **Check for a stuck/looping job** via `--list-jobs` — a job retried indefinitely will keep accumulating log data
-3. **Reduce `server.workers`** if multiple concurrent large jobs (each holding their own per-job torrent-list cache) are running at once on a memory-constrained host
+3. **Check the log level** — `DEBUG` keeps a lot of per-torrent detail in flight; `INFO` is enough day to day

@@ -576,6 +576,17 @@ class TestRedisQueueListJobs:
 class TestRedisQueueCountJobs:
     """Test count_jobs() method"""
 
+    def test_count_jobs_by_context(self, queue):
+        """Should take list_jobs()'s context filter too (#28 item 2)"""
+        queue.enqueue(context="nightly")
+        queue.enqueue(context="nightly")
+        queue.enqueue(context="other")
+        queue.dequeue()  # the oldest nightly job: PROCESSING
+
+        assert queue.count_jobs(context="nightly") == 2
+        assert queue.count_jobs(status=JobStatus.PENDING, context="nightly") == 1
+        assert queue.count_jobs(context="none-such") == 0
+
     def test_count_jobs_total(self, queue):
         """Should count total jobs when no status filter"""
         queue.enqueue()

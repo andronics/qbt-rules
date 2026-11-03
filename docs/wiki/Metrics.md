@@ -12,7 +12,7 @@ uv sync --extra metrics
 # config.yaml
 metrics:
   enabled: true
-  multiproc_dir: /tmp/qbt-rules-metrics   # default shown, usually fine as-is
+  multiproc_dir: /tmp/qbt-rules-metrics   # default shown, fine as-is
 ```
 
 Or via environment variables: `QBT_RULES_METRICS_ENABLED=true` (and `QBT_RULES_METRICS_MULTIPROC_DIR` if you need a non-default directory — see [In-Depth Configuration](In-Depth-Configuration#settings) for the full env var/`_FILE` pattern this follows like every other section).
@@ -25,7 +25,7 @@ ValueError: metrics.enabled is true but the 'prometheus_client' package isn't in
 
 ### Authentication
 
-`/metrics` requires the API key, the same as every route except `/api/health` and `/api/version` — see [Security](Security#api-authentication). Prometheus's own `scrape_config` supports this via a custom header or the query param directly:
+`/metrics` requires the API key, the same as every route except the probes (`/healthz`, `/readyz`, `/api/health`) and `/api/version` — see [Security](Security#api-authentication). Prometheus's own `scrape_config` supports this via a custom header or the query param directly:
 
 ```yaml
 # prometheus.yml
@@ -40,13 +40,9 @@ scrape_configs:
 
 (Or `authorization: {credentials: YOUR_API_KEY}` with a small reverse-proxy rule translating the bearer token into `X-API-Key`, if you'd rather not put the key in `prometheus.yml` directly — either works, since `require_api_key` accepts the key via query param or `X-API-Key` header identically.)
 
-### Fork-safety: why this needs `multiproc_dir` at all
+### `multiproc_dir`
 
-qbt-rules already learned this lesson once, with the internal [Scheduler](Scheduling#running-with-multiple-server-workers): Gunicorn's `preload_app` + fork model means a naive in-process counter gets forked into `server.workers` independent, unsynchronized copies — one per Gunicorn worker process — silently undercounting everything the moment `server.workers > 1`.
-
-Prometheus's Python client solves this with **multiprocess mode**: every process (the master and every forked worker) writes its own file into `multiproc_dir`, and `/metrics` aggregates across every file in that directory on each scrape. qbt-rules handles all of this automatically — clearing stale files from a previous run at startup, registering a Gunicorn `child_exit` hook, and only ever needing `multiproc_dir` to be a writable directory (the default lives under `/tmp`, already writable in the standard Docker image — no new volume needed).
-
-**Verified empirically** (matching the Scheduler's own verification standard — reasoning about Gunicorn fork semantics on paper isn't good enough): a real 2-worker server correctly summed HTTP request and job counts across both forked workers plus the master process. Killing a worker mid-run and letting Gunicorn respawn a replacement didn't lose or double-count anything — a dead worker's historical counter/histogram contributions correctly keep counting forever (that's the *correct* behavior: "this request really happened" doesn't stop being true just because the process that recorded it is gone), while its current-state gauges (queue depth, job counts by status) are recomputed fresh on every single scrape rather than tracked per-process at all, so a dead worker can't leave a stale gauge reading behind in the first place.
+The server used to run several Gunicorn worker processes, so the counters used prometheus_client's multiprocess mode: each process wrote its own file into `multiproc_dir` and `/metrics` summed them. The server is one process now, and the metrics still go through that directory until they move onto the template's metrics (a later release); it only needs to be writable (the default under `/tmp` is), and stale files from a previous run are cleared at startup. The state gauges below are computed fresh on every scrape either way.
 
 ### Metric Reference
 
@@ -54,7 +50,7 @@ Prometheus's Python client solves this with **multiprocess mode**: every process
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `qbt_rules_http_requests_total` | Counter | `method`, `endpoint`, `status` | Every HTTP request except `/metrics` itself |
+| `qbt_rules_http_requests_total` | Counter | `method`, `endpoint`, `status` | Every HTTP request except `/metrics` itself. `endpoint` is the route's name (`list_jobs`, `execute`, `login`, ...), `unknown` for a path that matches none |
 | `qbt_rules_http_request_duration_seconds` | Histogram | `method`, `endpoint` | HTTP request latency |
 | `qbt_rules_actions_executed_total` | Counter | `action_type`, `result` | Every action the rules engine actually runs — excludes dry-run and idempotent-skip, which never reach real execution |
 | `qbt_rules_job_duration_seconds` | Histogram | *(none)* | Time from job start to completion, success or failure |
@@ -84,5 +80,5 @@ Prometheus's Python client solves this with **multiprocess mode**: every process
 
 - [HTTP API Reference](HTTP-API-Reference) — the JSON endpoints several state gauges are sourced from
 - [Dashboard](Dashboard) — the other read-only surface (`/`, `/jobs`, `/rules`), same auth model
-- [Scheduling](Scheduling) — the internal cron scheduler `qbt_rules_scheduler_fires_total` tracks, and the Gunicorn fork-safety pattern this reuses
+- [Scheduling](Scheduling) — the internal cron scheduler `qbt_rules_scheduler_fires_total` tracks
 - [Security](Security) — API key management, what `/metrics` exposes

@@ -1,71 +1,82 @@
 """
-HTTP API Server - Flask application with job queue integration
+The dashboard: server-rendered pages (Flask + Jinja2), the login form, /static and /metrics
 
-Provides REST API for:
-- Job execution (queueing jobs)
-- Job status and management
-- Health checks and statistics
-- Authentication via API key
+TODO(4d): the dashboard moves to FastAPI. Until then this Flask app is mounted under the
+FastAPI app (api.py, through a2wsgi) for its paths only (api.DASHBOARD_PATHS); every JSON
+route is api.py's. TODO(4e): /metrics moves onto interpose's Registry.
+
+The login session is the FastAPI app's (Starlette's SessionMiddleware): ScopeSessionInterface
+hands Flask the ASGI scope's session instead of a cookie of its own, so a login here is a
+login for the JSON API too (sessions.py).
 """
 
-import hashlib
 import logging
 import re
 import secrets
-import sys
 import time
-from collections.abc import Callable, MutableMapping
-from datetime import UTC, datetime, timedelta
+from collections.abc import Callable
+from datetime import UTC, datetime
 from functools import wraps
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import yaml
-from flask import Flask, Response, g, jsonify, redirect, render_template, request, session, url_for
+from flask import (
+    Flask,
+    Request,
+    Response,
+    g,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
+from flask.sessions import SecureCookieSession, SecureCookieSessionInterface, SessionMixin
 from flask.typing import ResponseReturnValue
 
-from qbt_rules import __version__, metrics, schema
+from qbt_rules import __version__, metrics, sessions
 from qbt_rules.config_loader import Config
-from qbt_rules.config_store import (
-    EditableFile,
-    FileConflictError,
-    FileNotWritableError,
-    redacted_config_view,
-)
-from qbt_rules.log_setup import set_file_rotation
-from qbt_rules.queue_manager import JobStatus, QueueManager
-from qbt_rules.rules_validation import validate_rules_text
-from qbt_rules.utils import parse_bool
-from qbt_rules.worker import Worker
-
-if TYPE_CHECKING:
-    from gunicorn.arbiter import Arbiter
-    from gunicorn.http import Request as GunicornRequest
-    from gunicorn.http.wsgi import Response as GunicornResponse
-    from gunicorn.workers.base import Worker as GunicornWorker
-
-# Accepted spellings for boolean query parameters (parse_bool's true set
-# plus their opposites)
-BOOL_VALUES = {"true", "false", "1", "0", "yes", "no", "on", "off"}
+from qbt_rules.queue_manager import QueueManager
 
 logger = logging.getLogger(__name__)
 
 # Global references (set by create_app)
 # create_app() sets these before the app serves anything
 queue: QueueManager = None  # type: ignore[assignment]
-worker: Worker = None  # type: ignore[assignment]
+worker: Any = None  # api.WorkerLike
 # "" when no API key is configured: every authenticated request is refused (503)
 api_key_config: str = ""
 dashboard_config: Config | None = None
 metrics_enabled: bool = False
-editor_enabled: bool = True
-rules_store: EditableFile | None = None
 
-# Largest request body accepted -- far beyond any real rules.yml, small
-# enough that a validate/save request can't be used to exhaust memory
+# Largest request body accepted (the FastAPI app refuses larger ones first)
 MAX_REQUEST_BYTES = 2 * 1024 * 1024
 
-SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+class ScopeSessionInterface(SecureCookieSessionInterface):
+    """Flask's session, kept in the ASGI scope's session (Starlette's SessionMiddleware)
+
+    Under the FastAPI app, a2wsgi puts the ASGI scope in the WSGI environ: the session is
+    read from scope["session"] and written back to it, and SessionMiddleware signs and sets
+    the one cookie. Run on its own (the Flask test client), Flask's own cookie is used.
+    """
+
+    def open_session(self, app: Flask, request: Request) -> SecureCookieSession | None:
+        scope = request.environ.get("asgi.scope")
+        if scope is None or "session" not in scope:
+            return super().open_session(app, request)
+        return SecureCookieSession(dict(scope["session"]))
+
+    def save_session(self, app: Flask, session: SessionMixin, response: Response) -> None:
+        scope = request.environ.get("asgi.scope")
+        if scope is None or "session" not in scope:
+            super().save_session(app, session, response)
+            return
+        if session.modified:
+            scope["session"].clear()
+            scope["session"].update({k: v for k, v in session.items() if k != "_permanent"})
 
 
 def _timeago(value: datetime | str | None) -> str:
@@ -113,14 +124,14 @@ def _timeago(value: datetime | str | None) -> str:
 
 def create_app(
     queue_manager: QueueManager,
-    worker_instance: Worker,
+    worker_instance: Any,
     api_key: str,
     config: Config | None = None,
     metrics_config: dict[str, Any] | None = None,
     editor: bool = True,
 ) -> Flask:
     """
-    Create and configure Flask application
+    Create the dashboard's Flask application
 
     Args:
         queue_manager: Queue manager instance
@@ -138,29 +149,19 @@ def create_app(
             called by the caller before this, since that's what actually
             makes prometheus_client importable/configured; this just
             controls whether /metrics and the HTTP request hooks are wired up
-        editor: server.editor_enabled -- whether the rules editor may save
-            rules.yml. False leaves it viewable (and validating) but
-            read-only. Saving also needs config, and a writable rules.yml
+        editor: server.editor_enabled. Unused here since the editor's JSON
+            API moved to api_rules.py; kept for the 4d port's signature
 
     Returns:
         Configured Flask app
     """
-    global \
-        queue, \
-        worker, \
-        api_key_config, \
-        dashboard_config, \
-        metrics_enabled, \
-        editor_enabled, \
-        rules_store
+    global queue, worker, api_key_config, dashboard_config, metrics_enabled
 
     queue = queue_manager
     worker = worker_instance
     api_key_config = api_key
     dashboard_config = config
     metrics_enabled = bool(metrics_config and metrics_config.get("enabled"))
-    editor_enabled = editor
-    rules_store = None if config is None else EditableFile(config.rules_file, config.history_dir)
 
     app = Flask(__name__)
     app.config["JSON_SORT_KEYS"] = False
@@ -171,19 +172,10 @@ def create_app(
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.jinja_env.filters["timeago"] = _timeago
 
-    # Signs the dashboard session cookie -- derived deterministically from
-    # api_key rather than a fresh random value, so it's identical across
-    # every Gunicorn worker process (each runs its own create_app() call;
-    # a per-process random secret would make a session cookie signed by
-    # one worker fail to validate on another under server.workers > 1).
-    # Hashed rather than reused as-is so the raw API key is never doing
-    # double duty as both the auth credential and the cookie-signing key.
-    # With no API key nobody can log in, so a random secret signs nothing useful.
-    app.secret_key = (
-        hashlib.sha256(f"qbt-rules-dashboard-session:{api_key}".encode()).digest()
-        if api_key
-        else secrets.token_bytes(32)
-    )
+    # Under FastAPI the session is the ASGI scope's; the secret signs Flask's own
+    # cookie only when this app runs on its own (tests)
+    app.session_interface = ScopeSessionInterface()
+    app.secret_key = sessions.session_secret(api_key)
 
     @app.context_processor
     def _inject_version() -> dict[str, Any]:
@@ -191,21 +183,19 @@ def create_app(
         base.html's shared topbar, without threading it through every
         individual route's render_template() call -- and {{ csrf_token() }}
         for pages that call the JSON API with the session cookie."""
-        return {"version": __version__, "csrf_token": _csrf_token}
+        return {"version": __version__, "csrf_token": lambda: sessions.csrf_token(session)}
 
     # Disable Flask's default logger (use our configured logger instead)
     app.logger.disabled = True
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
-    # Register blueprints/routes
-    register_routes(app)
-    register_editor_routes(app)
+    register_error_handlers(app)
     register_dashboard_routes(app)
     if metrics_enabled:
         register_metrics_routes(app)
         _register_http_metrics_hooks(app)
 
-    logger.info("Flask application created")
+    logger.info("Dashboard application created")
     return app
 
 
@@ -220,85 +210,20 @@ def _key_matches(key: str | None) -> bool:
     return bool(key and api_key_config and secrets.compare_digest(key, api_key_config))
 
 
-def _no_api_key() -> ResponseReturnValue:
-    return jsonify({"error": "Service Unavailable", "message": NO_API_KEY_MESSAGE}), 503
-
-
 def require_api_key[**P](f: Callable[P, ResponseReturnValue]) -> Callable[P, ResponseReturnValue]:
     """
-    Decorator for endpoints requiring API key authentication
-
-    Checks for API key in:
-    1. Query parameter: ?key=xxx
-    2. Header: X-API-Key: xxx
-
-    Returns 401 if missing or invalid, and 503 if the server has no API key.
+    The API key (?key= or X-API-Key) for /metrics: 401 without it, 503 when the
+    server has none (the same answers as api.require_api_key)
     """
 
     @wraps(f)
     def decorated_function(*args: P.args, **kwargs: P.kwargs) -> ResponseReturnValue:
         if not api_key_config:
-            return _no_api_key()
-
-        # Get API key from query param or header
+            return jsonify({"error": "Service Unavailable", "message": NO_API_KEY_MESSAGE}), 503
         key = request.args.get("key") or request.headers.get("X-API-Key")
-
-        # Constant-time comparison to prevent timing attacks
         if not _key_matches(key):
             return jsonify({"error": "Unauthorized", "message": "Invalid or missing API key"}), 401
-
         return f(*args, **kwargs)
-
-    return decorated_function
-
-
-def _csrf_token() -> str:
-    """This session's CSRF token, created on first use"""
-    if "csrf_token" not in session:
-        session["csrf_token"] = secrets.token_urlsafe(32)
-    token: str = session["csrf_token"]
-    return token
-
-
-def require_api_key_or_session[**P](
-    f: Callable[P, ResponseReturnValue],
-) -> Callable[P, ResponseReturnValue]:
-    """
-    For JSON endpoints the dashboard's own pages call from the browser
-
-    Accepts the API key exactly like require_api_key (scripts keep
-    working unchanged), or the dashboard's login session. A session is a
-    cookie the browser attaches automatically, so a state-changing request
-    riding on one must also carry the page's X-CSRF-Token header -- which
-    another site can't read or set -- or it's refused. Unauthenticated
-    requests get the same JSON 401 as require_api_key, never a redirect.
-    """
-
-    @wraps(f)
-    def decorated_function(*args: P.args, **kwargs: P.kwargs) -> ResponseReturnValue:
-        if not api_key_config:
-            return _no_api_key()
-        key = request.args.get("key") or request.headers.get("X-API-Key")
-        if key:
-            if _key_matches(key):
-                return f(*args, **kwargs)
-        elif session.get("authenticated"):
-            if request.method in SAFE_METHODS:
-                return f(*args, **kwargs)
-            sent = request.headers.get("X-CSRF-Token", "")
-            expected = session.get("csrf_token", "")
-            if sent and expected and secrets.compare_digest(sent, expected):
-                return f(*args, **kwargs)
-            return jsonify(
-                {
-                    "error": "Forbidden",
-                    "message": (
-                        "Missing or invalid X-CSRF-Token header -- reload the page and try again"
-                    ),
-                }
-            ), 403
-
-        return jsonify({"error": "Unauthorized", "message": "Invalid or missing API key"}), 401
 
     return decorated_function
 
@@ -358,11 +283,10 @@ def require_api_key_dashboard[**P](
         key = request.args.get("key") or request.headers.get("X-API-Key")
 
         if _key_matches(key):
-            session.permanent = True
-            session["authenticated"] = True
+            sessions.log_in(session)
             return f(*args, **kwargs)
 
-        if api_key_config and session.get("authenticated"):
+        if api_key_config and sessions.is_logged_in(session):
             return f(*args, **kwargs)
 
         login_kwargs: dict[str, Any] = {"next": _next_url_without_key()}
@@ -375,285 +299,18 @@ def require_api_key_dashboard[**P](
     return decorated_function
 
 
-def register_routes(app: Flask) -> None:
-    """Register all API routes"""
+def register_error_handlers(app: Flask) -> None:
+    """The JSON error bodies, for the dashboard's paths ({"error", "message"}, as api.py)"""
 
-    @app.route("/api/execute", methods=["POST"])
-    @require_api_key_or_session
-    def execute() -> ResponseReturnValue:
-        """
-        Queue job for execution
-
-        Query Parameters:
-            context (optional): Context filter (weekly-cleanup, torrent-imported, etc.)
-            hash (optional): Torrent hash filter
-            dry_run (optional): true to run this job in dry-run mode. Only
-                adds dry-run; a server configured for dry-run stays in it
-            key (required): API key
-
-        Returns:
-            202: Job queued successfully
-            400: Invalid parameters
-            401: Unauthorized
-        """
-        context = request.args.get("context")
-        hash_filter = request.args.get("hash")
-        dry_run_arg = request.args.get("dry_run")
-        if dry_run_arg is not None and dry_run_arg.lower() not in BOOL_VALUES:
-            # Reject rather than guess: a typo here must not run deletes for real
-            return jsonify(
-                {
-                    "error": "Bad Request",
-                    "message": f"dry_run must be one of {', '.join(sorted(BOOL_VALUES))}",
-                }
-            ), 400
-        dry_run = parse_bool(dry_run_arg)
-
-        try:
-            # Enqueue job
-            job_id = queue.enqueue(context=context, hash_filter=hash_filter, dry_run=dry_run)
-
-            # Get full job details
-            job = queue.get_job(job_id)
-
-            logger.info(
-                f"Job queued: {job_id} (context={context}, hash={hash_filter}"
-                f"{', dry_run=True' if dry_run else ''})"
-            )
-
-            return jsonify(job), 202
-
-        except Exception as e:
-            logger.error(f"Error queueing job: {e}", exc_info=True)
-            return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
-
-    @app.route("/api/jobs", methods=["GET"])
-    @require_api_key
-    def list_jobs() -> ResponseReturnValue:
-        """
-        List jobs with filtering and pagination
-
-        Query Parameters:
-            status (optional): Filter by status
-            context (optional): Filter by context
-            limit (optional): Max results (default: 50, max: 100)
-            offset (optional): Pagination offset (default: 0)
-            key (required): API key
-
-        Returns:
-            200: List of jobs
-            401: Unauthorized
-        """
-        status = request.args.get("status")
-        context = request.args.get("context")
-        limit = int(request.args.get("limit", 50))
-        offset = int(request.args.get("offset", 0))
-
-        # Validate status
-        if status and not QueueManager.validate_status(status):
-            return jsonify({"error": "Bad Request", "message": f"Invalid status: {status}"}), 400
-
-        try:
-            jobs = queue.list_jobs(status=status, context=context, limit=limit, offset=offset)
-
-            total = queue.count_jobs(status=status)
-
-            return jsonify({"total": total, "limit": limit, "offset": offset, "jobs": jobs}), 200
-
-        except Exception as e:
-            logger.error(f"Error listing jobs: {e}", exc_info=True)
-            return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
-
-    @app.route("/api/jobs/<job_id>", methods=["GET"])
-    @require_api_key_or_session
-    def get_job(job_id: str) -> ResponseReturnValue:
-        """
-        Get job by ID
-
-        Path Parameters:
-            job_id: Job ID (UUID)
-
-        Query Parameters:
-            key (required): API key
-
-        Returns:
-            200: Job details
-            404: Job not found
-            401: Unauthorized
-        """
-        job = queue.get_job(job_id)
-
-        if not job:
-            return jsonify({"error": "Not Found", "message": f"Job not found: {job_id}"}), 404
-
-        return jsonify(job), 200
-
-    @app.route("/api/jobs/<job_id>", methods=["DELETE"])
-    @require_api_key
-    def cancel_job(job_id: str) -> ResponseReturnValue:
-        """
-        Cancel pending job
-
-        Path Parameters:
-            job_id: Job ID (UUID)
-
-        Query Parameters:
-            key (required): API key
-
-        Returns:
-            200: Job cancelled
-            400: Job cannot be cancelled (not pending)
-            404: Job not found
-            401: Unauthorized
-        """
-        job = queue.get_job(job_id)
-
-        if not job:
-            return jsonify({"error": "Not Found", "message": f"Job not found: {job_id}"}), 404
-
-        if job["status"] != JobStatus.PENDING:
-            return jsonify(
-                {"error": "Bad Request", "message": f"Cannot cancel job in status: {job['status']}"}
-            ), 400
-
-        success = queue.cancel_job(job_id)
-
-        if success:
-            logger.info(f"Job cancelled: {job_id}")
-            return jsonify(
-                {
-                    "job_id": job_id,
-                    "status": JobStatus.CANCELLED,
-                    "message": "Job cancelled successfully",
-                }
-            ), 200
-        else:
-            return jsonify(
-                {"error": "Internal Server Error", "message": "Failed to cancel job"}
-            ), 500
-
-    @app.route("/api/health", methods=["GET"])
-    def health() -> ResponseReturnValue:
-        """
-        Health check endpoint (no authentication required)
-
-        Returns:
-            200: Service healthy
-            503: Service unhealthy
-        """
-        errors = []
-
-        # Check queue backend
-        if not queue.health_check():
-            errors.append("Queue backend not accessible")
-
-        # Check worker
-        if not worker.is_alive():
-            errors.append("Worker thread not running")
-
-        # Check for stuck processing jobs
-        processing_count = queue.count_jobs(JobStatus.PROCESSING)
-        if processing_count > 5:  # Arbitrary threshold
-            errors.append(f"Too many processing jobs: {processing_count}")
-
-        if errors:
-            return jsonify(
-                {
-                    "status": "unhealthy",
-                    "errors": errors,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                }
-            ), 503
-
-        # Healthy response
-        worker_status = worker.get_status()
-
-        # Settings the server started without (no API key): still healthy --
-        # the process works, and restarting it wouldn't help -- but said here
-        problems = dashboard_config.settings.problems if dashboard_config is not None else ()
-        extra: dict[str, Any] = {"config_problems": list(problems)} if problems else {}
-
+    @app.errorhandler(405)
+    def method_not_allowed(error: Exception) -> ResponseReturnValue:
+        """Handle 405 errors"""
         return jsonify(
             {
-                **extra,
-                "status": "healthy",
-                "version": __version__,
-                "queue": {
-                    "backend": queue.__class__.__name__,
-                    "pending_jobs": queue.get_queue_depth(),
-                    "processing_jobs": queue.count_jobs(JobStatus.PROCESSING),
-                },
-                "worker": {
-                    "status": "running" if worker_status["running"] else "stopped",
-                    "last_job_completed": worker_status["last_job_completed"],
-                },
-                "timestamp": datetime.now(UTC).isoformat(),
+                "error": "Method Not Allowed",
+                "message": f"{request.method} is not allowed for this endpoint",
             }
-        ), 200
-
-    @app.route("/api/stats", methods=["GET"])
-    @require_api_key
-    def stats() -> ResponseReturnValue:
-        """
-        Get server statistics
-
-        Query Parameters:
-            key (required): API key
-
-        Returns:
-            200: Statistics
-            401: Unauthorized
-        """
-        try:
-            queue_stats = queue.get_stats()
-            worker_status = worker.get_status()
-
-            return jsonify(
-                {
-                    "jobs": {
-                        "total": queue_stats["total_jobs"],
-                        "pending": queue_stats["pending"],
-                        "processing": queue_stats["processing"],
-                        "completed": queue_stats["completed"],
-                        "failed": queue_stats["failed"],
-                        "cancelled": queue_stats["cancelled"],
-                    },
-                    "performance": {
-                        "average_execution_time": f"{queue_stats['average_execution_time']}s"
-                        if queue_stats["average_execution_time"]
-                        else None,
-                    },
-                    "queue": {
-                        "backend": queue.__class__.__name__,
-                        "depth": queue.get_queue_depth(),
-                    },
-                    "worker": {
-                        "status": "running" if worker_status["running"] else "stopped",
-                        "last_job_completed": worker_status["last_job_completed"],
-                    },
-                    "timestamp": datetime.now(UTC).isoformat(),
-                }
-            ), 200
-
-        except Exception as e:
-            logger.error(f"Error getting stats: {e}", exc_info=True)
-            return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
-
-    @app.route("/api/version", methods=["GET"])
-    def version() -> ResponseReturnValue:
-        """
-        Get version information (no authentication required)
-
-        Returns:
-            200: Version info
-        """
-        return jsonify(
-            {
-                "version": __version__,
-                "api_version": "1.0",
-                "python_version": sys.version.split()[0],
-            }
-        ), 200
+        ), 405
 
     @app.errorhandler(413)
     def too_large(error: Exception) -> ResponseReturnValue:
@@ -677,267 +334,6 @@ def register_routes(app: Flask) -> None:
         return jsonify(
             {"error": "Internal Server Error", "message": "An unexpected error occurred"}
         ), 500
-
-
-def _editor_state() -> dict[str, Any]:
-    """Whether rules.yml can be saved from the editor right now, and why not"""
-    if rules_store is None:
-        return {
-            "editable": False,
-            "readonly_reason": "The server was started without a config directory",
-        }
-    if not editor_enabled:
-        return {
-            "editable": False,
-            "readonly_reason": "Saving is turned off (server.editor_enabled: false)",
-        }
-    ok, reason = rules_store.writable()
-    return {"editable": ok, "readonly_reason": reason}
-
-
-def _strip_etag(value: str | None) -> str | None:
-    """'W/"abc"' / '"abc"' / 'abc' -> 'abc'"""
-    if not isinstance(value, str):
-        return None
-    value = value.strip()
-    if value.startswith("W/"):
-        value = value[2:]
-    return value.strip('"') or None
-
-
-def _json_body() -> dict[str, Any]:
-    data = request.get_json(silent=True)
-    return data if isinstance(data, dict) else {}
-
-
-def register_editor_routes(app: Flask) -> None:
-    """
-    JSON API behind the rules editor (/rules/edit)
-
-    rules.yml is edited as text -- the browser sends the whole file and the
-    server writes exactly those bytes, so comments, ordering and formatting
-    all survive. Every write carries the ETag of the version it was edited
-    from (If-Match) and is refused with 412 if the file has changed since;
-    every write is validated first (rules_validation) and refused with 422
-    if anything would fail or misfire; every write keeps a copy of what it
-    replaced (config_store). The rules engine hot-reloads rules.yml, so a
-    save applies to the next job without a restart.
-
-    config.yml is exposed read-only, with credentials masked -- see
-    config_store.redacted_config_view() for why.
-    """
-
-    def _unavailable() -> ResponseReturnValue:
-        return jsonify(
-            {
-                "error": "Service Unavailable",
-                "message": "The server was started without a config directory",
-            }
-        ), 503
-
-    def _bad_content() -> ResponseReturnValue:
-        return jsonify(
-            {"error": "Bad Request", "message": "Body must be JSON with a 'content' string"}
-        ), 400
-
-    @app.route("/api/rules/source", methods=["GET"])
-    @require_api_key_or_session
-    def rules_source() -> ResponseReturnValue:
-        """
-        rules.yml as text, with the ETag a save must send back
-
-        Returns:
-            200: {content, etag, modified_at, size, path, editable, readonly_reason}
-        """
-        if rules_store is None:
-            return _unavailable()
-        snapshot = rules_store.read()
-        response = jsonify({**snapshot.to_dict(), "path": str(rules_store.path), **_editor_state()})
-        response.headers["ETag"] = f'"{snapshot.etag}"'
-        response.headers["Cache-Control"] = "no-store"
-        return response, 200
-
-    @app.route("/api/rules/validate", methods=["POST"])
-    @require_api_key_or_session
-    def rules_validate() -> ResponseReturnValue:
-        """
-        Validate a candidate rules.yml without saving it
-
-        Body: {"content": "<yaml>"}
-
-        Returns:
-            200: {valid, issues: [{severity, message, path, line, column,
-                 end_line, end_column}], counts, summary}
-            400: No content
-        """
-        content = _json_body().get("content")
-        if not isinstance(content, str):
-            return _bad_content()
-        return jsonify(validate_rules_text(content)), 200
-
-    @app.route("/api/rules/source", methods=["PUT"])
-    @require_api_key_or_session
-    def rules_save() -> ResponseReturnValue:
-        """
-        Save rules.yml
-
-        Body: {"content": "<yaml>"}, plus an If-Match header (or "etag" in
-        the body) holding the ETag of the version the edit started from.
-
-        Returns:
-            200: Saved, or unchanged -- {saved, etag, modified_at, size, validation}
-            400: No content
-            403: Saving is turned off, or the file isn't writable
-            412: The file changed since that ETag -- {current: {content, etag, ...}}
-            422: Validation found errors -- {validation}
-            428: No If-Match/etag given
-        """
-        if rules_store is None:
-            return _unavailable()
-
-        body = _json_body()
-        content = body.get("content")
-        if not isinstance(content, str):
-            return _bad_content()
-
-        state = _editor_state()
-        if not state["editable"]:
-            return jsonify({"error": "Forbidden", "message": state["readonly_reason"]}), 403
-
-        if_match = _strip_etag(request.headers.get("If-Match")) or _strip_etag(body.get("etag"))
-        if not if_match:
-            return jsonify(
-                {
-                    "error": "Precondition Required",
-                    "message": "Send the ETag from GET /api/rules/source as If-Match, so a save "
-                    "cannot overwrite changes made since",
-                }
-            ), 428
-
-        validation = validate_rules_text(content)
-        if not validation["valid"]:
-            return jsonify(
-                {
-                    "error": "Unprocessable Entity",
-                    "message": (
-                        f"rules.yml has {validation['counts']['error']} error(s) -- not saved"
-                    ),
-                    "validation": validation,
-                }
-            ), 422
-
-        try:
-            snapshot, changed = rules_store.write(content, if_match)
-        except FileNotWritableError as e:
-            return jsonify({"error": "Forbidden", "message": str(e)}), 403
-        except FileConflictError as e:
-            return jsonify(
-                {
-                    "error": "Precondition Failed",
-                    "message": "rules.yml changed since you opened it",
-                    "current": e.current.to_dict(),
-                }
-            ), 412
-
-        if changed:
-            # This process serves the new rules immediately; every other
-            # Gunicorn worker notices the changed file on its next
-            # get_rules() call
-            try:
-                # rules_store is only set alongside dashboard_config (create_app)
-                assert dashboard_config is not None  # noqa: S101
-                dashboard_config.reload_rules(force=True)
-            except Exception as e:
-                logger.warning(f"Saved rules.yml but reloading it failed: {e}")
-
-        response = jsonify(
-            {
-                "saved": changed,
-                "etag": snapshot.etag,
-                "modified_at": snapshot.modified_at,
-                "size": snapshot.size,
-                "validation": validation,
-            }
-        )
-        response.headers["ETag"] = f'"{snapshot.etag}"'
-        return response, 200
-
-    @app.route("/api/rules/history", methods=["GET"])
-    @require_api_key_or_session
-    def rules_history() -> ResponseReturnValue:
-        """
-        Previous versions of rules.yml kept by editor saves, newest first
-
-        Returns:
-            200: {versions: [{id, saved_at, size}]}
-        """
-        if rules_store is None:
-            return _unavailable()
-        return jsonify({"versions": rules_store.history()}), 200
-
-    @app.route("/api/rules/history/<version_id>", methods=["GET"])
-    @require_api_key_or_session
-    def rules_history_version(version_id: str) -> ResponseReturnValue:
-        """
-        One previous version's content -- restore it by saving it
-
-        Returns:
-            200: {id, content}
-            404: No such version
-        """
-        if rules_store is None:
-            return _unavailable()
-        content = rules_store.read_version(version_id)
-        if content is None:
-            return jsonify({"error": "Not Found", "message": f"No saved version {version_id}"}), 404
-        return jsonify({"id": version_id, "content": content}), 200
-
-    @app.route("/api/rules/catalog", methods=["GET"])
-    @require_api_key_or_session
-    def rules_catalog() -> ResponseReturnValue:
-        """
-        Fields, operators and action types the engine supports, for the
-        editor's autocomplete, plus the contexts config.yml's schedule fires
-        """
-        catalog = schema.catalog()
-        schedule = dashboard_config.schedule if dashboard_config is not None else []
-        catalog["schedule_contexts"] = sorted({str(entry.get("context")) for entry in schedule})
-        return jsonify(catalog), 200
-
-    @app.route("/api/config/source", methods=["GET"])
-    @require_api_key_or_session
-    def config_source() -> ResponseReturnValue:
-        """
-        config.yml as text, read-only, with credentials masked
-
-        Returns:
-            200: {content, redacted, issues, path}
-        """
-        if dashboard_config is None:
-            return _unavailable()
-        config_file = dashboard_config.config_file
-        try:
-            view = redacted_config_view(config_file.read_text("utf-8"))
-        except FileNotFoundError:
-            view = {
-                "content": "",
-                "redacted": [],
-                "issues": [
-                    {
-                        "severity": "info",
-                        "message": f"{config_file} does not exist: every setting comes from its "
-                        "environment variable or its default",
-                        "path": "",
-                        "line": None,
-                        "column": None,
-                        "end_line": None,
-                        "end_column": None,
-                    }
-                ],
-            }
-        response = jsonify({**view, "path": str(config_file)})
-        response.headers["Cache-Control"] = "no-store"
-        return response, 200
 
 
 _TRACEBACK_EXCEPTION_LINE = re.compile(
@@ -1008,8 +404,7 @@ def register_dashboard_routes(app: Flask) -> None:
             next_url = _sanitize_next(request.form.get("next"))
 
             if _key_matches(key):
-                session.permanent = True
-                session["authenticated"] = True
+                sessions.log_in(session)
                 return redirect(next_url)
 
             return redirect(url_for("login", next=next_url, error=1))
@@ -1180,163 +575,3 @@ def _register_http_metrics_hooks(app: Flask) -> None:
                 duration=duration,
             )
         return response
-
-
-def run_server(
-    app: Flask,
-    host: str = "0.0.0.0",  # noqa: S104  container default; callers pass server.host
-    port: int = 5000,
-    workers: int = 1,
-    log_http_access: bool = False,
-    metrics_enabled: bool = False,
-) -> None:
-    """
-    Run Flask app with Gunicorn in production mode
-
-    Args:
-        app: Flask application
-        host: Bind address
-        port: Bind port
-        workers: Number of Gunicorn workers
-        log_http_access: Enable HTTP access logging (default: False to suppress health checks)
-        metrics_enabled: Whether to register the child_exit Gunicorn hook
-            (Prometheus multiprocess bookkeeping when a worker exits --
-            see child_exit()'s own docstring for what it actually does
-            today) -- only meaningful when metrics are enabled
-    """
-    from gunicorn.app.base import BaseApplication
-    from gunicorn.glogging import Logger
-
-    class FilteredLogger(Logger):
-        """Custom Gunicorn logger that filters out health check and dashboard requests"""
-
-        def access(
-            self,
-            resp: "GunicornResponse",
-            req: "GunicornRequest",
-            environ: MutableMapping[str, Any],
-            request_time: timedelta,
-        ) -> None:
-            """Override access log to filter /api/health and dashboard requests"""
-            # Only filter if log_http_access is False
-            if not log_http_access:
-                # Skip logging for health check endpoint
-                if environ.get("PATH_INFO") == "/api/health":
-                    return
-                # Skip logging for dashboard pages -- the dashboard's only
-                # auth mechanism is a ?key= query param, and a browsing
-                # session hits many more URLs than a scripted API client
-                # typically would, so logging every one repeats the key
-                # in cleartext far more than the JSON API does. Matched by
-                # an explicit allowlist (dashboard routes live at the site
-                # root, not under a shared /dashboard/ prefix) rather than
-                # "not /api/* and not /metrics", so unrelated 404 probes
-                # (bots, scanners) still get logged as before.
-                path = environ.get("PATH_INFO", "")
-                if path == "/" or path.startswith(("/jobs", "/rules", "/login")):
-                    return
-                # Skip logging for the Prometheus scrape endpoint -- polled
-                # every 15-30s by a scraper, same volume rationale as health
-                if environ.get("PATH_INFO") == "/metrics":
-                    return
-
-            # Log all other requests (or all requests if log_http_access is True)
-            super().access(resp, req, environ, request_time)
-
-    class StandaloneApplication(BaseApplication):
-        def __init__(self, app: Flask, options: dict[str, Any] | None = None) -> None:
-            self.application = app
-            self.options = options or {}
-            super().__init__()
-
-        def load_config(self) -> None:
-            for key, value in self.options.items():
-                if key in self.cfg.settings and value is not None:
-                    self.cfg.set(key, value)
-
-        def load(self) -> Callable[..., Any]:
-            return self.application
-
-    def post_fork(server: "Arbiter", worker_process: "GunicornWorker") -> None:
-        """
-        Gunicorn post-fork hook - restart worker thread in forked process
-
-        When Gunicorn forks, threads don't survive the fork. We need to
-        restart the worker thread in each forked worker process.
-
-        The worker also takes over log file rotation from the master (see
-        when_ready). With server.workers > 1 every worker rotates the same
-        file, which can misplace lines around a rotation -- a known
-        limitation; run one worker if that matters.
-        """
-        set_file_rotation(True)
-        logger.info(f"Gunicorn worker {worker_process.pid} forked - restarting worker thread")
-
-        # Import here to access the global worker instance
-        from qbt_rules.web import worker as worker_instance
-
-        # Stop any existing thread (should be dead anyway after fork)
-        if worker_instance.running:
-            worker_instance.running = False
-
-        # Restart the worker thread in this process
-        worker_instance.start()
-        logger.info(f"Worker thread restarted in Gunicorn worker {worker_process.pid}")
-
-    def when_ready(server: "Arbiter") -> None:
-        """
-        Gunicorn when_ready hook - runs in the master before the first fork
-
-        The master stops rotating the log file and only reopens it after a
-        worker rotates it, so the master and its workers never rotate the
-        same file at once. Workers switch back to rotating in post_fork.
-        """
-        set_file_rotation(False)
-
-    def child_exit(server: "Arbiter", worker_process: "GunicornWorker") -> None:
-        """
-        Gunicorn child_exit hook - Prometheus multiprocess bookkeeping
-        when a worker exits
-
-        Verified empirically (real 2-worker server, one worker killed
-        mid-run): a dead worker's Counter/Histogram .db files in
-        PROMETHEUS_MULTIPROC_DIR correctly keep contributing to aggregated
-        /metrics totals after it's gone -- and that's the *correct*
-        behavior, not a leak to clean up. Those values are cumulative
-        historical fact ("this many requests really happened") and stay
-        valid regardless of whether the process that recorded them still
-        exists; MultiProcessCollector already sums every .db file in the
-        directory unconditionally. mark_process_dead() only ever removes
-        gauge_{live-mode}_{pid}.db files, for prometheus_client's
-        multiprocess "live" Gauge modes (livesum/liveall/livemax/livemin)
-        specifically -- this module doesn't use those today (the on-demand
-        state Collector in metrics.py computes gauges fresh on every
-        scrape instead, deliberately sidestepping the need for them), so
-        this call is currently a no-op. Kept as forward-compatible hygiene
-        in case a future metric genuinely needs a live-mode Gauge.
-        """
-        from prometheus_client import multiprocess
-
-        # prometheus_client leaves mark_process_dead unannotated
-        multiprocess.mark_process_dead(worker_process.pid)  # type: ignore[no-untyped-call]
-
-    options: dict[str, Any] = {
-        "bind": f"{host}:{port}",
-        "workers": workers,
-        "worker_class": "sync",
-        "timeout": 120,
-        "accesslog": "-",  # Log to stdout
-        "errorlog": "-",  # Log to stderr
-        "loglevel": "warning",
-        "logger_class": FilteredLogger,  # Use custom logger to filter health checks
-        "preload_app": True,  # Load app before forking workers
-        "post_fork": post_fork,  # Restart worker thread after fork
-        "when_ready": when_ready,  # Master stops rotating the log file
-    }
-    if metrics_enabled:
-        options["child_exit"] = child_exit
-
-    logger.info(f"Starting Gunicorn server on {host}:{port} with {workers} worker(s)")
-
-    app_instance = StandaloneApplication(app, options)
-    app_instance.run()

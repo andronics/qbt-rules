@@ -6,11 +6,11 @@ This page maps the codebase itself — which module does what, and how a job cro
 
 ## Overview
 
-qbt-rules is one Python package and one binary, `qbt-rules`. Server mode runs a Flask app under Gunicorn with a worker thread and a scheduler thread beside it; the worker pulls jobs from a SQLite or Redis queue, evaluates `rules.yml` against qBittorrent's torrents, and calls back into qBittorrent's Web API to act. Everything else (the CLI client, webhooks, cron, the dashboard) only submits jobs or reads results over HTTP.
+qbt-rules is one Python package and one binary, `qbt-rules`. Server mode runs one uvicorn process serving the FastAPI app, with a worker thread and a scheduler thread beside it; the worker pulls jobs from a SQLite or Redis queue, evaluates `rules.yml` against qBittorrent's torrents, and calls back into qBittorrent's Web API to act. Everything else (the CLI client, webhooks, cron, the dashboard) only submits jobs or reads results over HTTP.
 
 ```mermaid
 flowchart LR
-    client["CLI client / webhook / curl / dashboard"] -->|HTTP| web["web.py (Flask, Gunicorn)"]
+    client["CLI client / webhook / curl / dashboard"] -->|HTTP| web["api.py (FastAPI, uvicorn)"]
     sched["scheduler.py"] -->|enqueue| queue
     web -->|enqueue / read| queue[("queue_backends: SQLite or Redis")]
     worker["worker.py"] -->|dequeue / update| queue
@@ -23,12 +23,12 @@ flowchart LR
 
 There's one binary (`qbt-rules`) with two roles, chosen by how it's invoked:
 
-- **Server mode** (`qbt-rules serve` / `--serve`): starts `web.py`'s Flask app under Gunicorn, plus `worker.py` and `scheduler.py` background threads in the same process. This is what runs continuously inside the Docker container.
+- **Server mode** (`qbt-rules serve` / `--serve`): `server.py` runs `api.py`'s FastAPI app under uvicorn, one process. The app's lifespan starts `worker.py` and `scheduler.py` as background threads and, on SIGTERM or SIGINT, stops and joins them before the process exits. This is what runs continuously inside the Docker container.
 - **Client mode** (the default, no `serve`): submits a job to a running server over HTTP and, if given a `--client-server-url`/`--client-api-key`, optionally waits for and prints the result (`--wait`). This is what runs when you `docker exec qbt-rules qbt-rules --context X --wait`, or when a script hits the HTTP API with `curl` directly instead.
 
 Nothing in client mode touches qBittorrent directly — it only talks to the server's HTTP API. All qBittorrent access happens inside the server process, via the worker.
 
-When metrics are enabled, `metrics.py` runs into the exact same Gunicorn `preload_app`/fork consideration `scheduler.py` already had to solve (see [Scheduling](Scheduling#running-with-multiple-server-workers)) — a naive in-process counter would be silently forked into `server.workers` independent, unsynchronized copies. See [Metrics](Metrics#fork-safety-why-this-needs-multiproc_dir-at-all) for how it's handled.
+Because the server is one process, the scheduler fires once per cron tick and every metric is counted in one place. `server.workers` must be `1`; a higher value is refused at startup.
 
 ## Components
 
@@ -37,9 +37,12 @@ When metrics are enabled, `metrics.py` runs into the exact same Gunicorn `preloa
 | `legacy_cli.py` | The `qbt-rules` entry point today. Parses args and dispatches to either server mode (`serve`/`--serve`) or client mode (default); job-management commands (`--list-jobs`, `--job-status`, `--cancel-job`, `--stats`) |
 | `arguments.py` | Centralized `argparse` setup shared by both CLI modes; `--validate`/`--list-rules`; picks the config directory |
 | `cli_ui.py` | Table/JSON rendering for the data-display commands; the only place that prints |
-| `web.py` | Flask HTTP API (run under Gunicorn) — job submission, status, health, stats endpoints; API-key and session auth (see [HTTP API Reference](HTTP-API-Reference)); also registers the [Dashboard](Dashboard) routes (`/`, `/jobs`, `/rules`, `/rules/edit`, `/login`), the rules editor's `/api/rules/*` endpoints and, when enabled, `/metrics` (see [Metrics](Metrics)) |
+| `api.py`, `api_rules.py`, `api_models.py` | The FastAPI app: the JSON API (jobs, health, stats, version, the rules editor's `/api/rules/*` and `/api/config/source`), `/healthz` and `/readyz`, API-key and session auth (see [HTTP API Reference](HTTP-API-Reference)), the `{"error", "message"}` error bodies, and the lifespan that runs the worker and scheduler threads. `api_models.py` describes the responses for the OpenAPI schema |
+| `server.py` | Runs the app under uvicorn; the access-log filter (hides polling requests, redacts `key=`) |
+| `sessions.py` | The login session shared by the JSON API and the dashboard (Starlette's `SessionMiddleware`, cookie `qbt_rules_session`), and its CSRF token |
+| `web.py` | The [Dashboard](Dashboard) pages (`/`, `/jobs`, `/rules`, `/rules/edit`, `/login`), `/static` and, when enabled, `/metrics` (see [Metrics](Metrics)): still Flask, mounted under the FastAPI app until the dashboard is ported |
 | `templates/`, `static/` | Jinja2 templates for the dashboard — server-rendered HTML, no frontend build step — and the rules editor's script |
-| `config_store.py` | Reads and writes `rules.yml` for the editor: ETags, conflict detection, the `.history/` of previous versions, a file lock across Gunicorn workers |
+| `config_store.py` | Reads and writes `rules.yml` for the editor: ETags, conflict detection, the `.history/` of previous versions, a file lock so concurrent saves can't interleave |
 | `rules_validation.py` | `rules.yml` validation for the editor and `--validate`: YAML syntax, structure, then the engine's vocabulary |
 | `schema.py` | Catalogue of every field namespace, operator and action type the engine implements, shared by the validator and the editor's autocomplete |
 | `metrics.py` | Optional Prometheus instrumentation (see [Metrics](Metrics)) — always safe to import even when `prometheus_client` isn't installed, since the actual dependency is only ever imported lazily, deferred until `metrics.init()` runs |

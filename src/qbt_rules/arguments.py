@@ -101,7 +101,10 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--server-workers", type=int, help="Gunicorn worker processes (default: 1)", metavar="NUM"
+        "--server-workers",
+        type=int,
+        help="Must be 1: the server is one process (server.workers)",
+        metavar="NUM",
     )
 
     # Client configuration (for client mode)

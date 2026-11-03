@@ -4,10 +4,11 @@ qbt-rules ships as one container image, `ghcr.io/andronics/qbt-rules` (`linux/am
 
 ## Process model
 
-The container runs `qbt-rules serve`: the Flask HTTP API under **Gunicorn**, plus the background worker thread that runs jobs and the internal [scheduler](Scheduling), in one container.
+The container runs `qbt-rules serve`: **one uvicorn process** serving the HTTP API, with the background worker thread that runs jobs and the internal [scheduler](Scheduling) beside it.
 
 - **One server per qBittorrent instance.** Jobs queue up and are worked off in order; separate workloads are separate contexts on the same server, not separate containers (see [Advanced Topics](Advanced-Topics)).
-- **`server.workers`** (default `1`) sets the number of Gunicorn worker processes. The scheduler still fires once per cron tick whatever it's set to (see [Scheduling](Scheduling#running-with-multiple-server-workers)), and [metrics](Metrics) need `metrics.multiproc_dir` above 1.
+- **One process, one replica.** There are no worker processes: `server.workers` must be `1` (any other value, or `--server-workers`, is refused at startup and says to drop it). The scheduler runs in that process, so it fires once per cron tick; a second replica would fire every entry twice. In Kubernetes keep `replicas: 1` with the `Recreate` strategy (template-python decision 0008).
+- **Stopping.** `docker stop` (SIGTERM) stops the server cleanly: it stops taking requests, the worker finishes its current poll (a running job gets a few seconds), and the worker and scheduler threads are joined before the process exits.
 - **The queue is the state.** With the default SQLite backend the queue is a file in the state directory; with Redis it's in Redis. Either way, queued jobs survive a restart.
 
 ## Docker Compose
@@ -47,7 +48,17 @@ docker exec qbt-rules qbt-rules --validate     # config.yaml and rules.yml
 - The port binds to `127.0.0.1` only: put a reverse proxy (Traefik) in front for TLS and remote access (see [Security](Security#network-exposure)).
 - The container starts as root only to give `/var/lib/qbt-rules` to `PUID:PGID` (default `1000:1000`; Unraid uses `99:100`), then drops to that user. `docker exec qbt-rules qbt-rules ...` goes through the same wrapper, so the CLI runs as that user too.
 - Secrets go in files mounted read-only, passed as `QBT_RULES_<SECTION>_<FIELD>_FILE` (see [In-Depth Configuration](In-Depth-Configuration#secrets)).
-- The image's healthcheck polls `GET /api/health` on `QBT_RULES_LISTEN_PORT` (default `5000`): move the port with that variable. `QBT_RULES_SERVER_PORT` still works as an alias, but the healthcheck doesn't read it. `/api/health` answers `200` while the process works, and lists settings it's missing (no API key) under `config_problems`.
+- The image's healthcheck polls `GET /healthz` on `QBT_RULES_LISTEN_PORT` (default `5000`): move the port with that variable. `QBT_RULES_SERVER_PORT` still works as an alias, but the healthcheck doesn't read it.
+
+### Probes
+
+| Path | Use it for | Answers |
+|------|-----------|---------|
+| `GET /healthz` | Liveness (the image's `HEALTHCHECK`, a Kubernetes `livenessProbe`) | `200 {"status":"ok"}` while the process serves HTTP. Depends on nothing, so a slow queue never gets the container restarted |
+| `GET /readyz` | Readiness (a `readinessProbe`) | `200 {"status":"ready"}`, or `503` while starting or when the worker or scheduler thread has died (the message names it) |
+| `GET /api/health` | Detail, for a human or a dashboard | `200` with the queue and worker status and any `config_problems` (no API key), or `503` when the queue is unreachable, the worker thread is dead or more than 5 jobs are processing at once |
+
+None of them needs the API key.
 
 ### Redis queue
 

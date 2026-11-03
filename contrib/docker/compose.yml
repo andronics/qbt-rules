@@ -38,4 +38,4 @@ services:
     # The entrypoint chowns the state directory, then drops to PUID:PGID
     cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
 
-    # The image's HEALTHCHECK polls /api/health
+    # The image's HEALTHCHECK polls /healthz

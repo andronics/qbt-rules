@@ -17,13 +17,13 @@ The dashboard reuses the exact same data the [JSON API](HTTP-API-Reference) alre
 
 ### Authentication
 
-Same key as the JSON API (see [Security](Security#api-authentication)). Open any dashboard page without it and you're redirected to `/login`, which asks for the API key once and keeps you signed in with a session cookie. The `?key=` query parameter still works too: every link within the dashboard carries it forward automatically as you navigate.
+Same key as the JSON API (see [Security](Security#api-authentication)). Open any dashboard page without it and you're redirected to `/login`, which asks for the API key once and keeps you signed in with a session cookie (`qbt_rules_session`, valid for 31 days; changing the API key logs everyone out). The JSON API accepts the same session, so the dashboard's pages call it directly. 0.11 changed the cookie, so a 0.10.x login is dropped once on upgrade. The `?key=` query parameter still works too: every link within the dashboard carries it forward automatically as you navigate.
 
 ```text
 http://localhost:5000/dashboard?key=YOUR_API_KEY
 ```
 
-**Trade-off of `?key=`:** because the key lives in the URL rather than a header, it's more likely to end up in browser history or autocomplete than a scripted client's `X-API-Key` header would be. There's no built-in mitigation beyond what's already true of the JSON API's `?key=` support — if that's a concern, put the server behind a reverse proxy with its own auth (see [Security](Security#network-exposure)) and treat the dashboard link like any other bookmarked credential. As a smaller mitigation, dashboard requests are excluded from Gunicorn's access log by default (same as `/api/health`), so the key isn't repeated in cleartext log lines every time you browse.
+**Trade-off of `?key=`:** because the key lives in the URL rather than a header, it's more likely to end up in browser history or autocomplete than a scripted client's `X-API-Key` header would be. There's no built-in mitigation beyond what's already true of the JSON API's `?key=` support — if that's a concern, put the server behind a reverse proxy with its own auth (see [Security](Security#network-exposure)) and treat the dashboard link like any other bookmarked credential. As a smaller mitigation, the server's access log replaces every `key=` value with `[REDACTED]`, so the key never lands in a log line.
 
 ### Rules View Availability
 

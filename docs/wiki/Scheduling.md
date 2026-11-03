@@ -44,11 +44,9 @@ Firing a scheduled entry is identical to a job submitted any other way — same 
 
 There's no misfire catch-up: if the server was down when a fire time passed, that occurrence is simply skipped — the same behavior an external cron job would have had.
 
-### Running with Multiple Server Workers
+### One Process, One Scheduler
 
-If you've set `server.workers` above `1` (see [In-Depth Configuration](In-Depth-Configuration)), the scheduler still fires **exactly once per cron tick**, not once per worker. It's started before Gunicorn forks its worker processes and deliberately isn't restarted per-fork the way the background worker thread is — so it keeps running in the long-lived master process regardless of how many request-handling workers you've configured. You don't need to do anything to get this behavior; it's automatic.
-
-[Metrics](Metrics#fork-safety-why-this-needs-multiproc_dir-at-all) runs into the same category of problem (a naive in-process counter forked into unsynchronized per-worker copies) and solves it with a different mechanism (`prometheus_client`'s multiprocess mode, since counters — unlike the scheduler — genuinely need to run in every worker, not just the master).
+The server is one process, and the scheduler is a thread in it, so each entry fires **exactly once per cron tick**. `server.workers` must be `1`. Run only one server per qBittorrent instance: a second one (another container, or a second Kubernetes replica) would fire every entry again. If the scheduler thread dies, `/readyz` answers `503` naming it (see [Deployment](Deployment#probes)).
 
 ### Migrating from an External Cron Job
 

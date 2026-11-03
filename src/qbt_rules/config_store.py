@@ -22,8 +22,8 @@ EditableFile wraps one file (rules.yml) with what a browser editor needs:
   reports it and write() refuses, rather than replace() quietly swapping
   in a new writable file (which a writable directory would allow).
 
-An fcntl lock (in the history directory) serialises the check-then-write across Gunicorn worker
-processes, each of which has its own EditableFile.
+An fcntl lock (in the history directory) serialises the check-then-write across processes (the
+server, and a second instance pointed at the same files), each of which has its own EditableFile.
 
 redacted_config_view() is the read-only counterpart for config.yaml, which
 holds credentials and is only read at startup -- see its docstring.

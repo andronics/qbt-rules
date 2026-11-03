@@ -7,5 +7,5 @@
   "headers": {},
   "timestamp_paths": [],
   "masked": [],
-  "body": "{\"error\":\"Internal Server Error\",\"message\":\"queue backend unavailable\"}\n"
+  "body": "{\"error\":\"Internal Server Error\",\"message\":\"An unexpected error occurred\"}\n"
 }

@@ -1,6 +1,6 @@
 # Written by Copier: never edit by hand. `copier update` reads it to know
 # which template version and answers this project was made from.
-_commit: v2.4.0
+_commit: v2.4.1
 _src_path: gh:andronics/template-python
 base_answers:
     code_owners: '@andronics'
@@ -16,7 +16,7 @@ container_image: true
 contrib:
 - docker
 extra_ports: []
-health_path: /api/health
+health_path: /healthz
 image_extras:
 - redis
 integration_ci: false
