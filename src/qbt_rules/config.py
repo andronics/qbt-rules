@@ -26,7 +26,7 @@ templates and other deployments set those. What interpose doesn't do, load_confi
 - ``server.host`` and ``server.port`` (key and variable) are aliases of ``listen.host`` and
   ``listen.port``, the names the image's HEALTHCHECK reads.
 - What was removed or renamed is refused with its replacement (REFUSED_VARIABLES,
-  RENAMED_KEYS), and so is a path under the old ``/config`` volume.
+  RENAMED_KEYS, REMOVED_KEYS), and so is a path under the old ``/config`` volume.
 - A missing setting the server can start without (the API key) is listed in
   ``Config.problems``, for ``/api/health`` and the startup log, rather than refused. The
   placeholder key the 0.10.x default config.yml shipped with counts as missing: it is public.
@@ -93,6 +93,11 @@ _MOVED = (
     "qbt-rules 0.11 keeps its config in /etc/qbt-rules (config.yaml, rules.yml) and its state "
     "in /var/lib/qbt-rules (see the wiki's In-Depth-Configuration page, Migrating from 0.10.x)"
 )
+_NO_MULTIPROC = (
+    "is no longer read: qbt-rules 0.11 is one process, and its metrics live in memory "
+    "(interpose, not prometheus_client), so there is no multiprocess directory. Remove it; "
+    "metrics.enabled (QBT_RULES_METRICS_ENABLED) alone turns /metrics on"
+)
 # Variables that no longer apply, and what to set instead. Each is refused at startup.
 REFUSED_VARIABLES = {
     "CONFIG_DIR": (
@@ -106,9 +111,13 @@ REFUSED_VARIABLES = {
     "QBT_RULES_LOG_LEVEL": (
         "QBT_RULES_LOG_LEVEL is not a qbt-rules setting: use QBT_RULES_LOGGING_LEVEL"
     ),
+    "QBT_RULES_METRICS_MULTIPROC_DIR": f"QBT_RULES_METRICS_MULTIPROC_DIR {_NO_MULTIPROC}",
+    "PROMETHEUS_MULTIPROC_DIR": f"PROMETHEUS_MULTIPROC_DIR {_NO_MULTIPROC}",
 }
 # Config-file keys that were renamed: old dotted key -> new one
 RENAMED_KEYS = {"engine.dry_run": "dry_run"}
+# Config-file keys that were removed, and why. Each is refused at startup.
+REMOVED_KEYS = {"metrics.multiproc_dir": f"metrics.multiproc_dir {_NO_MULTIPROC}"}
 # Old key -> the key it is an alias of, in the file and as a variable
 ALIASES = {"server.host": "listen.host", "server.port": "listen.port"}
 
@@ -308,12 +317,7 @@ SETTINGS = Settings(
         Setting(
             "metrics.enabled",
             False,
-            "Serve Prometheus metrics on `/metrics` (needs the `metrics` extra).",
-        ),
-        Setting(
-            "metrics.multiproc_dir",
-            "/tmp/qbt-rules-metrics",  # noqa: S108  default, configurable
-            "prometheus_client's multiprocess directory; cleared at startup.",
+            "Serve Prometheus metrics on `/metrics` (needs the API key).",
         ),
         Setting(
             "logging.level",
@@ -394,7 +398,6 @@ class Config:
     trackie_max_age: int  # seconds
     trackie_timeout: float
     metrics_enabled: bool
-    metrics_multiproc_dir: Path
     log_level: str
     log_file: Path | None  # None: the console only
     log_max_bytes: int
@@ -512,7 +515,6 @@ def load_config(path: Path | None = None, environ: Mapping[str, str] | None = No
         trackie_max_age=max_age,
         trackie_timeout=float(r.str("integrations.trackie.timeout")),
         metrics_enabled=r.bool("metrics.enabled"),
-        metrics_multiproc_dir=Path(r.str("metrics.multiproc_dir")),
         log_level=r.str("logging.level"),
         log_file=log_file,
         log_max_bytes=r.int("logging.max_bytes"),
@@ -549,6 +551,9 @@ def _refuse_renamed_keys(data: Mapping[str, Any], path: Path) -> None:
     for old, new in RENAMED_KEYS.items():
         if _lookup(data, old) is not None:
             raise ConfigError(f"{path}: {old} is now {new}")
+    for key, message in REMOVED_KEYS.items():
+        if _lookup(data, key) is not None:
+            raise ConfigError(f"{path}: {message}")
 
 
 def _read_yaml(path: Path) -> Mapping[str, Any]:

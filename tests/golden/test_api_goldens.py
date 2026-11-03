@@ -1,7 +1,7 @@
 """
 Golden responses for the JSON API -- the safety net for the Flask -> FastAPI port
 
-Every JSON route in api.py (plus /metrics, web.py's prometheus_client output, and
+Every JSON route in api.py (plus /metrics, the interpose Registry's text, and
 the 404/405/413/500 handlers) is driven through FastAPI's TestClient against
 a real queue -- SQLite and fakeredis -- and its status, Content-Type,
 selected headers (SELECTED_HEADERS) and exact body are compared with a
@@ -40,9 +40,12 @@ Masked -- the only values not captured as-is (each listed in the golden's
 - ``python_version`` in /api/version: the interpreter running the tests.
 - The temporary config directory in ``path`` fields (and anywhere else it
   appears) is replaced with ``<config_dir>``.
-- /metrics: only the on-demand state gauges (STATE_METRICS) are kept. The
-  multiprocess event counters/histograms aggregate every request made in
-  the whole pytest session, so their values depend on test order.
+- /metrics in metrics_200: only the state gauges (STATE_METRICS) are kept,
+  the part the 0.10.x prometheus_client golden could pin (its multiprocess
+  counters aggregated the whole pytest session). Each app has its own
+  registry now, so metrics_200_events pins the whole body, unmasked:
+  build info, the event counters and histograms (request durations are
+  zero there: the clock it reads is frozen).
 
 - The ``Allow`` header's methods are sorted, so a set's order can't
   change a golden.
@@ -259,6 +262,7 @@ class Env:
         self.backend = backend
         self.clock = Clock(FROZEN_AT)
         self.monkeypatch = monkeypatch
+        self.mask_metrics = True
 
         frozen = _frozen_datetime(self.clock)
         for module in (api, queue_manager, config_store, sqlite_queue):
@@ -320,8 +324,6 @@ class Env:
             editor_enabled=editor,
             metrics_enabled=metrics_on,
         )
-        if metrics_on:
-            metrics.init(enabled=True)
         services = api.Services(
             queue=self.queue,
             worker=cast(api.WorkerLike, self.worker),
@@ -877,6 +879,25 @@ def _(env):
     return _call(env.client(metrics_on=True), "GET", "/metrics", headers=KEY)
 
 
+@case("metrics_200_events")
+def _(env):
+    from types import SimpleNamespace
+
+    env.mask_metrics = False
+    env.monkeypatch.setattr(api, "time", SimpleNamespace(perf_counter=lambda: 100.0))
+    env.seed_jobs()
+    client = env.client(metrics_on=True)
+    # What the worker, the engine and the scheduler record, then two requests
+    metrics.record_job_duration(0.3)
+    metrics.record_job_duration(12.0)
+    metrics.record_action_executed("add_tag", True)
+    metrics.record_action_executed("delete_torrent", False)
+    metrics.record_scheduler_fire(True)
+    client.open("/api/stats", headers=KEY)
+    client.open("/api/stats")
+    return _call(client, "GET", "/metrics", headers=KEY)
+
+
 @case("metrics_401")
 def _(env):
     return _call(env.client(metrics_on=True), "GET", "/metrics")
@@ -919,7 +940,7 @@ def _mask(env: Env, body: str, content_type: str) -> "tuple[str, list[str]]":
         body = body.replace(python_version, '"python_version":"<python_version>"')
         masked.append("python_version")
 
-    if content_type.startswith("text/plain") and "# TYPE qbt_rules_" in body:
+    if env.mask_metrics and content_type.startswith("text/plain") and "# TYPE qbt_rules_" in body:
         kept = []
         for line in body.splitlines(keepends=True):
             name = line.split()[2] if line.startswith("# ") else re.split(r"[{ ]", line)[0]

@@ -203,31 +203,21 @@ def test_serve_warns_about_the_port_alias(
     assert any("set QBT_RULES_LISTEN_PORT instead" in r.getMessage() for r in caplog.records)
 
 
-def test_serve_gives_metrics_a_clean_multiprocess_directory(
-    served: list[Any],
-    write_config: Callable[..., Path],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from qbt_rules import metrics
-
-    seen: list[bool] = []
-    monkeypatch.setattr(metrics, "init", lambda enabled: seen.append(enabled))
-    monkeypatch.setenv("PROMETHEUS_MULTIPROC_DIR", "unchanged")
-    directory = tmp_path / "prom"
-    directory.mkdir()
-    (directory / "counter_123.db").write_text("stale")
-    (directory / "keep.txt").write_text("not a metrics file")
-    path = write_config(f"metrics: {{enabled: true, multiproc_dir: {directory}}}\n")
-
-    result = runner.invoke(app, ["serve", "-c", str(path)])
-
+def test_serve_with_metrics_on_starts(served: list[Any], write_config: Callable[..., Path]) -> None:
+    """metrics.enabled needs nothing installed beyond the image's dependencies (interpose)."""
+    result = runner.invoke(app, ["serve", "-c", str(write_config("metrics: {enabled: true}\n"))])
     assert result.exit_code == 0
-    assert seen == [True]
-    assert sorted(p.name for p in directory.iterdir()) == ["keep.txt"]
-    import os
+    assert served[0].metrics_enabled is True
 
-    assert os.environ["PROMETHEUS_MULTIPROC_DIR"] == str(directory)
+
+def test_serve_refuses_the_removed_multiprocess_directory(
+    served: list[Any], write_config: Callable[..., Path]
+) -> None:
+    path = write_config("metrics: {enabled: true, multiproc_dir: /tmp/m}\n")
+    result = runner.invoke(app, ["serve", "-c", str(path)])
+    assert result.exit_code == 2
+    assert "metrics.multiproc_dir is no longer read" in result.stderr
+    assert served == []
 
 
 def test_serve_refusal_exits_2(

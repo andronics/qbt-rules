@@ -45,7 +45,7 @@ Because the server is one process, the scheduler fires once per cron tick and ev
 | `config_store.py` | Reads and writes `rules.yml` for the editor: ETags, conflict detection, the `.history/` of previous versions, a file lock so concurrent saves can't interleave |
 | `rules_validation.py` | `rules.yml` validation for the editor and `qbt-rules validate`: YAML syntax, structure, then the engine's vocabulary |
 | `schema.py` | Catalogue of every field namespace, operator and action type the engine implements, shared by the validator and the editor's autocomplete |
-| `metrics.py` | Optional Prometheus instrumentation (see [Metrics](Metrics)) — always safe to import even when `prometheus_client` isn't installed, since the actual dependency is only ever imported lazily, deferred until `metrics.init()` runs |
+| `metrics.py` | Prometheus metrics (see [Metrics](Metrics)) on the app's interpose registry (`app.state.metrics`): the state gauges set on each scrape, and the counters and histograms the worker, the scheduler and the HTTP middleware record, behind one lock since three threads change them |
 | `worker.py` | Background thread that dequeues jobs and executes them via the engine; graceful shutdown handling |
 | `scheduler.py` | Background thread that enqueues a job when a configured cron entry fires — see [Scheduling](Scheduling) |
 | `queue_manager.py` | Abstract job-queue interface (`JobStatus` constants, enqueue/dequeue/status contract) |

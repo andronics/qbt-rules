@@ -15,7 +15,8 @@ page URL logs the browser in and redirects to the same URL without ``key=``, so 
 doesn't stay in the address bar or the history; an ``X-API-Key`` header logs in and serves the
 page. The login form posts the key in its body, with the session's CSRF token.
 
-TODO(4e): /metrics is prometheus_client's output, unchanged; interpose's Registry replaces it.
+/metrics renders the app's interpose Registry (metrics.py). It needs the API key, as
+``X-API-Key`` or ``?key=``, never the login session; it answers 404 while metrics.enabled is off.
 """
 
 from __future__ import annotations
@@ -429,26 +430,39 @@ def register(app: FastAPI, metrics_on: bool) -> None:
             config_available=api.services(request).rules is not None,
         )
 
-    if metrics_on:
+    def metrics_enabled() -> None:
+        if not metrics_on:
+            raise api.ApiError(404, "Endpoint not found")
 
-        @app.get("/metrics", dependencies=api.KeyOnly, include_in_schema=False)
-        def metrics_endpoint(request: Request) -> Response:
-            """Prometheus scrape endpoint: the API key, as ``?key=`` or ``X-API-Key``.
-
-            Multiprocess-aggregated event counters and histograms, plus state gauges computed
-            now from the queue, the worker and the schedule (metrics.py says why).
-            """
-            found = api.services(request)
-            worker_status = found.worker.get_status()
-            output = metrics.generate_metrics_output(
-                queue_backend=found.queue.__class__.__name__,
-                queue_depth=found.queue.get_queue_depth(),
-                job_counts=found.queue.get_stats(),
-                worker_running=worker_status["running"],
-                worker_last_job_completed=worker_status["last_job_completed"],
-                schedule_entry_count=len(found.rules.schedule) if found.rules is not None else 0,
-            )
-            # The content type exactly as Flask sent it, charset twice (#28 item 4, fixed in 4e)
-            return Response(
-                output, headers={"Content-Type": f"{metrics.content_type()}; charset=utf-8"}
-            )
+    @app.get(
+        "/metrics",
+        summary="Prometheus metrics (text exposition)",
+        tags=["meta"],
+        response_class=Response,
+        # In this order: off is a 404 whatever the key, as if the route didn't exist
+        dependencies=[Depends(metrics_enabled), *api.KeyOnly],
+        responses={
+            200: {"content": {metrics.CONTENT_TYPE: {}}, "description": "The metrics"},
+            **api.error_responses(404),
+            **api.AUTH_ERRORS,
+        },
+    )
+    def metrics_endpoint(request: Request) -> Response:
+        """The app's metrics in Prometheus text format, when `metrics.enabled` is on (404 when
+        off). Needs the API key, as `X-API-Key` (preferred: Prometheus's `http_headers`) or
+        `?key=`; the login session isn't accepted. The wiki's Metrics page lists the metrics.
+        """
+        # Sync (unlike the template's async route), so the queue reads behind the state gauges
+        # run in the threadpool, not on the event loop; metrics.LOCK makes the render safe
+        # beside the worker and scheduler threads and the HTTP middleware.
+        found = api.services(request)
+        worker_status = found.worker.get_status()
+        body = request.app.state.qbt_metrics.scrape(
+            queue_backend=found.queue.__class__.__name__,
+            queue_depth=found.queue.get_queue_depth(),
+            job_counts=found.queue.get_stats(),
+            worker_running=worker_status["running"],
+            worker_last_job_completed=worker_status["last_job_completed"],
+            schedule_entry_count=len(found.rules.schedule) if found.rules is not None else 0,
+        )
+        return Response(body, media_type=metrics.CONTENT_TYPE)

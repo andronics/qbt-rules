@@ -3,11 +3,11 @@
   "backend": "redis",
   "request": "GET /metrics",
   "status": 200,
-  "content_type": "text/plain; version=1.0.0; charset=utf-8; charset=utf-8",
+  "content_type": "text/plain; version=0.0.4; charset=utf-8",
   "headers": {},
   "timestamp_paths": [],
   "masked": [
     "metrics: event counters/histograms dropped, state gauges kept"
   ],
-  "body": "# HELP qbt_rules_queue_depth Current pending queue depth\n# TYPE qbt_rules_queue_depth gauge\nqbt_rules_queue_depth{backend=\"RedisQueue\"} 1.0\n# HELP qbt_rules_jobs_total Total jobs by status\n# TYPE qbt_rules_jobs_total gauge\nqbt_rules_jobs_total{status=\"pending\"} 1.0\nqbt_rules_jobs_total{status=\"processing\"} 0.0\nqbt_rules_jobs_total{status=\"completed\"} 1.0\nqbt_rules_jobs_total{status=\"failed\"} 1.0\nqbt_rules_jobs_total{status=\"cancelled\"} 0.0\n# HELP qbt_rules_worker_running Worker thread running (1) or not (0)\n# TYPE qbt_rules_worker_running gauge\nqbt_rules_worker_running 1.0\n# HELP qbt_rules_worker_last_job_completed_timestamp_seconds Unix timestamp of the last job the worker completed\n# TYPE qbt_rules_worker_last_job_completed_timestamp_seconds gauge\nqbt_rules_worker_last_job_completed_timestamp_seconds 1.793707262e+09\n# HELP qbt_rules_scheduler_entries Number of configured schedule entries\n# TYPE qbt_rules_scheduler_entries gauge\nqbt_rules_scheduler_entries 2.0\n"
+  "body": "# HELP qbt_rules_queue_depth Current pending queue depth\n# TYPE qbt_rules_queue_depth gauge\nqbt_rules_queue_depth{backend=\"RedisQueue\"} 1\n# HELP qbt_rules_jobs_total Total jobs by status\n# TYPE qbt_rules_jobs_total gauge\nqbt_rules_jobs_total{status=\"cancelled\"} 0\nqbt_rules_jobs_total{status=\"completed\"} 1\nqbt_rules_jobs_total{status=\"failed\"} 1\nqbt_rules_jobs_total{status=\"pending\"} 1\nqbt_rules_jobs_total{status=\"processing\"} 0\n# HELP qbt_rules_worker_running Worker thread running (1) or not (0)\n# TYPE qbt_rules_worker_running gauge\nqbt_rules_worker_running 1\n# HELP qbt_rules_worker_last_job_completed_timestamp_seconds Unix timestamp of the last job the worker completed\n# TYPE qbt_rules_worker_last_job_completed_timestamp_seconds gauge\nqbt_rules_worker_last_job_completed_timestamp_seconds 1793707262\n# HELP qbt_rules_scheduler_entries Number of configured schedule entries\n# TYPE qbt_rules_scheduler_entries gauge\nqbt_rules_scheduler_entries 2\n"
 }
