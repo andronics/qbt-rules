@@ -679,3 +679,66 @@ class TestActionExecutorIntegration:
 
         # But only normal mode calls API
         assert mock_api.stop_torrents.call_count == 1
+
+
+# ============================================================================
+# Skip log line names the action (#51)
+# ============================================================================
+
+
+class TestDesiredStateSkipLog:
+    """The skip line names the action and its key parameter, at DEBUG; the count is kept"""
+
+    def test_skip_line_names_action_and_tag(self, mock_api, caplog):
+        executor = ActionExecutor(mock_api, dry_run=False)
+        torrent = {"name": "T", "hash": "h", "tags": "hd, seed"}
+        with caplog.at_level("DEBUG", logger="qbt_rules.engine"):
+            assert executor.execute(torrent, {"type": "add_tag", "params": {"tags": ["hd"]}}) == (
+                True,
+                True,
+            )
+            executor.execute(torrent, {"type": "remove_tag", "params": {"tags": ["old", "x"]}})
+        lines = [r for r in caplog.records if "already in desired state" in r.getMessage()]
+        assert [r.getMessage() for r in lines] == [
+            "  T - add_tag (tags: hd) already in desired state (skipped)",
+            "  T - remove_tag (tags: old, x) already in desired state (skipped)",
+        ]
+        assert {r.levelname for r in lines} == {"DEBUG"}
+        assert executor.already_applied == 2
+
+    def test_skip_line_names_category(self, mock_api, caplog):
+        executor = ActionExecutor(mock_api, dry_run=False)
+        torrent = {"name": "T", "hash": "h", "category": "movies"}
+        with caplog.at_level("DEBUG", logger="qbt_rules.engine"):
+            executor.execute(torrent, {"type": "set_category", "params": {"category": "movies"}})
+        assert "T - set_category (category: movies) already in desired state" in caplog.text
+
+    def test_skip_not_logged_at_info(self, mock_api, caplog):
+        executor = ActionExecutor(mock_api, dry_run=False)
+        torrent = {"name": "T", "hash": "h", "state": "pausedUP"}
+        with caplog.at_level("INFO", logger="qbt_rules.engine"):
+            executor.execute(torrent, {"type": "stop", "params": {}})
+        assert "already in desired state" not in caplog.text
+        assert executor.already_applied == 1
+
+    def test_dry_run_action_is_not_counted_as_already_applied(self, mock_api):
+        executor = ActionExecutor(mock_api, dry_run=True)
+        torrent = {"name": "T", "hash": "h", "tags": ""}
+        assert executor.execute(torrent, {"type": "add_tag", "params": {"tags": ["new"]}}) == (
+            True,
+            True,
+        )
+        assert executor.already_applied == 0
+
+
+class TestDescribeAction:
+    def test_key_parameters(self):
+        from qbt_rules.engine import describe_action
+
+        assert describe_action("add_tag", {"tags": ["a", "b"]}) == "add_tag (tags: a, b)"
+        assert describe_action("set_category", {"category": "tv"}) == "set_category (category: tv)"
+        assert describe_action("set_file_priority", {"priority": 0, "files": "*.nfo"}) == (
+            "set_file_priority (priority: 0)"
+        )
+        assert describe_action("stop", {}) == "stop"
+        assert describe_action("add_tag", {}) == "add_tag"
