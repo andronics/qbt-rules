@@ -1,8 +1,9 @@
 # 0001: Configuration on interpose, config in /etc/qbt-rules, state in /var/lib/qbt-rules
 
-Status: Approved
+Status: Accepted
 Date: 2026-11-03
-Authors: Stephen Cox (decisions), Claude (implementation)
+Authors: Stephen Cox (the path and CLI decisions), the apps coordinator and Claude (the rest, following
+template-python's conventions)
 
 ## Context
 
@@ -15,6 +16,10 @@ test starts the container with no configuration. Deployments (the Unraid templat
 `QBT_RULES_*` variables, so their names must keep working.
 
 ## Decision
+
+Stephen decided (2026-11-03): new paths only with no `/config` fallback, a clean break, and accepting a
+one-time logout. The rest below follows template-python's conventions (interpose, console logging, starting
+with no configuration) and was chosen in review.
 
 - **Settings** are interpose `Setting`s in `config.py`, with keys chosen so that every documented variable
   keeps its name: `QBT_RULES_<SECTION>_<FIELD>` and its `_FILE` form, `QBT_RULES_DRY_RUN` (key `dry_run`,
