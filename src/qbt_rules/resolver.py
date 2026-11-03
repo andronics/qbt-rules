@@ -98,7 +98,7 @@ class RuleResolver:
         # this is pure storage for future tooling (e.g. a block-library UI)
         # to read/write, with zero effect on rule evaluation. Absent from a
         # refs block with no 'meta' key, same as today.
-        self.meta = refs.get("meta") or {}
+        self.meta: dict[str, dict[str, dict[str, Any]]] = refs.get("meta") or {}
 
         # Apply instance-scoped variable overrides
         # Fully implemented - awaiting Config class integration to pass instance_id
@@ -147,7 +147,7 @@ class RuleResolver:
             RefTypeMismatchError: Reference type does not match context
         """
         # Phase 1: Deep copy to avoid mutating original
-        resolved = copy.deepcopy(rule)
+        resolved: dict[str, Any] = copy.deepcopy(rule)
 
         # Get rule id for error messages
         rule_id = rule.get("id", "unknown")
@@ -359,7 +359,7 @@ class RuleResolver:
             # matches vars./rule. prefixes, so a ${runtime.x} token embedded
             # in a larger string is never matched here -- it passes through
             # untouched with no special-casing needed.
-            def replace_token(match):
+            def replace_token(match: re.Match[str]) -> str:
                 return str(self._resolve_token(match.group(1), rule))
 
             return TOKEN_PATTERN.sub(replace_token, node)

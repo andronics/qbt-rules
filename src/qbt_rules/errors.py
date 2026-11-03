@@ -4,6 +4,8 @@ Provides clear, actionable error messages without Python stack traces
 """
 
 import sys
+from collections.abc import Callable
+from typing import Any, ParamSpec, TypeVar
 
 from qbt_rules.log_setup import get_logger
 
@@ -14,7 +16,7 @@ class QBittorrentError(Exception):
     """Base exception for all qBittorrent automation errors"""
 
     def __init__(
-        self, code: str, message: str, details: dict | None = None, fix: str | None = None
+        self, code: str, message: str, details: dict[str, Any] | None = None, fix: str | None = None
     ):
         self.code = code
         self.message = message
@@ -201,7 +203,7 @@ class InvalidRefError(ResolverError):
 class UnknownRefError(ResolverError):
     """Reference not found in refs block"""
 
-    def __init__(self, ref_path: str, available_refs: list):
+    def __init__(self, ref_path: str, available_refs: list[str]):
         group = ref_path.split(".")[0] if "." in ref_path else "unknown"
         super().__init__(
             code="REF-002",
@@ -231,7 +233,7 @@ class InvalidVariableError(ResolverError):
 class UnknownVariableError(ResolverError):
     """Variable not found in refs.vars"""
 
-    def __init__(self, var_name: str, available_vars: list):
+    def __init__(self, var_name: str, available_vars: list[str]):
         super().__init__(
             code="VAR-002",
             message=f"Unknown variable: {var_name}",
@@ -263,7 +265,7 @@ class InvalidRuleFieldError(ResolverError):
 class UnknownRuleFieldError(ResolverError):
     """${rule.*} references a field this rule doesn't have"""
 
-    def __init__(self, field_name: str, rule_id: str, available_fields: list):
+    def __init__(self, field_name: str, rule_id: str, available_fields: list[str]):
         super().__init__(
             code="RULEFIELD-002",
             message=f"Unknown rule field: {field_name}",
@@ -281,7 +283,7 @@ class UnknownRuleFieldError(ResolverError):
 class CircularRefError(ResolverError):
     """Circular reference detected"""
 
-    def __init__(self, ref_path: str, ref_stack: list):
+    def __init__(self, ref_path: str, ref_stack: list[str]):
         chain = " -> ".join([*ref_stack, ref_path])
         super().__init__(
             code="REF-003",
@@ -300,10 +302,10 @@ class RefTypeMismatchError(ResolverError):
     def __init__(
         self,
         ref_path: str,
-        allowed_groups: list,
+        allowed_groups: list[str],
         actual_group: str,
         location: str,
-        available_refs: list | None = None,
+        available_refs: list[str] | None = None,
     ):
         # Format allowed groups for display
         if len(allowed_groups) == 1:
@@ -337,10 +339,14 @@ class RefTypeMismatchError(ResolverError):
         )
 
 
-def handle_errors(func):
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def handle_errors(func: Callable[P, R]) -> Callable[P, R]:
     """Decorator for user-friendly error handling"""
 
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         try:
             return func(*args, **kwargs)
         except QBittorrentError as e:

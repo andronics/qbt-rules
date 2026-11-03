@@ -332,10 +332,10 @@ def resolve_config(
 
     # 4. Config file value
     if config:
-        value = get_nested_config(config, config_key)
-        if value is not None:
-            logging.debug(f"Loaded config from file: {config_key}={value}")
-            return value
+        config_value = get_nested_config(config, config_key)
+        if config_value is not None:
+            logging.debug(f"Loaded config from file: {config_key}={config_value}")
+            return config_value
 
     # 5. Default value
     logging.debug(f"Using default config: {config_key}={default}")
@@ -365,7 +365,7 @@ def expand_env_vars(value: Any) -> Any:
         # Pattern: ${VAR_NAME:-default} or ${VAR_NAME}
         pattern = r"\$\{([^}:]+)(?::-([^}]*))?\}"
 
-        def replacer(match):
+        def replacer(match: re.Match[str]) -> str:
             var_name = match.group(1)
             default_value = match.group(2) if match.group(2) is not None else ""
             return os.environ.get(var_name, default_value)
@@ -401,7 +401,7 @@ def load_yaml_file(file_path: Path) -> dict[str, Any]:
             raise ConfigurationError(str(file_path), "File does not exist")
 
         with open(file_path) as f:
-            content = yaml.safe_load(f)
+            content: dict[str, Any] | None = yaml.safe_load(f)
 
         if content is None:
             raise ConfigurationError(str(file_path), "File is empty")
@@ -442,7 +442,7 @@ class Config:
 
         # Resolver and cache for resolved rules (set by _load_rules)
         self._resolver: RuleResolver | None = None
-        self._resolved_rules_cache: list | None = None
+        self._resolved_rules_cache: list[dict[str, Any]] | None = None
 
         # Load configurations
         self._load_config()
@@ -451,18 +451,18 @@ class Config:
 
         # rules.yml's identity when last loaded, for hot-reload. None makes
         # the first get_rules() re-read it.
-        self._rules_stamp: tuple | None = None
+        self._rules_stamp: tuple[int, int, int] | None = None
 
-    def _load_config(self):
+    def _load_config(self) -> None:
         """Load config.yml with environment variable expansion"""
         logging.debug(f"Loading config from {self.config_file}")
 
         raw_config = load_yaml_file(self.config_file)
-        self.config = expand_env_vars(raw_config)
+        self.config: dict[str, Any] = expand_env_vars(raw_config)
 
         logging.debug("Configuration loaded successfully")
 
-    def _load_rules(self):
+    def _load_rules(self) -> None:
         """Load rules.yml and initialize resolver
 
         Everything is validated before any of it is assigned, so a reload
@@ -480,7 +480,7 @@ class Config:
         if problems:
             raise ConfigurationError(str(self.rules_file), problems[0].message)
 
-        rules = raw_rules.get("rules", [])
+        rules: list[dict[str, Any]] = raw_rules.get("rules", [])
         logging.debug(f"Loaded {len(rules)} rules")
 
         # Extract refs block and initialize resolver
@@ -547,7 +547,7 @@ class Config:
 
         return entries if entries else None
 
-    def _load_schedule(self):
+    def _load_schedule(self) -> None:
         """
         Load and validate the optional 'schedule' section
 
@@ -560,7 +560,7 @@ class Config:
         top-level config.yml section.
         """
         env_schedule = self._load_schedule_from_env()
-        self.schedule = (
+        self.schedule: list[dict[str, Any]] = (
             env_schedule if env_schedule is not None else (self.config.get("schedule") or [])
         )
 
@@ -611,7 +611,7 @@ class Config:
             resolve_config(None, "QBT_RULES_DRY_RUN", self.config, "engine.dry_run", default=False)
         )
 
-    def _current_rules_stamp(self) -> tuple:
+    def _current_rules_stamp(self) -> tuple[int, int, int]:
         """
         rules.yml's identity on disk: any change to it means reload
 
@@ -642,7 +642,7 @@ class Config:
         logging.info(f"Rules reloaded from {self.rules_file}")
         return True
 
-    def get_rules(self, resolved: bool = True) -> list:
+    def get_rules(self, resolved: bool = True) -> list[dict[str, Any]]:
         """
         Get list of rules with hot-reload support
 

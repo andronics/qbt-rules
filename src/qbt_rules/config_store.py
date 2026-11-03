@@ -34,7 +34,7 @@ import os
 import re
 import stat
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -46,7 +46,7 @@ import yaml
 try:
     import fcntl
 except ImportError:  # pragma: no cover - not POSIX
-    fcntl = None
+    fcntl = None  # type: ignore[assignment]  # checked before use; POSIX-only module
 
 from qbt_rules.config_loader import ENV_VAR_MAP
 
@@ -181,7 +181,7 @@ class EditableFile:
             )
             return self.read(), True
 
-    def _replace(self, data: bytes):
+    def _replace(self, data: bytes) -> None:
         st = self.path.stat()
         fd, tmp = tempfile.mkstemp(
             prefix=f".{self.path.name}.", suffix=".tmp", dir=self.path.parent
@@ -222,7 +222,7 @@ class EditableFile:
 
     # -- history ------------------------------------------------------------
 
-    def _backup(self, data: bytes):
+    def _backup(self, data: bytes) -> None:
         version_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
         (self.history_dir / f"{self.path.name}.{version_id}").write_bytes(data)
         for old in self._versions()[self.keep :]:
@@ -269,7 +269,7 @@ def _env_var_for(config_key: str) -> str:
     return ENV_VAR_MAP.get(config_key, "QBT_RULES_" + config_key.upper().replace(".", "_"))
 
 
-def redacted_config_view(text: str, environ: dict[str, str] | None = None) -> dict[str, Any]:
+def redacted_config_view(text: str, environ: Mapping[str, str] | None = None) -> dict[str, Any]:
     """
     config.yml for display: credentials masked, env overrides pointed out
 
@@ -312,7 +312,7 @@ def redacted_config_view(text: str, environ: dict[str, str] | None = None) -> di
     redacted: list[str] = []
     issues: list[dict[str, Any]] = []
 
-    def walk(node, path):
+    def walk(node: yaml.Node, path: list[str]) -> None:
         if isinstance(node, yaml.MappingNode):
             for key_node, value_node in node.value:
                 if not isinstance(key_node, yaml.ScalarNode):

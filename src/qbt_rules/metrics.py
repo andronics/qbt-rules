@@ -24,15 +24,22 @@ after setting the env var), this ordering constraint is satisfied without
 requiring every module that records a metric to know or care about it.
 """
 
+from collections.abc import Iterator
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # Types only: prometheus_client itself is imported lazily (see above)
+    from prometheus_client import Counter, Histogram
+    from prometheus_client.metrics_core import Metric
+    from prometheus_client.registry import Collector
 
 _enabled = False
-_actions_executed: Any | None = None
-_job_duration: Any | None = None
-_scheduler_fires: Any | None = None
-_http_requests: Any | None = None
-_http_duration: Any | None = None
+_actions_executed: "Counter | None" = None
+_job_duration: "Histogram | None" = None
+_scheduler_fires: "Counter | None" = None
+_http_requests: "Counter | None" = None
+_http_duration: "Histogram | None" = None
 
 
 def is_available() -> bool:
@@ -135,7 +142,7 @@ def init(enabled: bool) -> None:
 
 def record_action_executed(action_type: str, success: bool) -> None:
     """Record one action execution. No-op unless init(enabled=True) has run."""
-    if not _enabled:
+    if not _enabled or _actions_executed is None:
         return
     _actions_executed.labels(
         action_type=action_type, result="success" if success else "failure"
@@ -144,21 +151,21 @@ def record_action_executed(action_type: str, success: bool) -> None:
 
 def record_job_duration(seconds: float) -> None:
     """Record one completed job's execution time. No-op unless init(enabled=True) has run."""
-    if not _enabled:
+    if not _enabled or _job_duration is None:
         return
     _job_duration.observe(seconds)
 
 
 def record_scheduler_fire(success: bool) -> None:
     """Record one scheduler fire attempt. No-op unless init(enabled=True) has run."""
-    if not _enabled:
+    if not _enabled or _scheduler_fires is None:
         return
     _scheduler_fires.labels(result="success" if success else "failure").inc()
 
 
 def record_http_request(method: str, endpoint: str, status: int, duration: float) -> None:
     """Record one completed HTTP request. No-op unless init(enabled=True) has run."""
-    if not _enabled:
+    if not _enabled or _http_requests is None or _http_duration is None:
         return
     _http_requests.labels(method=method, endpoint=endpoint, status=str(status)).inc()
     _http_duration.labels(method=method, endpoint=endpoint).observe(duration)
@@ -181,7 +188,7 @@ def _build_state_collector(
     worker_running: bool,
     worker_last_job_completed: str | None,
     schedule_entry_count: int,
-):
+) -> "Collector":
     """
     Build a one-shot Collector exposing current-state gauges, computed from
     data already passed in (sourced from queue.get_stats()/get_queue_depth()
@@ -195,7 +202,7 @@ def _build_state_collector(
     from prometheus_client.registry import Collector
 
     class _StateCollector(Collector):
-        def collect(self):
+        def collect(self) -> Iterator["Metric"]:
             depth = GaugeMetricFamily(
                 "qbt_rules_queue_depth", "Current pending queue depth", labels=["backend"]
             )
@@ -253,7 +260,8 @@ def generate_metrics_output(
     from prometheus_client import CollectorRegistry, generate_latest, multiprocess
 
     registry = CollectorRegistry()
-    multiprocess.MultiProcessCollector(registry)
+    # prometheus_client leaves MultiProcessCollector.__init__ unannotated
+    multiprocess.MultiProcessCollector(registry)  # type: ignore[no-untyped-call]
     registry.register(
         _build_state_collector(
             queue_backend,
