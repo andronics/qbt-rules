@@ -1,179 +1,216 @@
+"""Prometheus metrics on interpose's Registry (template-python decision 0007).
+
+``api.create_app`` builds the app's ``interpose.metrics.Registry`` (``app.state.metrics``) with
+``qbt_rules_build_info``, and a ``Metrics`` on the same registry with qbt-rules' own metrics:
+
+- state gauges, set from the queue, the worker and the schedule on every scrape (``scrape``):
+  ``qbt_rules_queue_depth``, ``qbt_rules_jobs_total``, ``qbt_rules_worker_running``,
+  ``qbt_rules_worker_last_job_completed_timestamp_seconds`` and ``qbt_rules_scheduler_entries``;
+- event counters and histograms: ``qbt_rules_actions_executed_total`` (engine.py, in the worker
+  thread), ``qbt_rules_job_duration_seconds`` (worker.py), ``qbt_rules_scheduler_fires_total``
+  (scheduler.py, in the scheduler thread), and ``qbt_rules_http_requests_total`` with
+  ``qbt_rules_http_request_duration_seconds`` (api.HttpMetrics, on the event loop).
+
+The names and label sets are prometheus_client's from 0.10.x, so dashboards and alerts keep working.
+Labels are in prometheus_client's multiprocess order (sorted by name), so even the sample lines
+read the same. interpose takes label values from sets declared up front: the action types
+(schema.ACTION_TYPES), the HTTP methods and status codes, and the app's route names (declared by
+create_app). An event with a value outside its set (an unknown action type, an unusual HTTP
+method) isn't counted; an undeclared route name counts as ``unknown``.
+
+**Threads.** interpose's metrics aren't locked, and three threads change these: the worker, the
+scheduler and the event loop, while a scrape renders in the threadpool. Every change and every
+render here holds ``LOCK``, so a scrape never iterates a dict another thread is growing; each
+holds it for microseconds, never across I/O.
+
+**Recording.** engine.py, worker.py and scheduler.py call the module-level ``record_*`` functions,
+which go to the ``Metrics`` the last ``create_app`` activated (``activate``): one app per process in
+production. They are no-ops while metrics are off.
 """
-Prometheus metrics support (optional -- requires `pip install qbt-rules[metrics]`)
 
-Importing this module is always safe, even when prometheus_client isn't
-installed and even before PROMETHEUS_MULTIPROC_DIR is set -- prometheus_client
-itself is only ever imported lazily, inside init() and generate_metrics_output(),
-never at this module's top level. Every other module (engine.py, worker.py,
-scheduler.py, web.py) can therefore do `from qbt_rules import metrics` at
-its own top level unconditionally and call the record_*() functions, which
-silently no-op until init(enabled=True) has actually run.
+from __future__ import annotations
 
-Multiprocess mode: written for Gunicorn's preload_app + fork model, where
-each forked worker had its own unsynchronised copy of every counter. The
-server is one uvicorn process now, and multiprocess mode still works there
-(one per-PID file); TODO(4e) replaces all of this with interpose's Registry.
-The mechanism: set
-the PROMETHEUS_MULTIPROC_DIR environment variable (this exact name is
-mandated by the library) to a shared writable directory *before*
-prometheus_client is first imported anywhere in the process; every process
-(master and every forked child) then writes its own per-PID metric file into
-that directory, and /metrics is served by aggregating across every file via
-multiprocess.MultiProcessCollector. Because init() defers the actual import
-until it's explicitly called (from `qbt-rules serve`, cli.py's _init_metrics(), immediately
-after setting the env var), this ordering constraint is satisfied without
-requiring every module that records a metric to know or care about it.
-"""
-
-from collections.abc import Iterator
+import threading
+from collections.abc import Iterable, Mapping
 from datetime import datetime
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    # Types only: prometheus_client itself is imported lazily (see above)
-    from prometheus_client import Counter, Histogram
-    from prometheus_client.metrics_core import Metric
-    from prometheus_client.registry import Collector
+from interpose.metrics import CONTENT_TYPE, Counter, Gauge, Histogram, Label, Registry
 
-_enabled = False
-_actions_executed: "Counter | None" = None
-_job_duration: "Histogram | None" = None
-_scheduler_fires: "Counter | None" = None
-_http_requests: "Counter | None" = None
-_http_duration: "Histogram | None" = None
+__all__ = [
+    "CONTENT_TYPE",
+    "LOCK",
+    "Metrics",
+    "activate",
+    "active",
+    "build_registry",
+    "record_action_executed",
+    "record_job_duration",
+    "record_scheduler_fire",
+]
 
+LOCK = threading.Lock()
 
-def is_available() -> bool:
-    """Check whether prometheus_client is installed, without importing it at module scope."""
-    try:
-        import prometheus_client  # noqa: F401
+# prometheus_client's default buckets, which both histograms used in 0.10.x
+DEFAULT_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0)
+RESULTS = ("success", "failure")
+JOB_STATUSES = ("pending", "processing", "completed", "failed", "cancelled")
+HTTP_METHODS = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "CONNECT")
+HTTP_STATUSES = tuple(str(code) for code in range(100, 600))
+# Route names that aren't a route function's own (api.endpoint_name)
+EXTRA_ENDPOINTS = ("static", "unknown", "login")
 
-        return True
-    except ImportError:
-        return False
-
-
-def is_enabled() -> bool:
-    """Whether init(enabled=True) has run successfully -- record_*() calls are no-ops until then."""
-    return _enabled
+_active: Metrics | None = None
 
 
-def init(enabled: bool) -> None:
-    """
-    Initialize the metrics module
+def build_registry(version: str) -> Registry:
+    """The app's registry, with the template's ``qbt_rules_build_info{version} 1``."""
+    registry = Registry()
+    registry.register(
+        Gauge(
+            "qbt_rules_build_info", "The running version: always 1", [Label("version", [version])]
+        )
+    ).set(1, version)
+    return registry
 
-    Must be called after PROMETHEUS_MULTIPROC_DIR is set in os.environ (when
-    using multiprocess mode, which qbt-rules always does when metrics are
-    enabled) and before any job/action/scheduler-fire/HTTP-request event
-    that should be recorded. This is the only place prometheus_client is
-    actually imported.
 
-    Args:
-        enabled: Value of metrics.enabled from config. If False, this is a
-            no-op (record_*() calls remain silent no-ops) -- prometheus_client
-            is never imported at all in that case, so it's fine for it to
-            not even be installed.
+class Metrics:
+    """qbt-rules' metrics, registered on ``registry`` (decision 0007's hook)."""
 
-    Raises:
-        ValueError: If enabled is True but prometheus_client isn't installed
-            -- fails fast at server startup with an actionable message,
-            mirroring queue_manager.py's create_queue() ValueError for a
-            missing 'redis' package.
-    """
-    global \
-        _enabled, \
-        _actions_executed, \
-        _job_duration, \
-        _scheduler_fires, \
-        _http_requests, \
-        _http_duration
+    def __init__(self, registry: Registry) -> None:
+        # Here, not at the top: schema.py imports engine.py, which imports this module
+        from qbt_rules.schema import ACTION_TYPES
 
-    if not enabled:
-        _enabled = False
-        return
+        self.registry = registry
+        self._action_type = Label("action_type", ACTION_TYPES)
+        self._backend = Label("backend")
+        self._endpoint = Label("endpoint", EXTRA_ENDPOINTS)
+        method = Label("method", HTTP_METHODS)
+        result = Label("result", RESULTS)
 
-    if not is_available():
-        raise ValueError(
-            "metrics.enabled is true but the 'prometheus_client' package isn't installed. "
-            "Install with: pip install qbt-rules[metrics]"
+        # State gauges: set by scrape()
+        self.queue_depth = registry.register(
+            Gauge("qbt_rules_queue_depth", "Current pending queue depth", [self._backend])
+        )
+        self.jobs = registry.register(
+            Gauge("qbt_rules_jobs_total", "Total jobs by status", [Label("status", JOB_STATUSES)])
+        )
+        self.worker_running = registry.register(
+            Gauge("qbt_rules_worker_running", "Worker thread running (1) or not (0)")
+        )
+        self.last_job_completed = registry.register(
+            Gauge(
+                "qbt_rules_worker_last_job_completed_timestamp_seconds",
+                "Unix timestamp of the last job the worker completed",
+            )
+        )
+        self.scheduler_entries = registry.register(
+            Gauge("qbt_rules_scheduler_entries", "Number of configured schedule entries")
         )
 
-    from prometheus_client import Counter, Histogram
+        # Events
+        self.actions_executed = registry.register(
+            Counter(
+                "qbt_rules_actions_executed_total",
+                "Total actions executed by the rules engine (excludes dry-run and idempotent "
+                "skips)",
+                [self._action_type, result],
+            )
+        )
+        self.job_duration = registry.register(
+            Histogram(
+                "qbt_rules_job_duration_seconds",
+                "Job execution duration in seconds",
+                DEFAULT_BUCKETS,
+            )
+        )
+        self.scheduler_fires = registry.register(
+            Counter(
+                "qbt_rules_scheduler_fires_total", "Total internal cron scheduler fires", [result]
+            )
+        )
+        self.http_requests = registry.register(
+            Counter(
+                "qbt_rules_http_requests_total",
+                "Total HTTP requests",
+                [self._endpoint, method, Label("status", HTTP_STATUSES)],
+            )
+        )
+        self.http_duration = registry.register(
+            Histogram(
+                "qbt_rules_http_request_duration_seconds",
+                "HTTP request duration in seconds",
+                DEFAULT_BUCKETS,
+                [self._endpoint, method],
+            )
+        )
 
-    # registry=None deliberately skips auto-registration with
-    # prometheus_client's default global REGISTRY -- it's never used for
-    # multiprocess mode anyway (generate_metrics_output() always builds a
-    # fresh CollectorRegistry() + MultiProcessCollector, which aggregates
-    # from the per-process files these objects write to, independent of
-    # any registry they're nominally attached to). This also makes init()
-    # safely callable more than once in the same process, which the
-    # default registry's duplicate-timeseries check would otherwise forbid.
-    _actions_executed = Counter(
-        "qbt_rules_actions_executed_total",
-        "Total actions executed by the rules engine (excludes dry-run and idempotent skips)",
-        ["action_type", "result"],
-        registry=None,
-    )
-    _job_duration = Histogram(
-        "qbt_rules_job_duration_seconds",
-        "Job execution duration in seconds",
-        registry=None,
-    )
-    _scheduler_fires = Counter(
-        "qbt_rules_scheduler_fires_total",
-        "Total internal cron scheduler fires",
-        ["result"],
-        registry=None,
-    )
-    _http_requests = Counter(
-        "qbt_rules_http_requests_total",
-        "Total HTTP requests",
-        ["method", "endpoint", "status"],
-        registry=None,
-    )
-    _http_duration = Histogram(
-        "qbt_rules_http_request_duration_seconds",
-        "HTTP request duration in seconds",
-        ["method", "endpoint"],
-        registry=None,
-    )
+    # -- declared before the app serves (create_app), so never while a scrape runs ---------------
 
-    _enabled = True
+    def declare_endpoints(self, names: Iterable[str]) -> None:
+        self._endpoint.declare(*names)
 
+    def declare_backend(self, name: str) -> None:
+        self._backend.declare(name)
 
-def record_action_executed(action_type: str, success: bool) -> None:
-    """Record one action execution. No-op unless init(enabled=True) has run."""
-    if not _enabled or _actions_executed is None:
-        return
-    _actions_executed.labels(
-        action_type=action_type, result="success" if success else "failure"
-    ).inc()
+    # -- events --------------------------------------------------------------------------------
 
+    def action_executed(self, action_type: str, success: bool) -> None:
+        if action_type in self._action_type:
+            with LOCK:
+                self.actions_executed.inc(action_type, _result(success))
 
-def record_job_duration(seconds: float) -> None:
-    """Record one completed job's execution time. No-op unless init(enabled=True) has run."""
-    if not _enabled or _job_duration is None:
-        return
-    _job_duration.observe(seconds)
+    def job_finished(self, seconds: float) -> None:
+        with LOCK:
+            self.job_duration.observe(seconds)
 
+    def scheduler_fired(self, success: bool) -> None:
+        with LOCK:
+            self.scheduler_fires.inc(_result(success))
 
-def record_scheduler_fire(success: bool) -> None:
-    """Record one scheduler fire attempt. No-op unless init(enabled=True) has run."""
-    if not _enabled or _scheduler_fires is None:
-        return
-    _scheduler_fires.labels(result="success" if success else "failure").inc()
+    def http_request(self, method: str, endpoint: str, status: int, seconds: float) -> None:
+        if method not in HTTP_METHODS:
+            return
+        if endpoint not in self._endpoint:
+            endpoint = "unknown"
+        code = str(status) if 100 <= status < 600 else "500"
+        with LOCK:
+            self.http_requests.inc(endpoint, method, code)
+            self.http_duration.observe(seconds, endpoint, method)
+
+    # -- the scrape ----------------------------------------------------------------------------
+
+    def scrape(
+        self,
+        queue_backend: str,
+        queue_depth: int,
+        job_counts: Mapping[str, int],
+        worker_running: bool,
+        worker_last_job_completed: str | None,
+        schedule_entry_count: int,
+    ) -> str:
+        """Set the state gauges from values read just before (outside the lock), then render
+        the whole registry in Prometheus text exposition format."""
+        last_completed = _iso_to_unix_timestamp(worker_last_job_completed)
+        with LOCK:
+            if queue_backend in self._backend:
+                self.queue_depth.set(queue_depth, queue_backend)
+            for status in JOB_STATUSES:
+                self.jobs.set(job_counts.get(status, 0), status)
+            self.worker_running.set(1 if worker_running else 0)
+            if last_completed is None:
+                self.last_job_completed.values.pop((), None)
+            else:
+                self.last_job_completed.set(last_completed)
+            self.scheduler_entries.set(schedule_entry_count)
+            return self.registry.render()
 
 
-def record_http_request(method: str, endpoint: str, status: int, duration: float) -> None:
-    """Record one completed HTTP request. No-op unless init(enabled=True) has run."""
-    if not _enabled or _http_requests is None or _http_duration is None:
-        return
-    _http_requests.labels(method=method, endpoint=endpoint, status=str(status)).inc()
-    _http_duration.labels(method=method, endpoint=endpoint).observe(duration)
+def _result(success: bool) -> str:
+    return "success" if success else "failure"
 
 
 def _iso_to_unix_timestamp(iso_string: str | None) -> float | None:
-    """Parse an ISO-8601 timestamp string (as produced by Worker.get_status()) to Unix seconds."""
+    """Parse an ISO 8601 timestamp (Worker.get_status()'s) to Unix seconds."""
     if not iso_string:
         return None
     try:
@@ -182,102 +219,32 @@ def _iso_to_unix_timestamp(iso_string: str | None) -> float | None:
         return None
 
 
-def _build_state_collector(
-    queue_backend: str,
-    queue_depth: int,
-    job_counts: dict[str, int],
-    worker_running: bool,
-    worker_last_job_completed: str | None,
-    schedule_entry_count: int,
-) -> "Collector":
-    """
-    Build a one-shot Collector exposing current-state gauges, computed from
-    data already passed in (sourced from queue.get_stats()/get_queue_depth()
-    and worker.get_status() at the call site) rather than pushed
-    incrementally -- there's no shared chokepoint between the SQLite and
-    Redis queue backends to instrument at write time, but both already
-    durably track everything these gauges need, so it's cheaper and simpler
-    to just read it fresh on every scrape.
-    """
-    from prometheus_client.core import GaugeMetricFamily
-    from prometheus_client.registry import Collector
-
-    class _StateCollector(Collector):
-        def collect(self) -> Iterator["Metric"]:
-            depth = GaugeMetricFamily(
-                "qbt_rules_queue_depth", "Current pending queue depth", labels=["backend"]
-            )
-            depth.add_metric([queue_backend], queue_depth)
-            yield depth
-
-            jobs = GaugeMetricFamily(
-                "qbt_rules_jobs_total", "Total jobs by status", labels=["status"]
-            )
-            for status in ("pending", "processing", "completed", "failed", "cancelled"):
-                jobs.add_metric([status], job_counts.get(status, 0))
-            yield jobs
-
-            running = GaugeMetricFamily(
-                "qbt_rules_worker_running", "Worker thread running (1) or not (0)"
-            )
-            running.add_metric([], 1 if worker_running else 0)
-            yield running
-
-            last_completed = _iso_to_unix_timestamp(worker_last_job_completed)
-            if last_completed is not None:
-                last_completed_family = GaugeMetricFamily(
-                    "qbt_rules_worker_last_job_completed_timestamp_seconds",
-                    "Unix timestamp of the last job the worker completed",
-                )
-                last_completed_family.add_metric([], last_completed)
-                yield last_completed_family
-
-            entries = GaugeMetricFamily(
-                "qbt_rules_scheduler_entries", "Number of configured schedule entries"
-            )
-            entries.add_metric([], schedule_entry_count)
-            yield entries
-
-    return _StateCollector()
+# -- the module-level recorders engine.py, worker.py and scheduler.py call ----------------------
 
 
-def generate_metrics_output(
-    queue_backend: str,
-    queue_depth: int,
-    job_counts: dict[str, int],
-    worker_running: bool,
-    worker_last_job_completed: str | None,
-    schedule_entry_count: int,
-) -> bytes:
-    """
-    Render the full /metrics response: multiprocess-aggregated event
-    counters/histograms plus the on-demand state gauges, in Prometheus
-    text exposition format.
-
-    Only called from web.py's /metrics route handler, and only reached
-    when metrics are enabled (init(enabled=True) already succeeded), so
-    prometheus_client is guaranteed importable here.
-    """
-    from prometheus_client import CollectorRegistry, generate_latest, multiprocess
-
-    registry = CollectorRegistry()
-    # prometheus_client leaves MultiProcessCollector.__init__ unannotated
-    multiprocess.MultiProcessCollector(registry)  # type: ignore[no-untyped-call]
-    registry.register(
-        _build_state_collector(
-            queue_backend,
-            queue_depth,
-            job_counts,
-            worker_running,
-            worker_last_job_completed,
-            schedule_entry_count,
-        )
-    )
-    return generate_latest(registry)
+def activate(metrics: Metrics | None) -> None:
+    """Send the ``record_*`` calls to ``metrics`` (None: metrics are off, they're no-ops)."""
+    global _active
+    _active = metrics
 
 
-def content_type() -> str:
-    """Prometheus exposition format Content-Type header value."""
-    from prometheus_client import CONTENT_TYPE_LATEST
+def active() -> Metrics | None:
+    return _active
 
-    return CONTENT_TYPE_LATEST
+
+def record_action_executed(action_type: str, success: bool) -> None:
+    """One action the engine ran (not a dry run or an idempotent skip)."""
+    if _active is not None:
+        _active.action_executed(action_type, success)
+
+
+def record_job_duration(seconds: float) -> None:
+    """One finished job's run time, completed or failed."""
+    if _active is not None:
+        _active.job_finished(seconds)
+
+
+def record_scheduler_fire(success: bool) -> None:
+    """One scheduler fire: the job was queued, or queueing it failed."""
+    if _active is not None:
+        _active.scheduler_fired(success)

@@ -56,7 +56,6 @@ VARIABLES = [
     ("integrations.trackie.max_age", "QBT_RULES_INTEGRATIONS_TRACKIE_MAX_AGE"),
     ("integrations.trackie.timeout", "QBT_RULES_INTEGRATIONS_TRACKIE_TIMEOUT"),
     ("metrics.enabled", "QBT_RULES_METRICS_ENABLED"),
-    ("metrics.multiproc_dir", "QBT_RULES_METRICS_MULTIPROC_DIR"),
     ("logging.level", "QBT_RULES_LOGGING_LEVEL"),
     ("logging.file", "QBT_RULES_LOGGING_FILE"),
     ("logging.max_bytes", "QBT_RULES_LOGGING_MAX_BYTES"),
@@ -107,7 +106,6 @@ ENV_CASES = [
     ("QBT_RULES_INTEGRATIONS_TRACKIE_MAX_AGE", "2 hours", "trackie_max_age", 7200),
     ("QBT_RULES_INTEGRATIONS_TRACKIE_TIMEOUT", "2.5", "trackie_timeout", 2.5),
     ("QBT_RULES_METRICS_ENABLED", "yes", "metrics_enabled", True),
-    ("QBT_RULES_METRICS_MULTIPROC_DIR", "/run/m", "metrics_multiproc_dir", Path("/run/m")),
     ("QBT_RULES_LOGGING_LEVEL", "debug", "log_level", "DEBUG"),
     ("QBT_RULES_LOGGING_FILE", "/srv/q.log", "log_file", Path("/srv/q.log")),
     ("QBT_RULES_LOGGING_MAX_BYTES", "0", "log_max_bytes", 0),
@@ -131,6 +129,12 @@ REFUSED = [
     ),
     ({"QBT_RULES_CONFIG_DIR_FILE": "/x"}, r"QBT_RULES_CONFIG_DIR is no longer read"),
     ({"QBT_RULES_LOG_LEVEL": "DEBUG"}, r"use QBT_RULES_LOGGING_LEVEL"),
+    (
+        {"QBT_RULES_METRICS_MULTIPROC_DIR": "/run/m"},
+        r"QBT_RULES_METRICS_MULTIPROC_DIR is no longer read: .*metrics\.enabled",
+    ),
+    ({"QBT_RULES_METRICS_MULTIPROC_DIR_FILE": "/x"}, r"MULTIPROC_DIR is no longer read"),
+    ({"PROMETHEUS_MULTIPROC_DIR": "/run/m"}, r"PROMETHEUS_MULTIPROC_DIR is no longer read"),
     ({"QBT_RULES_QUEUE_SQLITE_PATH": "/config/qbt-rules.db"}, r"queue\.sqlite_path: .* /config"),
     ({"QBT_RULES_RULES_FILE": "/config/rules.yml"}, r"rules\.file: /config/rules\.yml is under"),
     ({"QBT_RULES_LOGGING_FILE": "/config/qbt-rules.log"}, r"logging\.file: .*Remove the setting"),
@@ -157,6 +161,10 @@ REFUSED = [
 # (config file, the error names): what was renamed or is in the wrong place
 REFUSED_FILES = [
     ("engine:\n  dry_run: true\n", r"engine\.dry_run is now dry_run"),
+    (
+        "metrics:\n  enabled: true\n  multiproc_dir: /tmp/m\n",
+        r"metrics\.multiproc_dir is no longer read: .*one process",
+    ),
     ("queue:\n  sqlite_path: /config/qbt-rules.db\n", r"queue\.sqlite_path: .* /config"),
     ("rules:\n  file: /config/rules.yml\n", r"rules\.file: /config/rules\.yml is under"),
     (

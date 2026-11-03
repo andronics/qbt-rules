@@ -439,27 +439,37 @@ class TestErrors:
 
 
 def test_json_routes_are_counted_by_name(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    settings: Config, queue: MagicMock, worker: StubWorker, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     recorded: list[tuple[str, str, int]] = []
-    monkeypatch.setattr(metrics, "is_enabled", lambda: True)
     monkeypatch.setattr(
-        metrics,
-        "record_http_request",
-        lambda method, endpoint, status, duration: recorded.append((method, endpoint, status)),
+        metrics.Metrics,
+        "http_request",
+        lambda self, method, endpoint, status, seconds: recorded.append((method, endpoint, status)),
     )
-    client.get("/api/jobs", headers=KEY)
-    client.get("/api/nope")
-    client.get("/login")
-    client.get("/static/editor.js")
-    client.get("/metrics")  # not registered (metrics off): a 404 like any unknown path
+    on = _client(settings, queue, worker, metrics_enabled=True)
+    on.get("/api/jobs", headers=KEY)
+    on.get("/api/nope")
+    on.get("/login")
+    on.get("/static/editor.js")
+    on.get("/metrics", headers=KEY)  # a scrape doesn't count itself
     assert recorded == [
         ("GET", "list_jobs", 200),
         ("GET", "unknown", 404),
         ("GET", "login", 200),
         ("GET", "static", 200),
-        ("GET", "unknown", 404),
     ]
+
+
+def test_nothing_is_counted_while_metrics_are_off(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorded: list[str] = []
+    monkeypatch.setattr(
+        metrics.Metrics, "http_request", lambda self, *args: recorded.append("counted")
+    )
+    client.get("/api/jobs", headers=KEY)
+    assert recorded == []
 
 
 def test_endpoint_names() -> None:

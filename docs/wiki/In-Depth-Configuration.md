@@ -72,8 +72,7 @@ Generated from the code: don't edit the table, run `uv run scripts/gen-wiki.py`.
 | `integrations.trackie.url` | `QBT_RULES_INTEGRATIONS_TRACKIE_URL` | *(none)* | trackie's address, for the `tracker.*` fields. Empty: not used. |
 | `integrations.trackie.max_age` | `QBT_RULES_INTEGRATIONS_TRACKIE_MAX_AGE` | `3 hours` | Older tracker data counts as no data: seconds or a duration. |
 | `integrations.trackie.timeout` | `QBT_RULES_INTEGRATIONS_TRACKIE_TIMEOUT` | `10` | Seconds for trackie's `/snapshot` request. |
-| `metrics.enabled` | `QBT_RULES_METRICS_ENABLED` | `False` | Serve Prometheus metrics on `/metrics` (needs the `metrics` extra). |
-| `metrics.multiproc_dir` | `QBT_RULES_METRICS_MULTIPROC_DIR` | `/tmp/qbt-rules-metrics` | prometheus_client's multiprocess directory; cleared at startup. |
+| `metrics.enabled` | `QBT_RULES_METRICS_ENABLED` | `False` | Serve Prometheus metrics on `/metrics` (needs the API key). |
 | `logging.level` | `QBT_RULES_LOGGING_LEVEL` | `INFO` | Log level: `DEBUG`, `INFO`, `WARNING` or `ERROR`. DEBUG logs every rule evaluation. |
 | `logging.file` | `QBT_RULES_LOGGING_FILE` | *(none)* | Also log to this file, rotated by size. Empty: the console only (`docker logs`). A relative path is relative to `state_dir`. |
 | `logging.max_bytes` | `QBT_RULES_LOGGING_MAX_BYTES` | `10485760` | Rotate the log file at this size; `0` never rotates. |
@@ -88,7 +87,7 @@ A few settings need more than a line:
 
 - **`server.editor_enabled`**: `false` keeps the rules editor read-only (it still validates). A `rules.yml` made read-only on disk (`chmod 444`) is never written either way.
 - **`queue.cleanup_after`**: finished jobs older than this are removed once at startup and then hourly.
-- **`metrics.enabled`**: needs the `metrics` extra (`uv sync --extra metrics`; the image doesn't include it). See [Metrics](Metrics). `metrics.multiproc_dir` is where prometheus_client keeps its counters (a writable directory; cleared at startup).
+- **`metrics.enabled`**: serves `/metrics`, which needs the API key. See [Metrics](Metrics) for the metrics and a Prometheus scrape config. 0.10.x's `metrics.multiproc_dir` (and `QBT_RULES_METRICS_MULTIPROC_DIR`, `PROMETHEUS_MULTIPROC_DIR`) is refused: remove it.
 - **`logging.level`**: applies to the console and the log file. `DEBUG` logs every rule evaluation per torrent.
 - **`logging.max_bytes`**: the file is renamed to `qbt-rules.log.1` (older ones shift to `.2`, `.3`, ...) and a new one started. The server is one process, so one handler writes and rotates it.
 - **`logging.http_access`**: off, the access log leaves out the requests that only poll (`/healthz`, `/readyz`, `/api/health`, `/metrics`, `/static/...`); on, every request is logged. Either way every logged URL has its `key=` value replaced with `[REDACTED]`.

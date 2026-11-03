@@ -1144,6 +1144,62 @@
           }
         ]
       }
+    },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Prometheus metrics (text exposition)",
+        "description": "The app's metrics in Prometheus text format, when `metrics.enabled` is on (404 when\noff). Needs the API key, as `X-API-Key` (preferred: Prometheus's `http_headers`) or\n`?key=`; the login session isn't accepted. The wiki's Metrics page lists the metrics.",
+        "operationId": "metrics_endpoint_metrics_get",
+        "responses": {
+          "200": {
+            "description": "The metrics",
+            "content": {
+              "text/plain; version=0.0.4; charset=utf-8": {}
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyQuery": []
+          },
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
     }
   },
   "components": {

@@ -12,8 +12,8 @@ One process (template-python decision 0008): the worker and the scheduler are th
 the lifespan starts and stops (BackgroundThreads, decision 0006).
 
 The dashboard pages, the login form, /static and /metrics are web.py's routes on the same
-app (web.register). TODO(4e): /metrics is still prometheus_client; interpose's Registry
-replaces it.
+app (web.register). /metrics renders the app's interpose Registry (``app.state.metrics``,
+template-python decision 0007), with qbt-rules' own metrics on it (metrics.py).
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import logging
 import sys
 import threading
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Iterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
@@ -436,21 +436,35 @@ def endpoint_name(scope: Scope) -> str | None:
     return _ENDPOINT_ALIASES.get(name, name)
 
 
+def route_names(routes: Iterable[Any]) -> Iterator[str]:
+    """Every route function's name, including the routes of included routers (FastAPI 0.16x
+    keeps those behind an ``original_router``; older versions copied them into the app)."""
+    for route in routes:
+        endpoint = getattr(route, "endpoint", None)
+        if endpoint is not None:
+            yield getattr(endpoint, "__name__", "unknown")
+        included = getattr(route, "original_router", None)
+        if included is not None:
+            yield from route_names(included.routes)
+
+
 class HttpMetrics:
     """qbt_rules_http_requests_total and its duration histogram, for every route but /metrics.
 
-    TODO(4e): interpose.
+    Labelled with the route's name (endpoint_name), never the raw path, so traffic can't add
+    series. Recorded on the event loop; ``recorder`` is None while metrics are off.
     """
 
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(self, app: ASGIApp, recorder: metrics.Metrics | None = None) -> None:
         self.app = app
+        self.recorder = recorder
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or not metrics.is_enabled():
+        if scope["type"] != "http" or self.recorder is None:
             await self.app(scope, receive, send)
             return
         status = 500
-        start = time.time()
+        start = time.perf_counter()
 
         async def send_wrapper(message: Message) -> None:
             nonlocal status
@@ -463,7 +477,9 @@ class HttpMetrics:
         finally:
             name = endpoint_name(scope)
             if name is not None:
-                metrics.record_http_request(scope["method"], name, status, time.time() - start)
+                self.recorder.http_request(
+                    scope["method"], name, status, time.perf_counter() - start
+                )
 
 
 # -- The app -------------------------------------------------------------------------------------
@@ -475,8 +491,14 @@ def create_app(config: Config, services: Services | None = None) -> FastAPI:
     threads = BackgroundThreads()
     api_key = config.api_key.reveal()
 
+    # Prometheus metrics (template-python decision 0007): the template's registry and build
+    # info, with qbt-rules' own metrics on it. /metrics serves it when metrics.enabled is on.
+    registry = metrics.build_registry(__version__)
+    recorder = metrics.Metrics(registry)
+
     def attach(app: FastAPI, found: Services) -> None:
         app.state.services = found
+        recorder.declare_backend(found.queue.__class__.__name__)
         threads.add("worker", found.worker.run)
         if found.scheduler is not None and found.scheduler.has_entries:
             threads.add("scheduler", found.scheduler.run)
@@ -501,9 +523,12 @@ def create_app(config: Config, services: Services | None = None) -> FastAPI:
         lifespan=lifespan,
         default_response_class=CompatJSONResponse,
     )
-    metrics_on = config.metrics_enabled and metrics.is_enabled()
+    metrics_on = config.metrics_enabled
+    metrics.activate(recorder if metrics_on else None)
     app.state.config = config
     app.state.threads = threads
+    app.state.metrics = registry
+    app.state.qbt_metrics = recorder
     app.state.api_key = api_key
     app.state.services = None
     if services is not None:
@@ -511,7 +536,7 @@ def create_app(config: Config, services: Services | None = None) -> FastAPI:
 
     # Last added runs first: the body limit, then the session, then the catch-all
     app.add_middleware(CatchAll)
-    app.add_middleware(HttpMetrics)
+    app.add_middleware(HttpMetrics, recorder=recorder if metrics_on else None)
     app.add_middleware(
         SessionMiddleware,
         secret_key=sessions.session_secret(api_key),
@@ -555,6 +580,8 @@ def create_app(config: Config, services: Services | None = None) -> FastAPI:
     from qbt_rules import web
 
     web.register(app, metrics_on)
+    # Every route's name, for the HTTP metrics' endpoint label (endpoint_name)
+    recorder.declare_endpoints(route_names(app.routes))
 
     return app
 
