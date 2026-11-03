@@ -6,7 +6,7 @@ v0.4.0 architecture notes that were in `PLAN.md` are in the git history.
 
 ## Open
 
-- [ ] Finish the template migration on `migrate/templates`: config on interpose (4b), the FastAPI JSON API
+- [ ] Finish the template migration on `migrate/templates`: the FastAPI JSON API
   (4c), the dashboard (4d), metrics and logging (4e), the Typer CLI (4f). Then drop the
   `migrate/templates` branch from the `pull_request` triggers in base-ci.yml, container-build.yml and
   python-wiki.yml (each marked `TODO(migrate/templates)`).

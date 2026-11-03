@@ -4,34 +4,15 @@ Provides consistent CLI interface across all triggers
 """
 
 import argparse
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from qbt_rules import __version__
-from qbt_rules.config_loader import LEGACY_DIR
+from qbt_rules.config import CONFIG_ENV, DEFAULT_CONFIG_PATH, ConfigError
 from qbt_rules.rules_validation import ERROR, format_path, lint_rules
 
 if TYPE_CHECKING:
     from qbt_rules.config_loader import Config
-
-
-def smart_config_default() -> str:
-    """
-    Determine smart default for config directory
-
-    Returns ./config if it exists (bare metal), otherwise /var/lib/qbt-rules
-    (the image's state directory)
-
-    TODO(4b): the legacy single directory for config.yml, rules.yml, the
-    database and the log. Config moves to interpose (/etc/qbt-rules/config.yaml);
-    the old /config default is gone, with no fallback.
-    """
-    local_config = Path("./config")
-    # The image's working directory is /, where ./config would be the old /config
-    if local_config.is_dir() and local_config.resolve() != Path("/config"):
-        return "./config"
-    return LEGACY_DIR
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -75,15 +56,17 @@ def create_parser() -> argparse.ArgumentParser:
 
     # Common configuration arguments
     parser.add_argument(
-        "--config-dir",
+        "--config",
         type=Path,
         default=None,
         help=(
-            f"Path to configuration directory (default: {smart_config_default()} or CONFIG_DIR "
-            "env var)"
+            f"Config file (default: {CONFIG_ENV}, else {DEFAULT_CONFIG_PATH}; missing is fine). "
+            "rules.yml is read beside it unless rules.file says otherwise"
         ),
-        metavar="DIR",
+        metavar="FILE",
     )
+    # Removed in 0.11: refused by process_args() with what to use instead
+    parser.add_argument("--config-dir", type=Path, default=None, help=argparse.SUPPRESS)
 
     parser.add_argument(
         "--dry-run",
@@ -144,7 +127,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--queue-sqlite-path",
         type=str,
-        help=f"SQLite database path (default: {LEGACY_DIR}/qbt-rules.db)",
+        help="SQLite database path (default: qbt-rules.db in state_dir, /var/lib/qbt-rules)",
         metavar="PATH",
     )
 
@@ -305,32 +288,28 @@ def validate_torrent_hash(torrent_hash: str | None) -> str:
     return torrent_hash.lower()
 
 
-def process_args(args: argparse.Namespace) -> Path:
+def process_args(args: argparse.Namespace) -> Path | None:
     """
-    Process parsed arguments and set environment variables
+    The config file the arguments name
 
-    Args:
-        args: Parsed arguments from argparse
+    The other flags (--dry-run, --server-port, ...) override their settings
+    in legacy_cli.apply_cli_overrides().
 
     Returns:
-        Path to configuration directory
+        --config, or None for config.load_config()'s default
+        (QBT_RULES_CONFIG, else /etc/qbt-rules/config.yaml)
+
+    Raises:
+        ConfigError: --config-dir, removed in 0.11, was given
     """
-    # Set environment variables from command-line arguments
-    # (--log-level/--trace are handled directly by legacy_cli.py's
-    # get_logging_config(), not via this env-var-setting indirection)
-    if args.dry_run:
-        os.environ["QBT_RULES_DRY_RUN"] = "true"
-
-    # Determine config directory
-    config_dir: Path
-    if args.config_dir:
-        config_dir = args.config_dir
-    elif "CONFIG_DIR" in os.environ:
-        config_dir = Path(os.environ["CONFIG_DIR"])
-    else:
-        config_dir = Path(smart_config_default())
-
-    return config_dir
+    if args.config_dir is not None:
+        raise ConfigError(
+            "--config-dir is no longer supported: config.yaml and rules.yml are read from "
+            f"/etc/qbt-rules and state is kept in /var/lib/qbt-rules. Use --config FILE (or "
+            f"{CONFIG_ENV}) for another config file; rules.yml is read beside it"
+        )
+    config: Path | None = args.config
+    return config
 
 
 def handle_utility_args(args: argparse.Namespace, config: "Config") -> int | None:
@@ -369,8 +348,10 @@ def handle_utility_args(args: argparse.Namespace, config: "Config") -> int | Non
             # Check resolved rules so actions supplied through $ref are covered.
             rules = config.get_rules()
             notifications_config = get_notifications_config(args, config)
+            for problem in config.settings.problems:
+                logger.warning(f"Configuration: {problem}")
             if not rules:
-                logger.warning("No rules defined in rules.yml")
+                logger.warning(f"No rules defined in {config.rules_file}")
             else:
                 logger.info(f"✓ Loaded {len(rules)} rules")
 

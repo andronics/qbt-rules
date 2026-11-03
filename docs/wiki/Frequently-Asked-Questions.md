@@ -108,21 +108,22 @@ A: Yes, via Docker — qbt-rules is distributed only as a Docker image (`ghcr.io
 
 ### Q: Where should I put my config files?
 
-A: In a Docker deployment, mount a host directory at the container's state directory, `/var/lib/qbt-rules` (see [Quick Start](Quick-Start)):
+A: In a Docker deployment, mount one host directory at `/etc/qbt-rules` and another at `/var/lib/qbt-rules` (see [Quick Start](Quick-Start)):
 
-- `/var/lib/qbt-rules/config.yml` - Connection, server, queue, and global settings
-- `/var/lib/qbt-rules/rules.yml` - Your automation rules
+- `/etc/qbt-rules/config.yaml` - Connection, server, queue, and global settings (optional: every setting also has an environment variable)
+- `/etc/qbt-rules/rules.yml` - Your automation rules (writable, if you want to save them from the dashboard)
+- `/var/lib/qbt-rules/` - State: the job queue (`qbt-rules.db`) and the rules editor's `.history/`
 
-The job queue (`qbt-rules.db`), the log and the rules editor's `.history/` live there too. Older releases used `/config`: that path is no longer read at all (see [Deployment](Deployment#upgrading)).
+The log goes to the console. Releases before 0.11 used `/config`: that path is no longer read at all (see [In-Depth Configuration](In-Depth-Configuration#migrating-from-010x)).
 
-If those files don't exist yet, default versions are copied in automatically on first start. You can point the container at a different internal path with `--config-dir`, though most deployments never need to. See [In-Depth Configuration](In-Depth-Configuration) for the full `config.yml`/`rules.yml` schema.
+Nothing is copied in on first start: with no `rules.yml` there are no rules until you write one (the dashboard's rules editor creates it). `QBT_RULES_CONFIG` (or `--config`) points at another config file, with `rules.yml` read beside it. See [In-Depth Configuration](In-Depth-Configuration) for the full `config.yaml`/`rules.yml` schema.
 
 ### Q: How do I use environment variables in config files?
 
-A: There's no `${VARIABLE_NAME}` expansion syntax inside `config.yml`. Instead, every config key has a corresponding `QBT_RULES_*` environment variable that overrides whatever is in the file:
+A: Two ways. `${VAR}` and `${VAR:-default}` inside `config.yaml` are replaced with that environment variable. And every config key has a corresponding `QBT_RULES_*` environment variable that overrides whatever is in the file:
 
 ```yaml
-# config.yml — just omit these keys if you're setting them via environment
+# config.yaml — just omit these keys if you're setting them via environment
 # qbittorrent:
 #   username: ...
 #   password: ...
@@ -161,7 +162,7 @@ A: Use the `--trace` flag when submitting a job via the CLI client:
 docker exec qbt-rules qbt-rules --dry-run --context manual --trace --wait
 ```
 
-This logs all API calls, field accesses, and condition evaluations. You can also set `logging.trace_mode: true` (or `QBT_RULES_LOGGING_TRACE_MODE=true`) in `config.yml` to trace every job by default. Trace output can include tracker URLs and tag contents — see [Security](Security#log-hygiene) before sharing a trace log with anyone.
+This logs all API calls, field accesses, and condition evaluations. You can also set `logging.trace_mode: true` (or `QBT_RULES_LOGGING_TRACE_MODE=true`) in `config.yaml` to trace every job by default. Trace output can include tracker URLs and tag contents — see [Security](Security#log-hygiene) before sharing a trace log with anyone.
 
 ## Field & Condition Questions
 
@@ -425,7 +426,7 @@ A: There's no fixed number — it depends on torrent count, how many rules touch
 
 A: An HTTP `401` from qbt-rules' own API is **always** a `server.api_key` mismatch — the server checks the key before touching qBittorrent at all. Confirm the `key=`/`X-API-KEY` value you're sending matches `QBT_RULES_SERVER_API_KEY` (or its `_FILE` equivalent).
 
-A *wrong qBittorrent password* is a different failure entirely — it doesn't produce an HTTP 401 to you, since it happens later, inside the worker, while the job is running. The job just fails; check `--job-status <id>` for an authentication error, and verify `QBT_RULES_QBITTORRENT_USERNAME`/`QBT_RULES_QBITTORRENT_PASSWORD` (or `config.yml`'s `qbittorrent:` block) against what qBittorrent's Web UI actually expects.
+A *wrong qBittorrent password* is a different failure entirely — it doesn't produce an HTTP 401 to you, since it happens later, inside the worker, while the job is running. The job just fails; check `--job-status <id>` for an authentication error, and verify `QBT_RULES_QBITTORRENT_USERNAME`/`QBT_RULES_QBITTORRENT_PASSWORD` (or `config.yaml`'s `qbittorrent:` block) against what qBittorrent's Web UI actually expects.
 
 ### Q: Rules aren't matching torrents I expect
 
@@ -448,7 +449,7 @@ A: Not all fields exist for all torrents. Missing fields resolve to `None`, and 
 
 ### Q: My scheduled context job isn't running
 
-A: Context jobs don't run themselves - either list them in `config.yml`'s `schedule:` for the internal scheduler (check the server log at startup for the entries it loaded; see [Scheduling](Scheduling)), or have something external (cron, a systemd timer, or a sidecar container) submit them:
+A: Context jobs don't run themselves - either list them in `config.yaml`'s `schedule:` for the internal scheduler (check the server log at startup for the entries it loaded; see [Scheduling](Scheduling)), or have something external (cron, a systemd timer, or a sidecar container) submit them:
 
 **Cron example:**
 
@@ -513,7 +514,7 @@ A: The qbt-rules server itself runs continuously inside its container — a syst
 
 ### Q: Can I run multiple instances?
 
-A: You only need one qbt-rules server per qBittorrent instance — it's a persistent client-server deployment, not a per-schedule process you spin up and tear down. If jobs are backing up under load, increase `server.workers` in `config.yml` rather than running separate containers. Separate *workloads* (frequent webhook-driven categorization vs. a daily cleanup sweep) are handled by using different `context` values against the same server, not by running different instances — see [Advanced Topics](Advanced-Topics) for scaling guidance.
+A: You only need one qbt-rules server per qBittorrent instance — it's a persistent client-server deployment, not a per-schedule process you spin up and tear down. If jobs are backing up under load, increase `server.workers` in `config.yaml` rather than running separate containers. Separate *workloads* (frequent webhook-driven categorization vs. a daily cleanup sweep) are handled by using different `context` values against the same server, not by running different instances — see [Advanced Topics](Advanced-Topics) for scaling guidance.
 
 ### Q: How do I integrate with Sonarr/Radarr?
 

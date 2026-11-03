@@ -9,13 +9,13 @@ uv sync --extra metrics
 ```
 
 ```yaml
-# config.yml
+# config.yaml
 metrics:
   enabled: true
   multiproc_dir: /tmp/qbt-rules-metrics   # default shown, usually fine as-is
 ```
 
-Or via environment variables: `QBT_RULES_METRICS_ENABLED=true` (and `QBT_RULES_METRICS_MULTIPROC_DIR` if you need a non-default directory — see [In-Depth Configuration](In-Depth-Configuration#configyml-reference) for the full env var/`_FILE` pattern this follows like every other section).
+Or via environment variables: `QBT_RULES_METRICS_ENABLED=true` (and `QBT_RULES_METRICS_MULTIPROC_DIR` if you need a non-default directory — see [In-Depth Configuration](In-Depth-Configuration#settings) for the full env var/`_FILE` pattern this follows like every other section).
 
 If `metrics.enabled: true` but the `metrics` extra isn't installed, the server fails to start with a clear error rather than crashing on the first scrape:
 

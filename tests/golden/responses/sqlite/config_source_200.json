@@ -11,5 +11,5 @@
   "masked": [
     "config directory -> <config_dir>"
   ],
-  "body": "{\"content\":\"server:\\n  api_key: \\\"<redacted>\\\"\\nqbittorrent:\\n  host: http://localhost:8080\\n  username: admin\\n  password: \\\"<redacted>\\\"\\nschedule:\\n  - {cron: '0 * * * *', context: hourly}\\n  - {cron: '0 3 * * 0', context: weekly-cleanup}\\n\",\"issues\":[],\"path\":\"<config_dir>/config.yml\",\"redacted\":[\"server.api_key\",\"qbittorrent.password\"]}\n"
+  "body": "{\"content\":\"server:\\n  api_key: \\\"<redacted>\\\"\\nqbittorrent:\\n  host: http://localhost:8080\\n  username: admin\\n  password: \\\"<redacted>\\\"\\nschedule:\\n  - {cron: '0 * * * *', context: hourly}\\n  - {cron: '0 3 * * 0', context: weekly-cleanup}\\n\",\"issues\":[],\"path\":\"<config_dir>/config.yaml\",\"redacted\":[\"server.api_key\",\"qbittorrent.password\"]}\n"
 }

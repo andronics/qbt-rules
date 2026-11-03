@@ -11,7 +11,7 @@ from textwrap import dedent, indent
 import pytest
 
 from qbt_rules.rules_validation import check_rules_structure, validate_rules_text
-from tests.examples import DEFAULT_RULES, advanced_rules_example
+from tests.examples import EXAMPLE_RULES, advanced_rules_example
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -47,8 +47,8 @@ rules:
 class TestShippedFiles:
     @pytest.mark.parametrize(
         "load",
-        [DEFAULT_RULES.read_text, advanced_rules_example],
-        ids=["rules.default.yml", "wiki Advanced-Rules-Example"],
+        [EXAMPLE_RULES.read_text, advanced_rules_example],
+        ids=["contrib rules.example.yml", "wiki Advanced-Rules-Example"],
     )
     def test_shipped_rule_files_are_clean(self, load):
         result = validate_rules_text(load())

@@ -4,7 +4,7 @@ from typing import Any
 
 import yaml
 
-from qbt_rules.config_loader import Config
+from qbt_rules.config_loader import load_config
 
 
 class TestResolverConfigIntegration:
@@ -15,7 +15,7 @@ class TestResolverConfigIntegration:
         config_dir = tmp_path / "config"
         config_dir.mkdir()
 
-        # Create config.yml
+        # Create config.yaml
         config_content = {
             "qbittorrent": {
                 "host": "http://localhost:8080",
@@ -23,7 +23,7 @@ class TestResolverConfigIntegration:
                 "password": "adminpass",
             }
         }
-        with open(config_dir / "config.yml", "w") as f:
+        with open(config_dir / "config.yaml", "w") as f:
             yaml.dump(config_content, f)
 
         # Create rules.yml with refs
@@ -65,7 +65,7 @@ class TestResolverConfigIntegration:
             yaml.dump(rules_content, f)
 
         # Load config
-        config = Config(config_dir=config_dir)
+        config = load_config(config_dir / "config.yaml", environ={})
 
         # Get resolved rules
         rules = config.get_rules()
@@ -93,7 +93,7 @@ class TestResolverConfigIntegration:
         config_dir = tmp_path / "config"
         config_dir.mkdir()
 
-        # Create config.yml
+        # Create config.yaml
         config_content = {
             "qbittorrent": {
                 "host": "http://localhost:8080",
@@ -101,7 +101,7 @@ class TestResolverConfigIntegration:
                 "password": "adminpass",
             }
         }
-        with open(config_dir / "config.yml", "w") as f:
+        with open(config_dir / "config.yaml", "w") as f:
             yaml.dump(config_content, f)
 
         # Create rules.yml WITHOUT refs
@@ -119,7 +119,7 @@ class TestResolverConfigIntegration:
             yaml.dump(rules_content, f)
 
         # Load config
-        config = Config(config_dir=config_dir)
+        config = load_config(config_dir / "config.yaml", environ={})
 
         # Get rules
         rules = config.get_rules()
@@ -133,7 +133,7 @@ class TestResolverConfigIntegration:
         config_dir = tmp_path / "config"
         config_dir.mkdir()
 
-        # Create config.yml
+        # Create config.yaml
         config_content = {
             "qbittorrent": {
                 "host": "http://localhost:8080",
@@ -141,7 +141,7 @@ class TestResolverConfigIntegration:
                 "password": "adminpass",
             }
         }
-        with open(config_dir / "config.yml", "w") as f:
+        with open(config_dir / "config.yaml", "w") as f:
             yaml.dump(config_content, f)
 
         # Create rules.yml with refs
@@ -169,7 +169,7 @@ class TestResolverConfigIntegration:
             yaml.dump(rules_content, f)
 
         # Load config
-        config = Config(config_dir=config_dir)
+        config = load_config(config_dir / "config.yaml", environ={})
 
         # Get rules twice
         rules1 = config.get_rules()
@@ -183,7 +183,7 @@ class TestResolverConfigIntegration:
         config_dir = tmp_path / "config"
         config_dir.mkdir()
 
-        # Create config.yml
+        # Create config.yaml
         config_content = {
             "qbittorrent": {
                 "host": "http://localhost:8080",
@@ -191,7 +191,7 @@ class TestResolverConfigIntegration:
                 "password": "adminpass",
             }
         }
-        with open(config_dir / "config.yml", "w") as f:
+        with open(config_dir / "config.yaml", "w") as f:
             yaml.dump(config_content, f)
 
         # Create initial rules.yml
@@ -213,7 +213,7 @@ class TestResolverConfigIntegration:
             yaml.dump(rules_content, f)
 
         # Load config
-        config = Config(config_dir=config_dir)
+        config = load_config(config_dir / "config.yaml", environ={})
 
         # Get rules and verify
         rules1 = config.get_rules()
@@ -239,7 +239,7 @@ class TestResolverConfigIntegration:
         config_dir = tmp_path / "config"
         config_dir.mkdir()
 
-        # Create config.yml
+        # Create config.yaml
         config_content = {
             "qbittorrent": {
                 "host": "http://localhost:8080",
@@ -247,7 +247,7 @@ class TestResolverConfigIntegration:
                 "password": "adminpass",
             }
         }
-        with open(config_dir / "config.yml", "w") as f:
+        with open(config_dir / "config.yaml", "w") as f:
             yaml.dump(config_content, f)
 
         # Create rules.yml with refs
@@ -275,7 +275,7 @@ class TestResolverConfigIntegration:
             yaml.dump(rules_content, f)
 
         # Load config
-        config = Config(config_dir=config_dir)
+        config = load_config(config_dir / "config.yaml", environ={})
 
         # Get raw rules
         raw_rules = config.get_rules(resolved=False)
@@ -291,7 +291,7 @@ class TestResolverConfigIntegration:
         config_dir = tmp_path / "config"
         config_dir.mkdir()
 
-        # Create config.yml
+        # Create config.yaml
         config_content = {
             "qbittorrent": {
                 "host": "http://localhost:8080",
@@ -299,7 +299,7 @@ class TestResolverConfigIntegration:
                 "password": "adminpass",
             }
         }
-        with open(config_dir / "config.yml", "w") as f:
+        with open(config_dir / "config.yaml", "w") as f:
             yaml.dump(config_content, f)
 
         # Create complex rules.yml
@@ -387,7 +387,7 @@ class TestResolverConfigIntegration:
             yaml.dump(rules_content, f)
 
         # Load config
-        config = Config(config_dir=config_dir)
+        config = load_config(config_dir / "config.yaml", environ={})
 
         # Get resolved rules
         rules = config.get_rules()

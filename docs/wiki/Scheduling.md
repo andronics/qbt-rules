@@ -6,7 +6,7 @@ A new `Scheduler` component runs inside the server process, structurally similar
 
 ### Configuration
 
-Add a `schedule:` list to `config.yml`, alongside `server:`/`queue:`:
+Add a `schedule:` list to `config.yaml`, alongside `server:`/`queue:`:
 
 ```yaml
 schedule:
@@ -34,9 +34,9 @@ QBT_RULES_SCHEDULE_1_CRON="0 3 * * *"
 QBT_RULES_SCHEDULE_1_CONTEXT=nightly
 ```
 
-If **any** `QBT_RULES_SCHEDULE_0_CRON` is set, the environment-defined schedule **entirely replaces** `config.yml`'s `schedule:` list — the two aren't merged, consistent with how every other field's environment variable overrides its `config.yml` value outright. Setting `_0_CRON` without a matching `_0_CONTEXT` (or vice versa) fails server startup with a clear error, same as a malformed `config.yml` entry.
+If **any** `QBT_RULES_SCHEDULE_0_CRON` is set, the environment-defined schedule **entirely replaces** `config.yaml`'s `schedule:` list — the two aren't merged, consistent with how every other field's environment variable overrides its `config.yaml` value outright. Setting `_0_CRON` without a matching `_0_CONTEXT` (or vice versa) fails server startup with a clear error, same as a malformed `config.yaml` entry.
 
-It's also **not hot-reloaded**: unlike `rules.yml`, changes require a server restart to take effect (matching the rest of `config.yml`, which is only read once at startup).
+It's also **not hot-reloaded**: unlike `rules.yml`, changes require a server restart to take effect (matching the rest of `config.yaml`, which is only read once at startup).
 
 ### What Happens When It Fires
 

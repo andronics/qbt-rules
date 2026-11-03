@@ -10,9 +10,9 @@ from qbt_rules.arguments import (
     create_parser,
     handle_utility_args,
     process_args,
-    smart_config_default,
     validate_torrent_hash,
 )
+from qbt_rules.config import ConfigError
 
 
 @pytest.fixture(autouse=True)
@@ -25,45 +25,6 @@ def clean_env(monkeypatch):
 
     # Clean up after test
     monkeypatch.delenv("QBT_RULES_DRY_RUN", raising=False)
-
-
-class TestSmartConfigDefault:
-    """Test smart config directory default logic."""
-
-    def test_returns_local_config_when_exists(self, tmp_path, monkeypatch):
-        """Returns ./config when it exists as a directory."""
-        # Change to tmp_path and create config directory
-        monkeypatch.chdir(tmp_path)
-        config_dir = tmp_path / "config"
-        config_dir.mkdir()
-
-        result = smart_config_default()
-        assert result == "./config"
-
-    def test_returns_docker_config_when_local_missing(self, tmp_path, monkeypatch):
-        """Returns the image's state directory when ./config doesn't exist."""
-        # Change to tmp_path where no config dir exists
-        monkeypatch.chdir(tmp_path)
-
-        result = smart_config_default()
-        assert result == "/var/lib/qbt-rules"
-
-    def test_old_config_volume_is_never_used(self, monkeypatch):
-        """In the image (working directory /), ./config is the old /config: not a fallback."""
-        monkeypatch.chdir("/")
-        monkeypatch.setattr(Path, "is_dir", lambda self: True)
-
-        assert smart_config_default() == "/var/lib/qbt-rules"
-
-    def test_returns_docker_config_when_local_is_file(self, tmp_path, monkeypatch):
-        """Returns the image's state directory when ./config exists but is a file."""
-        # Change to tmp_path and create config as a file
-        monkeypatch.chdir(tmp_path)
-        config_file = tmp_path / "config"
-        config_file.write_text("not a directory")
-
-        result = smart_config_default()
-        assert result == "/var/lib/qbt-rules"
 
 
 class TestCreateParser:
@@ -87,11 +48,13 @@ class TestCreateParser:
         args = parser.parse_args(["--hash", "a" * 40])
         assert args.hash == "a" * 40
 
-    def test_parser_has_config_dir_argument(self):
-        """Parser includes --config-dir argument."""
+    def test_parser_has_config_argument(self):
+        """Parser includes --config FILE (and still parses --config-dir, to refuse it)."""
         parser = create_parser()
-        args = parser.parse_args(["--config-dir", "/tmp/config"])  # noqa: S108  test fixture value
-        assert args.config_dir == Path("/tmp/config")  # noqa: S108  test fixture value
+        args = parser.parse_args(["--config", "/srv/qbt-rules.yaml"])
+        assert args.config == Path("/srv/qbt-rules.yaml")
+        assert args.config_dir is None
+        assert parser.parse_args(["--config-dir", "/srv"]).config_dir == Path("/srv")
 
     def test_parser_has_dry_run_argument(self):
         """Parser includes --dry-run argument."""
@@ -233,117 +196,24 @@ class TestValidateTorrentHash:
 
 
 class TestProcessArgs:
-    """Test argument processing."""
+    """process_args() gives the config file; the other flags are applied by legacy_cli."""
 
-    def test_sets_dry_run_env_var_when_true(self, monkeypatch):
-        """Sets QBT_RULES_DRY_RUN environment variable when args.dry_run=True."""
-        # Clean env
-        monkeypatch.delenv("QBT_RULES_DRY_RUN", raising=False)
+    def test_returns_the_config_flag(self):
+        args = create_parser().parse_args(["--config", "/srv/qbt-rules.yaml"])
+        assert process_args(args) == Path("/srv/qbt-rules.yaml")
 
-        args = Mock()
-        args.dry_run = True
-        args.log_level = None
-        args.trace = False
-        args.config_dir = "/test/config"
+    def test_none_means_the_default(self):
+        assert process_args(create_parser().parse_args([])) is None
 
-        process_args(args)
+    def test_does_not_set_environment_variables(self):
+        before = dict(os.environ)
+        process_args(create_parser().parse_args(["--dry-run", "--log-level", "DEBUG", "--trace"]))
+        assert dict(os.environ) == before
 
-        assert os.environ.get("QBT_RULES_DRY_RUN") == "true"
-
-    def test_does_not_set_dry_run_when_false(self, monkeypatch):
-        """Doesn't set QBT_RULES_DRY_RUN environment variable when args.dry_run=False."""
-        # Clean env
-        monkeypatch.delenv("QBT_RULES_DRY_RUN", raising=False)
-
-        args = Mock()
-        args.dry_run = False
-        args.log_level = None
-        args.trace = False
-        args.config_dir = "/test/config"
-
-        process_args(args)
-
-        assert "QBT_RULES_DRY_RUN" not in os.environ
-
-    def test_does_not_set_bare_log_env_vars(self, monkeypatch):
-        """--log-level/--trace are resolved directly by legacy_cli.py's
-        get_logging_config(), not by setting bare LOG_LEVEL/TRACE_MODE
-        env vars here."""
-        monkeypatch.delenv("LOG_LEVEL", raising=False)
-        monkeypatch.delenv("TRACE_MODE", raising=False)
-
-        args = Mock()
-        args.dry_run = False
-        args.log_level = "DEBUG"
-        args.trace = True
-        args.config_dir = "/test/config"
-
-        process_args(args)
-
-        assert "LOG_LEVEL" not in os.environ
-        assert "TRACE_MODE" not in os.environ
-
-    def test_config_dir_from_args_highest_priority(self, monkeypatch):
-        """config_dir from args.config_dir has highest priority."""
-        # Set env var
-        monkeypatch.setenv("CONFIG_DIR", "/env/config")
-
-        args = Mock()
-        args.dry_run = False
-        args.log_level = None
-        args.trace = False
-        args.config_dir = Path("/args/config")  # Parser returns Path
-
-        result = process_args(args)
-
-        assert result == Path("/args/config")
-
-    def test_config_dir_from_env_var_medium_priority(self, monkeypatch):
-        """config_dir from CONFIG_DIR env var when args.config_dir is None."""
-        # Set env var
-        monkeypatch.setenv("CONFIG_DIR", "/env/config")
-
-        args = Mock()
-        args.dry_run = False
-        args.log_level = None
-        args.trace = False
-        args.config_dir = None
-
-        result = process_args(args)
-
-        assert result == Path("/env/config")
-
-    def test_config_dir_from_smart_default_lowest_priority(self, monkeypatch, tmp_path):
-        """config_dir from smart_config_default() when no args or env."""
-        # Clean env
-        monkeypatch.delenv("CONFIG_DIR", raising=False)
-        # Create config dir for smart default
-        monkeypatch.chdir(tmp_path)
-        config_dir = tmp_path / "config"
-        config_dir.mkdir()
-
-        args = Mock()
-        args.dry_run = False
-        args.log_level = None
-        args.trace = False
-        args.config_dir = None
-
-        result = process_args(args)
-
-        assert result == Path("./config")
-
-    def test_returns_path_object(self):
-        """process_args returns Path object."""
-        args = Mock()
-        args.dry_run = False
-        args.log_level = None
-        args.trace = False
-        args.config_dir = Path("/test/config")  # Parser returns Path
-
-        result = process_args(args)
-
-        assert isinstance(result, Path)
-        assert result == Path("/test/config")
+    def test_config_dir_is_refused(self):
+        args = create_parser().parse_args(["--config-dir", "/config"])
+        with pytest.raises(ConfigError, match=r"--config-dir is no longer supported.*--config"):
+            process_args(args)
 
 
 class TestHandleUtilityArgs:
@@ -355,7 +225,7 @@ class TestHandleUtilityArgs:
         args.validate = False
         args.list_rules = False
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
 
         result = handle_utility_args(args, mock_config)
 
@@ -367,7 +237,7 @@ class TestHandleUtilityArgs:
         args.validate = True
         args.list_rules = False
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_qbittorrent_config.return_value = {
             "host": "localhost",
             "user": "admin",
@@ -389,7 +259,7 @@ class TestHandleUtilityArgs:
         args.validate = True
         args.list_rules = False
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_rules.return_value = []
 
         with patch("qbt_rules.legacy_cli.get_qbittorrent_config") as mock_get_qbt:
@@ -408,7 +278,7 @@ class TestHandleUtilityArgs:
         args.validate = True
         args.list_rules = False
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_rules.return_value = []
 
         with patch("qbt_rules.legacy_cli.get_qbittorrent_config") as mock_get_qbt:
@@ -428,7 +298,7 @@ class TestHandleUtilityArgs:
         args.validate = True
         args.list_rules = False
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_rules.return_value = [
             {"name": "Rule 1", "enabled": True, "conditions": {"all": []}, "actions": []},
             {"name": "Rule 2", "enabled": True, "conditions": {"all": []}, "actions": []},
@@ -450,7 +320,7 @@ class TestHandleUtilityArgs:
         args.validate = True
         args.list_rules = False
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_rules.return_value = [
             {"id": "bad-rule", "conditions": {}, "actions": [{"type": "set_catgory"}]}
         ]
@@ -471,9 +341,9 @@ class TestHandleUtilityArgs:
     def test_validate_checks_actions_after_reference_resolution(
         self, tmp_path, caplog, action_type, expected
     ):
-        from qbt_rules.config_loader import Config
+        from qbt_rules.config_loader import load_config
 
-        (tmp_path / "config.yml").write_text("{}\n", encoding="utf-8")
+        (tmp_path / "config.yaml").write_text("{}\n", encoding="utf-8")
         (tmp_path / "rules.yml").write_text(
             "refs:\n"
             "  actions:\n"
@@ -487,7 +357,7 @@ class TestHandleUtilityArgs:
             encoding="utf-8",
         )
         args = Mock(validate=True, list_rules=False)
-        config = Config(tmp_path)
+        config = load_config(tmp_path / "config.yaml", environ={})
 
         with patch("qbt_rules.legacy_cli.get_qbittorrent_config") as mock_get_qbt:
             mock_get_qbt.return_value = {
@@ -549,12 +419,6 @@ class TestHandleUtilityArgs:
             ({"type": "unknown"}, {}, 1, "Unknown action type"),
             (
                 {"type": "notify", "params": {"message": "hello"}},
-                {"webhook_url": "https://example.invalid/hook", "service": "invalid"},
-                1,
-                "notifications.service",
-            ),
-            (
-                {"type": "notify", "params": {"message": "hello"}},
                 {},
                 1,
                 "notifications.webhook_url",
@@ -572,9 +436,9 @@ class TestHandleUtilityArgs:
     ):
         import yaml
 
-        from qbt_rules.config_loader import Config
+        from qbt_rules.config_loader import load_config
 
-        (tmp_path / "config.yml").write_text(
+        (tmp_path / "config.yaml").write_text(
             yaml.safe_dump(
                 {
                     "qbittorrent": {
@@ -603,7 +467,8 @@ class TestHandleUtilityArgs:
         )
         args = create_parser().parse_args(["--validate"])
 
-        assert handle_utility_args(args, Config(tmp_path)) == expected
+        config = load_config(tmp_path / "config.yaml", environ={})
+        assert handle_utility_args(args, config) == expected
         if diagnostic:
             assert any(diagnostic in record.message for record in caplog.records)
 
@@ -613,7 +478,7 @@ class TestHandleUtilityArgs:
         args.validate = True
         args.list_rules = False
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_qbittorrent_config.return_value = {
             "host": "localhost",
             "user": "admin",
@@ -632,7 +497,7 @@ class TestHandleUtilityArgs:
         args.list_rules = True
         args.output = "table"
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_rules.return_value = []
 
         result = handle_utility_args(args, mock_config)
@@ -647,7 +512,7 @@ class TestHandleUtilityArgs:
         args.list_rules = True
         args.output = "table"
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_rules.return_value = [
             {
                 "id": "test-rule",
@@ -677,7 +542,7 @@ class TestHandleUtilityArgs:
         args.list_rules = True
         args.output = "table"
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_rules.return_value = [
             {"name": "Enabled Rule", "enabled": True, "conditions": {}, "actions": []},
             {"name": "Disabled Rule", "enabled": False, "conditions": {}, "actions": []},
@@ -698,7 +563,7 @@ class TestHandleUtilityArgs:
         args.list_rules = True
         args.output = "table"
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_rules.return_value = [
             {
                 "name": "Single Context",
@@ -735,7 +600,7 @@ class TestHandleUtilityArgs:
         args.list_rules = True
         args.output = "table"
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_rules.return_value = [
             {"enabled": True, "conditions": {}, "actions": []},  # No id field
         ]
@@ -754,7 +619,7 @@ class TestHandleUtilityArgs:
         args.list_rules = True
         args.output = "table"
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_rules.return_value = []
 
         handle_utility_args(args, mock_config)
@@ -771,7 +636,7 @@ class TestHandleUtilityArgs:
         args.output = "json"
 
         rules = [{"name": "Test Rule", "enabled": True, "conditions": {}, "actions": []}]
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_rules.return_value = rules
 
         handle_utility_args(args, mock_config)
@@ -784,7 +649,7 @@ class TestHandleUtilityArgs:
         args.validate = True
         args.list_rules = False
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_qbittorrent_config.return_value = {
             "host": "localhost",
             "user": "admin",
@@ -810,7 +675,7 @@ class TestHandleUtilityArgs:
         args.validate = True
         args.list_rules = False
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_qbittorrent_config.return_value = {
             "host": "localhost",
             "user": "admin",
@@ -835,7 +700,7 @@ class TestHandleUtilityArgs:
         args.validate = True
         args.list_rules = False
 
-        mock_config = Mock()
+        mock_config = Mock(**{"settings.problems": ()})
         mock_config.get_qbittorrent.side_effect = Exception("Config error")
 
         # Should not raise, just log error

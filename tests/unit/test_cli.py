@@ -17,15 +17,17 @@ def test_version() -> None:
 
 
 def test_config_shows_sources(write_config: Callable[..., Path]) -> None:
-    result = runner.invoke(app, ["config", "-c", str(write_config("log_level: debug\n"))])
+    result = runner.invoke(app, ["config", "-c", str(write_config("logging: {level: debug}\n"))])
     assert result.exit_code == 0
-    assert "log_level = DEBUG  (file)" in result.stdout
+    assert "logging.level = DEBUG  (file)" in result.stdout
+    assert "rules.file = " in result.stdout
+    assert "server.api_key = ********  (default)" in result.stdout
 
 
 def test_config_error_exits_2(write_config: Callable[..., Path]) -> None:
-    result = runner.invoke(app, ["config", "-c", str(write_config("log_level: loud\n"))])
+    result = runner.invoke(app, ["config", "-c", str(write_config("logging: {level: loud}\n"))])
     assert result.exit_code == 2
-    assert "log_level" in result.stderr
+    assert "logging.level" in result.stderr
 
 
 def test_secrets_are_masked(
@@ -39,7 +41,7 @@ def test_secrets_are_masked(
     secret = Setting(SETTINGS[0].key, SETTINGS[0].default, SETTINGS[0].help, secret=True)
     monkeypatch.setattr(cli, "SETTINGS", (secret, *SETTINGS[1:]))
     result = runner.invoke(app, ["config", "-c", str(write_config(""))])
-    assert "log_level = ********" in result.stdout
+    assert f"{SETTINGS[0].key} = ********" in result.stdout
 
 
 def test_main_runs_app(monkeypatch: pytest.MonkeyPatch) -> None:

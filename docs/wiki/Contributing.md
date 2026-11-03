@@ -25,8 +25,8 @@ Before you push:
 sh scripts/checks.sh                     # everything CI's checks job runs
 uv run pytest -m "not redis"             # skip the tests that need a live Redis server
 uv run ruff check && uv run ruff format --check && uv run mypy
-qbt-rules --validate --config-dir config # validate a real config.yml and rules.yml
-qbt-rules --dry-run --context manual --config-dir config --wait   # against a running dev server
+qbt-rules --validate --config config/config.yaml   # validate a real config.yaml and the rules.yml beside it
+qbt-rules --dry-run --context manual --config config/config.yaml --wait   # against a running dev server
 ```
 
 See [Testing Guide](Testing-Guide) for the full test layout, coverage reporting, and what's expected when you add a new operator, action, or queue backend.
@@ -100,7 +100,7 @@ For everything else, when reporting bugs, include:
    - Operating system
 
 2. **Configuration:**
-   - Sanitized `config.yml` (remove credentials!)
+   - Sanitized `config.yaml` (remove credentials!)
    - Relevant rules from `rules.yml`
 
 3. **Error output:**

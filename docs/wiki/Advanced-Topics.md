@@ -194,7 +194,7 @@ There's one server per qBittorrent instance — you don't run multiple standalon
 Jobs are queued (SQLite or Redis, see [In-Depth Configuration](In-Depth-Configuration)) and picked up by background workers. If jobs are backing up under load, increase worker concurrency rather than running separate processes:
 
 ```bash
-# config.yml
+# config.yaml
 server:
   workers: 4   # default is 1
 ```

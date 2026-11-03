@@ -94,7 +94,6 @@ module = [
     "tests.unit.test_advanced_example",
     "tests.unit.test_arguments",
     "tests.unit.test_cli_ui",
-    "tests.unit.test_config_loader",
     "tests.unit.test_config_store",
     "tests.unit.test_engine.test_action_executor",
     "tests.unit.test_engine.test_arr_actions",

@@ -25,7 +25,7 @@ from flask import Flask, Response, g, jsonify, redirect, render_template, reques
 from flask.typing import ResponseReturnValue
 
 from qbt_rules import __version__, metrics, schema
-from qbt_rules.config_loader import Config, parse_bool
+from qbt_rules.config_loader import Config
 from qbt_rules.config_store import (
     EditableFile,
     FileConflictError,
@@ -35,6 +35,7 @@ from qbt_rules.config_store import (
 from qbt_rules.log_setup import set_file_rotation
 from qbt_rules.queue_manager import JobStatus, QueueManager
 from qbt_rules.rules_validation import validate_rules_text
+from qbt_rules.utils import parse_bool
 from qbt_rules.worker import Worker
 
 if TYPE_CHECKING:
@@ -53,7 +54,8 @@ logger = logging.getLogger(__name__)
 # create_app() sets these before the app serves anything
 queue: QueueManager = None  # type: ignore[assignment]
 worker: Worker = None  # type: ignore[assignment]
-api_key_config: str = None  # type: ignore[assignment]
+# "" when no API key is configured: every authenticated request is refused (503)
+api_key_config: str = ""
 dashboard_config: Config | None = None
 metrics_enabled: bool = False
 editor_enabled: bool = True
@@ -123,7 +125,9 @@ def create_app(
     Args:
         queue_manager: Queue manager instance
         worker_instance: Worker instance
-        api_key: API authentication key
+        api_key: API authentication key. "" (none configured) starts the
+            server anyway: authenticated requests get a 503 that says so,
+            and /api/health lists it under config_problems
         config: Loaded Config instance, used by the read-only /rules
             view. Optional (defaults to None) so existing callers that don't
             need the dashboard's rules view are unaffected; that one route
@@ -156,7 +160,7 @@ def create_app(
     dashboard_config = config
     metrics_enabled = bool(metrics_config and metrics_config.get("enabled"))
     editor_enabled = editor
-    rules_store = EditableFile(config.rules_file) if config is not None else None
+    rules_store = None if config is None else EditableFile(config.rules_file, config.history_dir)
 
     app = Flask(__name__)
     app.config["JSON_SORT_KEYS"] = False
@@ -174,7 +178,12 @@ def create_app(
     # one worker fail to validate on another under server.workers > 1).
     # Hashed rather than reused as-is so the raw API key is never doing
     # double duty as both the auth credential and the cookie-signing key.
-    app.secret_key = hashlib.sha256(f"qbt-rules-dashboard-session:{api_key}".encode()).digest()
+    # With no API key nobody can log in, so a random secret signs nothing useful.
+    app.secret_key = (
+        hashlib.sha256(f"qbt-rules-dashboard-session:{api_key}".encode()).digest()
+        if api_key
+        else secrets.token_bytes(32)
+    )
 
     @app.context_processor
     def _inject_version() -> dict[str, Any]:
@@ -200,6 +209,21 @@ def create_app(
     return app
 
 
+NO_API_KEY_MESSAGE = (
+    "No API key is configured on the server: set QBT_RULES_SERVER_API_KEY_FILE (or "
+    "server.api_key) and restart"
+)
+
+
+def _key_matches(key: str | None) -> bool:
+    """Whether key is the configured API key (never, when none is configured)"""
+    return bool(key and api_key_config and secrets.compare_digest(key, api_key_config))
+
+
+def _no_api_key() -> ResponseReturnValue:
+    return jsonify({"error": "Service Unavailable", "message": NO_API_KEY_MESSAGE}), 503
+
+
 def require_api_key[**P](f: Callable[P, ResponseReturnValue]) -> Callable[P, ResponseReturnValue]:
     """
     Decorator for endpoints requiring API key authentication
@@ -208,16 +232,19 @@ def require_api_key[**P](f: Callable[P, ResponseReturnValue]) -> Callable[P, Res
     1. Query parameter: ?key=xxx
     2. Header: X-API-Key: xxx
 
-    Returns 401 if missing or invalid.
+    Returns 401 if missing or invalid, and 503 if the server has no API key.
     """
 
     @wraps(f)
     def decorated_function(*args: P.args, **kwargs: P.kwargs) -> ResponseReturnValue:
+        if not api_key_config:
+            return _no_api_key()
+
         # Get API key from query param or header
         key = request.args.get("key") or request.headers.get("X-API-Key")
 
         # Constant-time comparison to prevent timing attacks
-        if not key or not secrets.compare_digest(key, api_key_config):
+        if not _key_matches(key):
             return jsonify({"error": "Unauthorized", "message": "Invalid or missing API key"}), 401
 
         return f(*args, **kwargs)
@@ -249,9 +276,11 @@ def require_api_key_or_session[**P](
 
     @wraps(f)
     def decorated_function(*args: P.args, **kwargs: P.kwargs) -> ResponseReturnValue:
+        if not api_key_config:
+            return _no_api_key()
         key = request.args.get("key") or request.headers.get("X-API-Key")
         if key:
-            if secrets.compare_digest(key, api_key_config):
+            if _key_matches(key):
                 return f(*args, **kwargs)
         elif session.get("authenticated"):
             if request.method in SAFE_METHODS:
@@ -328,12 +357,12 @@ def require_api_key_dashboard[**P](
     def decorated_function(*args: P.args, **kwargs: P.kwargs) -> ResponseReturnValue:
         key = request.args.get("key") or request.headers.get("X-API-Key")
 
-        if key and secrets.compare_digest(key, api_key_config):
+        if _key_matches(key):
             session.permanent = True
             session["authenticated"] = True
             return f(*args, **kwargs)
 
-        if session.get("authenticated"):
+        if api_key_config and session.get("authenticated"):
             return f(*args, **kwargs)
 
         login_kwargs: dict[str, Any] = {"next": _next_url_without_key()}
@@ -539,8 +568,14 @@ def register_routes(app: Flask) -> None:
         # Healthy response
         worker_status = worker.get_status()
 
+        # Settings the server started without (no API key): still healthy --
+        # the process works, and restarting it wouldn't help -- but said here
+        problems = dashboard_config.settings.problems if dashboard_config is not None else ()
+        extra: dict[str, Any] = {"config_problems": list(problems)} if problems else {}
+
         return jsonify(
             {
+                **extra,
                 "status": "healthy",
                 "version": __version__,
                 "queue": {
@@ -880,8 +915,27 @@ def register_editor_routes(app: Flask) -> None:
         """
         if dashboard_config is None:
             return _unavailable()
-        view = redacted_config_view(dashboard_config.config_file.read_text("utf-8"))
-        response = jsonify({**view, "path": str(dashboard_config.config_file)})
+        config_file = dashboard_config.config_file
+        try:
+            view = redacted_config_view(config_file.read_text("utf-8"))
+        except FileNotFoundError:
+            view = {
+                "content": "",
+                "redacted": [],
+                "issues": [
+                    {
+                        "severity": "info",
+                        "message": f"{config_file} does not exist: every setting comes from its "
+                        "environment variable or its default",
+                        "path": "",
+                        "line": None,
+                        "column": None,
+                        "end_line": None,
+                        "end_column": None,
+                    }
+                ],
+            }
+        response = jsonify({**view, "path": str(config_file)})
         response.headers["Cache-Control"] = "no-store"
         return response, 200
 
@@ -953,7 +1007,7 @@ def register_dashboard_routes(app: Flask) -> None:
             key = request.form.get("key", "")
             next_url = _sanitize_next(request.form.get("next"))
 
-            if key and secrets.compare_digest(key, api_key_config):
+            if _key_matches(key):
                 session.permanent = True
                 session["authenticated"] = True
                 return redirect(next_url)
@@ -966,6 +1020,7 @@ def register_dashboard_routes(app: Flask) -> None:
             "login.html",
             next=next_url,
             error=bool(request.args.get("error")),
+            no_api_key=not api_key_config,
         )
 
     @app.route("/", methods=["GET"])

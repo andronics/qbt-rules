@@ -924,7 +924,7 @@ actions:
 
 **Idempotent:** No (always makes the API calls; if the torrent isn't in the arr's queue anymore, it's a non-fatal skip — see below)
 
-**Requires configuration:** `integrations.sonarr.url`/`.api_key` and/or `integrations.radarr.url`/`.api_key` in `config.yml` — see [In-Depth Configuration](In-Depth-Configuration). The action fails (logs an error, doesn't crash the rule) if the referenced service isn't configured.
+**Requires configuration:** `integrations.sonarr.url`/`.api_key` and/or `integrations.radarr.url`/`.api_key` in `config.yaml` — see [In-Depth Configuration](In-Depth-Configuration). The action fails (logs an error, doesn't crash the rule) if the referenced service isn't configured.
 
 **Syntax:**
 

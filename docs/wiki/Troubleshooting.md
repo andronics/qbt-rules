@@ -2,7 +2,7 @@
 
 ## Diagnostics
 
-- **Configuration check:** `docker exec qbt-rules qbt-rules --validate` checks `config.yml` and `rules.yml` without running anything.
+- **Configuration check:** `docker exec qbt-rules qbt-rules --validate` checks `config.yaml` and `rules.yml` without running anything.
 - **What the container resolved:** `docker exec qbt-rules env | grep QBT_RULES_`, and the files in the state directory (`/var/lib/qbt-rules`).
 - **More logging:** `QBT_RULES_LOGGING_LEVEL=DEBUG` on the server, or `--log-level DEBUG --trace` on a single client run.
 - **Health:** `curl http://127.0.0.1:5000/api/health`: `200` and `"status": "healthy"`, or `503` with an `errors` array naming what's wrong.
@@ -29,7 +29,7 @@ curl -X GET "http://localhost:8080/api/v2/torrents/properties?hash=TORRENT_HASH"
 #### Test config file syntax
 
 ```bash
-# Use the built-in validator (checks both config.yml and rules.yml)
+# Use the built-in validator (checks both config.yaml and rules.yml)
 docker exec qbt-rules qbt-rules --validate
 ```
 
@@ -123,11 +123,15 @@ docker logs -f qbt-rules
 
 ### Settings, rules or jobs gone after upgrading
 
-The image's volume moved from `/config` to `/var/lib/qbt-rules`, with no fallback. A container that still mounts only `/config` starts with fresh default files and an empty queue. Mount your old directory at `/var/lib/qbt-rules` instead, and change any `/config/...` paths in `config.yml` or the environment: see [Deployment](Deployment#from-config-to-varlibqbt-rules).
+0.11 no longer reads `/config`, with no fallback: config is in `/etc/qbt-rules` (`config.yaml`, `rules.yml`) and state in `/var/lib/qbt-rules` (`qbt-rules.db`, `.history/`). A container that still mounts only `/config` starts with no rules, no API key and an empty queue. Copy each file to its new place: see [In-Depth Configuration](In-Depth-Configuration#migrating-from-010x). A setting left pointing under `/config`, `engine.dry_run`, `CONFIG_DIR` or `QBT_RULES_CONFIG_DIR` stops the server at startup with a message naming the fix.
 
 ### Container shows "unhealthy" after changing the port
 
-The image's healthcheck polls `QBT_RULES_LISTEN_PORT` (default `5000`), not `server.port`. Set `QBT_RULES_LISTEN_PORT` to the same value as `QBT_RULES_SERVER_PORT`.
+The image's healthcheck polls `QBT_RULES_LISTEN_PORT` (default `5000`). `QBT_RULES_SERVER_PORT` is an alias the server accepts but the healthcheck doesn't read: set `QBT_RULES_LISTEN_PORT` instead.
+
+### Every API request answers `503 No API key is configured`
+
+The server started without `server.api_key` (or with the 0.10.x placeholder key, which is public and so ignored). `/api/health` lists it under `config_problems`. Set `QBT_RULES_SERVER_API_KEY_FILE` (or `QBT_RULES_SERVER_API_KEY`) and restart.
 
 ### `PUID and PGID must be numeric`
 
@@ -349,7 +353,7 @@ ConnectionError: Failed to connect to qBittorrent at http://localhost:8080
 5. **Increase worker concurrency** if multiple jobs are queuing up faster than they're processed:
 
    ```yaml
-   # config.yml
+   # config.yaml
    server:
      workers: 4  # default is 1
    ```
@@ -363,6 +367,6 @@ ConnectionError: Failed to connect to qBittorrent at http://localhost:8080
 
 The engine already evaluates torrents one at a time rather than loading everything into memory for batch processing, so memory use should stay flat regardless of library size. If you're still seeing high memory:
 
-1. **Check the queue backend** — a very large backlog of completed jobs in SQLite/Redis can grow the queue database over time; confirm `queue.cleanup_after` (in `config.yml`) is set to prune old job records
+1. **Check the queue backend** — a very large backlog of completed jobs in SQLite/Redis can grow the queue database over time; confirm `queue.cleanup_after` (in `config.yaml`) is set to prune old job records
 2. **Check for a stuck/looping job** via `--list-jobs` — a job retried indefinitely will keep accumulating log data
 3. **Reduce `server.workers`** if multiple concurrent large jobs (each holding their own per-job torrent-list cache) are running at once on a memory-constrained host

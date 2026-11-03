@@ -18,12 +18,12 @@ docker exec qbt-rules qbt-rules --context manual --wait
 | Flag | Default | What it does |
 |------|---------|--------------|
 | `serve` / `--serve` | | Run in server mode (HTTP API + worker + scheduler). `serve` is the name the image's `CMD` uses; `--serve` is the same thing |
-| `--server-host HOST` | `0.0.0.0` | Bind address (`server.host`) |
-| `--server-port PORT` | `5000` | Port (`server.port`). In the container, also set `QBT_RULES_LISTEN_PORT` for the healthcheck: see [In-Depth Configuration](In-Depth-Configuration#where-configuration-comes-from) |
+| `--server-host HOST` | `0.0.0.0` | Bind address (`listen.host`) |
+| `--server-port PORT` | `5000` | Port (`listen.port`). In the container, set `QBT_RULES_LISTEN_PORT` instead, which the healthcheck reads too: see [In-Depth Configuration](In-Depth-Configuration#where-configuration-comes-from) |
 | `--server-api-key KEY` | | API key clients must present (`server.api_key`). Prefer `QBT_RULES_SERVER_API_KEY_FILE` |
 | `--server-workers NUM` | `1` | Gunicorn worker processes (`server.workers`) |
 | `--queue-backend BACKEND` | `sqlite` | `sqlite` or `redis` (`queue.backend`) |
-| `--queue-sqlite-path PATH` | `/var/lib/qbt-rules/qbt-rules.db` | SQLite database (`queue.sqlite_path`) |
+| `--queue-sqlite-path PATH` | `qbt-rules.db` in `state_dir` (`/var/lib/qbt-rules`) | SQLite database (`queue.sqlite_path`) |
 | `--queue-redis-url URL` | `redis://localhost:6379/0` | Redis connection URL (`queue.redis_url`) |
 
 ### Submitting jobs
@@ -53,7 +53,7 @@ docker exec qbt-rules qbt-rules --context manual --wait
 
 | Flag | What it does |
 |------|--------------|
-| `--validate` | Check `config.yml` (the qBittorrent connection settings) and `rules.yml` (structure, operators, action parameters, `$ref`s) without running anything |
+| `--validate` | Check the settings (refusing what changed in 0.11, and warning when there's no API key) and `rules.yml` (structure, operators, action parameters, `$ref`s) without running anything |
 | `--list-rules` | List the rules in execution order: enabled, `stop_on_match`, context, id and description |
 | `--version` | Print the version |
 
@@ -61,11 +61,11 @@ docker exec qbt-rules qbt-rules --context manual --wait
 
 | Flag | Default | What it does |
 |------|---------|--------------|
-| `--config-dir DIR` | `CONFIG_DIR`, then `./config` if it exists, then `/var/lib/qbt-rules` | The directory holding `config.yml` and `rules.yml` (see [In-Depth Configuration](In-Depth-Configuration#where-configuration-comes-from)) |
-| `--log-level LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR` |
+| `--config FILE` | `QBT_RULES_CONFIG`, then `/etc/qbt-rules/config.yaml` | The config file (missing is fine); `rules.yml` is read beside it (see [In-Depth Configuration](In-Depth-Configuration#where-configuration-comes-from)). `--config-dir`, from 0.10.x, is refused |
+| `--log-level LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR` (`logging.level`) |
 | `--trace` | | Trace mode: module, function and line in every log line, and every field access |
 
-Every server, queue and client flag has an environment variable and a config key: the flag wins over `QBT_RULES_<SECTION>_<FIELD>_FILE`, which wins over `QBT_RULES_<SECTION>_<FIELD>`, then `config.yml`, then the default. See [In-Depth Configuration](In-Depth-Configuration#settings).
+Every server, queue and client flag has an environment variable and a config key: the flag wins over `QBT_RULES_<SECTION>_<FIELD>_FILE`, which wins over `QBT_RULES_<SECTION>_<FIELD>`, then `config.yaml`, then the default. See [In-Depth Configuration](In-Depth-Configuration#settings).
 
 ### Examples
 

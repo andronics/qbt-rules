@@ -49,7 +49,8 @@ When metrics are enabled, `metrics.py` runs into the exact same Gunicorn `preloa
 | `queue_backends/` | Concrete implementations of that interface — SQLite (default) and Redis |
 | `engine.py` | `RulesEngine` (orchestrator), `ConditionEvaluator`, and `ActionExecutor` — the actual rule evaluation and action dispatch logic |
 | `resolver.py` | `RuleResolver` — expands `$ref:` and substitutes `${vars.x}` before a rule reaches the engine |
-| `config_loader.py` | Loads and validates `config.yml`/`rules.yml` from the config directory, copying the packaged defaults (`defaults/`) in when missing; environment variable + `_FILE` secret resolution; `rules.yml` hot reload |
+| `config.py` | The settings, on [interpose](https://github.com/metalayerlab/interpose): every key, its variable, default and check; plus `${VAR}` expansion, the `server.*` aliases, the schedule, and refusing what 0.11 removed |
+| `config_loader.py` | The running configuration: the settings plus `rules.yml`, loaded, validated and hot-reloaded (a missing `rules.yml` is no rules) |
 | `qbittorrent.py` | Thin wrapper around the `qbittorrent-api` package — multi-version qBittorrent support |
 | `trackie.py` | Client for [trackie](https://github.com/andronics/trackie)'s snapshot, behind the `tracker.*` fields |
 | `errors.py` | User-facing exception types with actionable messages (no raw stack traces surfaced to users) |
@@ -57,11 +58,11 @@ When metrics are enabled, `metrics.py` runs into the exact same Gunicorn `preloa
 | `utils.py` | Small stateless helpers: `parse_tags`, `is_older_than`/`is_newer_than`, `is_larger_than`/`is_smaller_than` |
 | `__init__.py` | Package version, read from the installed metadata — see [Release Process](Release-Process) |
 
-The template's skeleton modules `cli.py` (Typer), `config.py` (interpose settings) and `api.py` (FastAPI) are in the package too, but nothing runs them yet: later migration steps move the CLI, the configuration and the HTTP API onto them, and this table changes with each.
+The template's skeleton modules `cli.py` (Typer) and `api.py` (FastAPI) are in the package too, but nothing runs them yet: later migration steps move the CLI and the HTTP API onto them, and this table changes with each.
 
 ### Queue backend abstraction
 
-`queue_manager.py` defines the contract; `queue_backends/` provides SQLite and Redis implementations behind it. `worker.py` and `web.py` only ever talk to the abstract interface, so switching `queue.backend` between `sqlite` and `redis` in `config.yml` doesn't touch either of them — only which backend module gets instantiated at startup changes. Adding a third backend (e.g. Postgres) means implementing the same interface in a new module under `queue_backends/` and wiring it into that instantiation point; no changes to `worker.py`/`web.py` should be needed.
+`queue_manager.py` defines the contract; `queue_backends/` provides SQLite and Redis implementations behind it. `worker.py` and `web.py` only ever talk to the abstract interface, so switching `queue.backend` between `sqlite` and `redis` in `config.yaml` doesn't touch either of them — only which backend module gets instantiated at startup changes. Adding a third backend (e.g. Postgres) means implementing the same interface in a new module under `queue_backends/` and wiring it into that instantiation point; no changes to `worker.py`/`web.py` should be needed.
 
 ## Data flow
 
@@ -71,7 +72,7 @@ The template's skeleton modules `cli.py` (Typer), `config.py` (interpose setting
 4. For each rule, the resolver expands any `$ref:`/`${vars.x}` before the rule reaches `engine.py`. The engine's `ConditionEvaluator` checks `enabled`, then context, then evaluates `conditions:` per torrent (fetched via `qbittorrent.py`); matches are handed to `ActionExecutor`, which calls back into `qbittorrent.py` to actually act on qBittorrent.
 5. The worker updates the job's status (`completed`/`failed`) and result summary back through `queue_manager.py`, which is what `--job-status`/`--list-jobs` (via the client) or `GET /api/jobs` read back.
 
-**Where state lives:** jobs and their results in the queue (`qbt-rules.db` in the state directory, or Redis); `config.yml`, `rules.yml`, the log and the editor's `.history/` in the config directory (see [In-Depth Configuration](In-Depth-Configuration#where-configuration-comes-from)). Nothing else is persisted: torrent fields are fetched fresh from qBittorrent for every job, and trackie's snapshot once per job that uses `tracker.*`.
+**Where state lives:** jobs and their results in the queue (`qbt-rules.db` in the state directory, or Redis); `config.yaml` and `rules.yml` in `/etc/qbt-rules`, the editor's `.history/` in the state directory, the log on the console (see [In-Depth Configuration](In-Depth-Configuration#where-configuration-comes-from)). Nothing else is persisted: torrent fields are fetched fresh from qBittorrent for every job, and trackie's snapshot once per job that uses `tracker.*`.
 
 ## Design decisions
 
