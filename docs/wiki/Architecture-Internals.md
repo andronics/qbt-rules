@@ -75,7 +75,7 @@ The template's skeleton modules `cli.py` (Typer) and `api.py` (FastAPI) are in t
 4. For each rule, the resolver expands any `$ref:`/`${vars.x}` before the rule reaches `engine.py`. The engine's `ConditionEvaluator` checks `enabled`, then context, then evaluates `conditions:` per torrent (fetched via `qbittorrent.py`); matches are handed to `ActionExecutor`, which calls back into `qbittorrent.py` to actually act on qBittorrent.
 5. The worker updates the job's status (`completed`/`failed`) and result summary back through `queue_manager.py`, which is what `qbt-rules jobs status`/`jobs list` or `GET /api/jobs` read back.
 
-**Where state lives:** jobs and their results in the queue (`qbt-rules.db` in the state directory, or Redis); `config.yaml` and `rules.yml` in `/etc/qbt-rules`, the editor's `.history/` in the state directory, the log on the console (see [In-Depth Configuration](In-Depth-Configuration#where-configuration-comes-from)). Nothing else is persisted: torrent fields are fetched fresh from qBittorrent for every job, and trackie's snapshot once per job that uses `tracker.*`.
+**Where state lives:** jobs and their results in the queue (`qbt-rules.db` in the state directory, or Redis); `config.yaml` in `/etc/qbt-rules` (read-only is fine), `rules.yml` and the editor's `.history/` in the state directory, the log on the console (see [In-Depth Configuration](In-Depth-Configuration#where-configuration-comes-from)). Nothing else is persisted: torrent fields are fetched fresh from qBittorrent for every job, and trackie's snapshot once per job that uses `tracker.*`.
 
 ## Design decisions
 

@@ -1,4 +1,4 @@
-"""config_loader: rules.yml beside the settings, with hot reload.
+"""config_loader: rules.yml (in the state directory) beside the settings, with hot reload.
 
 The settings themselves are config.py's (tests/unit/test_config.py).
 """
@@ -28,13 +28,23 @@ def config_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def load(config_dir: Path) -> Callable[..., Config]:
-    """Write rules.yml (unless None) and load the configuration from config_dir."""
+def state_dir(tmp_path: Path) -> Path:
+    """The state directory, where rules.yml lives."""
+    directory = tmp_path / "state"
+    directory.mkdir()
+    return directory
+
+
+@pytest.fixture
+def load(config_dir: Path, state_dir: Path) -> Callable[..., Config]:
+    """Write rules.yml (unless None) in state_dir and load the configuration from config_dir."""
 
     def run(rules: str | None) -> Config:
         if rules is not None:
-            (config_dir / "rules.yml").write_text(rules, encoding="utf-8")
-        return load_config(config_dir / "config.yaml", environ={})
+            (state_dir / "rules.yml").write_text(rules, encoding="utf-8")
+        return load_config(
+            config_dir / "config.yaml", environ={"QBT_RULES_STATE_DIR": str(state_dir)}
+        )
 
     return run
 
@@ -91,11 +101,13 @@ def test_load_yaml_file_permission_denied(tmp_path: Path) -> None:
 # -- Config: where the files are ------------------------------------------------------------------
 
 
-def test_paths_come_from_the_settings(config_dir: Path, load: Callable[..., Config]) -> None:
+def test_paths_come_from_the_settings(
+    config_dir: Path, state_dir: Path, load: Callable[..., Config]
+) -> None:
     config = load(RULE % "a")
     assert config.config_file == config_dir / "config.yaml"
-    assert config.rules_file == config_dir / "rules.yml"
-    assert config.history_dir == Path("/var/lib/qbt-rules/.history")
+    assert config.rules_file == state_dir / "rules.yml"
+    assert config.history_dir == state_dir / ".history"
     assert config.settings.rules_file == config.rules_file
 
 
@@ -170,18 +182,18 @@ def test_schedule_and_dry_run_come_from_the_settings(config_dir: Path) -> None:
 # -- Config: hot reload ---------------------------------------------------------------------------
 
 
-def test_reloads_when_the_file_changes(config_dir: Path, load: Callable[..., Config]) -> None:
+def test_reloads_when_the_file_changes(state_dir: Path, load: Callable[..., Config]) -> None:
     config = load(RULE % "initial")
     assert [r["id"] for r in config.get_rules()] == ["initial"]
     time.sleep(0.01)
-    (config_dir / "rules.yml").write_text(RULE % "updated", encoding="utf-8")
+    (state_dir / "rules.yml").write_text(RULE % "updated", encoding="utf-8")
     assert [r["id"] for r in config.get_rules()] == ["updated"]
 
 
-def test_creating_the_file_reloads(config_dir: Path, load: Callable[..., Config]) -> None:
+def test_creating_the_file_reloads(state_dir: Path, load: Callable[..., Config]) -> None:
     config = load(None)
     assert config.get_rules() == []
-    (config_dir / "rules.yml").write_text(RULE % "created", encoding="utf-8")
+    (state_dir / "rules.yml").write_text(RULE % "created", encoding="utf-8")
     assert [r["id"] for r in config.get_rules()] == ["created"]
 
 
@@ -193,11 +205,11 @@ def test_no_reload_when_unchanged(load: Callable[..., Config], mocker: MockerFix
     assert spy.call_count == 1
 
 
-def test_reloads_a_file_with_an_older_mtime(config_dir: Path, load: Callable[..., Config]) -> None:
+def test_reloads_a_file_with_an_older_mtime(state_dir: Path, load: Callable[..., Config]) -> None:
     # A restored backup (cp -p, git checkout) can carry an older mtime than the file it replaces
     config = load(RULE % "current")
     assert config.get_rules()[0]["id"] == "current"
-    rules_file = config_dir / "rules.yml"
+    rules_file = state_dir / "rules.yml"
     old = rules_file.stat().st_mtime - 3600
     rules_file.write_text(RULE % "restored-backup", encoding="utf-8")
     os.utime(rules_file, (old, old))
@@ -205,11 +217,11 @@ def test_reloads_a_file_with_an_older_mtime(config_dir: Path, load: Callable[...
 
 
 def test_failed_reload_keeps_the_old_rules(
-    config_dir: Path, load: Callable[..., Config], caplog: pytest.LogCaptureFixture
+    state_dir: Path, load: Callable[..., Config], caplog: pytest.LogCaptureFixture
 ) -> None:
     config = load(RULE % "good")
     config.get_rules()
-    rules_file = config_dir / "rules.yml"
+    rules_file = state_dir / "rules.yml"
     rules_file.write_text(
         "rules:\n  - {id: dup, conditions: [], actions: []}\n"
         "  - {id: dup, conditions: [], actions: []}\n",

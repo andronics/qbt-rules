@@ -108,7 +108,7 @@ def show_config(config: ConfigOption = None) -> None:
         typer.echo(f"{setting.key} = {shown}  ({cfg.sources[setting.key]})")
     for i, entry in enumerate(cfg.schedule):
         typer.echo(f"schedule[{i}] = {entry.cron} -> {entry.context}")
-    for problem in cfg.problems:
+    for problem in (*cfg.warnings, *cfg.problems):
         typer.echo(f"warning: {problem}", err=True)
 
 
@@ -134,11 +134,9 @@ def serve(config: ConfigOption = None) -> None:
     # so /api/health can say what's missing
     for problem in cfg.problems:
         logger.error(f"Configuration: {problem}")
-    if cfg.sources.get("listen.port", "").startswith("QBT_RULES_SERVER_PORT"):
-        logger.warning(
-            "QBT_RULES_SERVER_PORT is an alias of QBT_RULES_LISTEN_PORT, the one the image's "
-            "healthcheck polls: set QBT_RULES_LISTEN_PORT instead"
-        )
+    # Deprecated spellings (the server.* aliases), each naming its replacement
+    for warning in cfg.warnings:
+        logger.warning(f"Configuration: {warning}")
     try:
         server.serve(cfg)
     except ConfigError as e:
@@ -153,7 +151,7 @@ def validate(
     rules_file: Annotated[
         Path | None,
         typer.Argument(
-            help="The rules file to check (default: rules.file, rules.yml beside the config).",
+            help="The rules file to check (default: rules.file, rules.yml in the state directory).",
             show_default=False,
         ),
     ] = None,
@@ -185,7 +183,7 @@ def validate(
             "qbittorrent.password is not set (fine if qBittorrent lets this host in without "
             "logging in)",
         )
-    for problem in cfg.problems:
+    for problem in (*cfg.warnings, *cfg.problems):
         report("warning", problem)
 
     path = rules_file or cfg.rules_file

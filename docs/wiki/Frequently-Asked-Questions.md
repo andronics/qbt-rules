@@ -111,12 +111,12 @@ A: Yes, via Docker — qbt-rules is distributed only as a Docker image (`ghcr.io
 A: In a Docker deployment, mount one host directory at `/etc/qbt-rules` and another at `/var/lib/qbt-rules` (see [Quick Start](Quick-Start)):
 
 - `/etc/qbt-rules/config.yaml` - Connection, server, queue, and global settings (optional: every setting also has an environment variable)
-- `/etc/qbt-rules/rules.yml` - Your automation rules (writable, if you want to save them from the dashboard)
+- `/var/lib/qbt-rules/rules.yml` - Your automation rules, in the state directory (writable, so the dashboard's rules editor can save them)
 - `/var/lib/qbt-rules/` - State: the job queue (`qbt-rules.db`) and the rules editor's `.history/`
 
 The log goes to the console. Releases before 0.11 used `/config`: that path is no longer read at all (see [In-Depth Configuration](In-Depth-Configuration#migrating-from-010x)).
 
-Nothing is copied in on first start: with no `rules.yml` there are no rules until you write one (the dashboard's rules editor creates it). `QBT_RULES_CONFIG` (or `--config`) points at another config file, with `rules.yml` read beside it. See [In-Depth Configuration](In-Depth-Configuration) for the full `config.yaml`/`rules.yml` schema.
+Nothing is copied in on first start: with no `rules.yml` there are no rules until you write one (the dashboard's rules editor creates it). `QBT_RULES_CONFIG` (or `--config`) points at another config file; `QBT_RULES_STATE_DIR` moves the state directory, `rules.yml` with it, and `rules.file` points at another rules file. See [In-Depth Configuration](In-Depth-Configuration) for the full `config.yaml`/`rules.yml` schema.
 
 ### Q: How do I use environment variables in config files?
 

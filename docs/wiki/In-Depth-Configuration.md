@@ -17,23 +17,25 @@ The engine is [interpose](https://github.com/metalayerlab/interpose)'s settings 
 
 `config.yaml` is read once at startup: restart the server to pick up a change. `rules.yml` is re-read whenever it changes on disk.
 
-**Where the files are.** Config is in `/etc/qbt-rules`, state in `/var/lib/qbt-rules`:
+**Where the files are.** The config file is in `/etc/qbt-rules`, which can be read-only; everything qbt-rules writes, `rules.yml` included, is in the state directory, `/var/lib/qbt-rules`:
 
 | Path | What it is | Setting |
 |------|------------|---------|
-| `/etc/qbt-rules/config.yaml` | The settings. Optional: every setting has a default and an environment variable | `QBT_RULES_CONFIG`, `--config` |
-| `/etc/qbt-rules/rules.yml` | Your rules ([reference below](#rulesyml-reference)). Read beside the config file. **Writable**, if you want to save it from the dashboard's rules editor | `rules.file` |
-| `/var/lib/qbt-rules/qbt-rules.db` | The SQLite job queue | `queue.sqlite_path` (relative to `state_dir`) |
+| `/etc/qbt-rules/config.yaml` | The settings. Optional: every setting has a default and an environment variable. The only file in `/etc/qbt-rules` | `QBT_RULES_CONFIG`, `--config` |
+| `/var/lib/qbt-rules/rules.yml` | Your rules ([reference below](#rulesyml-reference)). In the state directory because the dashboard's rules editor saves it: keep it **writable** by the server | `rules.file` (relative to `state_dir`) |
+| `/var/lib/qbt-rules/qbt-rules.db` | The SQLite job queue (WAL mode: `-wal` and `-shm` files sit beside it) | `queue.sqlite_path` (relative to `state_dir`) |
 | `/var/lib/qbt-rules/.history/` | Previous versions of `rules.yml`, kept by the rules editor | `state_dir` |
 | *(the console)* | The log: stderr, which `docker logs` and Kubernetes keep. Set `logging.file` to also write a file (rotated by size); a relative path is under `state_dir` | `logging.file` |
 
-The image's volume is `/var/lib/qbt-rules`; mount your config directory at `/etc/qbt-rules` (see [Deployment](Deployment)). The old `/config` directory is not read, with no fallback: a path setting under `/config` is refused at startup.
+The image's volume is `/var/lib/qbt-rules`; mount your config directory at `/etc/qbt-rules`, read-only if you like (see [Deployment](Deployment)). The old `/config` directory is not read, with no fallback: a path setting under `/config` is refused at startup. So is a `rules.yml` left in `/etc/qbt-rules` (beside `config.yaml`, where 0.11's development builds read it) while the state directory has none: move it to `/var/lib/qbt-rules/rules.yml`.
 
-**First start.** Nothing is copied into place. With no `config.yaml` every setting has its default; with no `rules.yml` there are no rules, and the dashboard's rules editor creates the file on its first save (its directory must be writable). [contrib/rules.example.yml](https://github.com/andronics/qbt-rules/blob/main/contrib/rules.example.yml) and [contrib/qbt-rules.example.yaml](https://github.com/andronics/qbt-rules/blob/main/contrib/qbt-rules.example.yaml) are starting points.
+**First start.** Nothing is copied into place. With no `config.yaml` every setting has its default; with no `rules.yml` there are no rules, and the dashboard's rules editor creates the file on its first save (the state directory must be writable, as it is in the image).
+
+**Refused settings are reported together.** Everything 0.11 refuses (a removed or renamed variable or key, a path under `/config`, a `config.yml` or `rules.yml` in the old place, an alias set to a different value from its key) is collected and reported in one error, each with what to use instead, and the server exits with status 2. One run lists everything to change. [contrib/rules.example.yml](https://github.com/andronics/qbt-rules/blob/main/contrib/rules.example.yml) and [contrib/qbt-rules.example.yaml](https://github.com/andronics/qbt-rules/blob/main/contrib/qbt-rules.example.yaml) are starting points.
 
 **Starting without an API key.** The server starts with no configuration at all (the image's smoke test runs it that way). Without `server.api_key` it refuses every authenticated request with a `503` that says what to set, the dashboard's login page says so too, and `/api/health` (still `200`: the process is fine) lists it under `config_problems`. The placeholder key the 0.10.x default `config.yml` shipped with (`your-secure-api-key-here-...`) is public, so it counts as unset. qBittorrent credentials aren't checked at startup: qBittorrent can allow logins without a password, and a wrong one shows up as a failed job.
 
-**Listen port and the healthcheck.** The image's `HEALTHCHECK` polls `/healthz` (liveness, which depends on nothing) on `QBT_RULES_LISTEN_PORT` (default `5000`); `/readyz` and `/api/health` are described in [Deployment](Deployment#probes). `listen.port` is the setting's name; `server.port` and `QBT_RULES_SERVER_PORT` (the 0.10.x names) still work as aliases, but the healthcheck doesn't read them, so use `QBT_RULES_LISTEN_PORT`. The server logs a warning when the alias is used, and refuses to start if both are set to different values. `server.host` / `QBT_RULES_SERVER_HOST` are aliases of `listen.host` the same way.
+**Listen port and the healthcheck.** The image's `HEALTHCHECK` polls `/healthz` (liveness, which depends on nothing) on `QBT_RULES_LISTEN_PORT` (default `5000`); `/readyz` and `/api/health` are described in [Deployment](Deployment#probes). `listen.port` is the setting's name; `server.port` and `QBT_RULES_SERVER_PORT` (the 0.10.x names) still work as deprecated aliases, but the healthcheck doesn't read them, so use `QBT_RULES_LISTEN_PORT`. The server logs a deprecation warning at startup for each alias in use, in the file or as a variable, naming the key or variable to use instead (`qbt-rules config` and `qbt-rules validate` print it too), and refuses to start if an alias and its key are set to different values. `server.host` / `QBT_RULES_SERVER_HOST` are aliases of `listen.host` the same way.
 
 **`${VAR}` in the file.** `${VAR}` and `${VAR:-default}` inside `config.yaml` are replaced with that environment variable (or the default, or nothing). A `QBT_RULES_*` variable for the setting still wins over the expanded value.
 
@@ -46,11 +48,11 @@ Generated from the code: don't edit the table, run `uv run scripts/gen-wiki.py`.
 <!-- generated:start settings -->
 | Key | Environment variable | Default | Description |
 |---|---|---|---|
-| `listen.host` | `QBT_RULES_LISTEN_HOST` | `0.0.0.0` | Address the HTTP server binds to. `server.host` (`QBT_RULES_SERVER_HOST`) is an alias. |
-| `listen.port` | `QBT_RULES_LISTEN_PORT` | `5000` | Port the HTTP server listens on, and the one the image's healthcheck polls. `server.port` (`QBT_RULES_SERVER_PORT`) is an alias, which the healthcheck doesn't read. |
-| `state_dir` | `QBT_RULES_STATE_DIR` | `/var/lib/qbt-rules` | Directory for state: the SQLite job database and the rules editor's history (`.history/`). |
+| `listen.host` | `QBT_RULES_LISTEN_HOST` | `0.0.0.0` | Address the HTTP server binds to. `server.host` (`QBT_RULES_SERVER_HOST`) is a deprecated alias. |
+| `listen.port` | `QBT_RULES_LISTEN_PORT` | `5000` | Port the HTTP server listens on, and the one the image's healthcheck polls. `server.port` (`QBT_RULES_SERVER_PORT`) is a deprecated alias, which the healthcheck doesn't read. |
+| `state_dir` | `QBT_RULES_STATE_DIR` | `/var/lib/qbt-rules` | Directory for state: `rules.yml`, the SQLite job database and the rules editor's history (`.history/`). Must be writable. |
 | `dry_run` | `QBT_RULES_DRY_RUN` | `False` | Log what rules would do without doing it. Replaces 0.10.x's `engine.dry_run`. |
-| `rules.file` | `QBT_RULES_RULES_FILE` | *(none)* | The rules file. Empty: `rules.yml` beside the config file (`/etc/qbt-rules/rules.yml`). A relative path is relative to the config file's directory. It must be writable for the dashboard's editor to save it. |
+| `rules.file` | `QBT_RULES_RULES_FILE` | *(none)* | The rules file. Empty: `rules.yml` in `state_dir` (`/var/lib/qbt-rules/rules.yml`). A relative path is relative to `state_dir`. It must be writable for the dashboard's editor to save it. |
 | `server.api_key` | `QBT_RULES_SERVER_API_KEY` | *(none)* | Key for the HTTP API and the dashboard login (`openssl rand -hex 32`). Unset, the server starts but refuses every authenticated request, and `/api/health` says so. 🔒 Secret: use the `_FILE` variant. |
 | `server.workers` | `QBT_RULES_SERVER_WORKERS` | `1` | Must be 1: the server is one process, so its worker and scheduler run once. Kept so a 0.10.x config that sets it to 1 still loads. |
 | `server.editor_enabled` | `QBT_RULES_SERVER_EDITOR_ENABLED` | `True` | Allow saving `rules.yml` from the dashboard's rules editor. `false` keeps it read-only. |
@@ -95,38 +97,63 @@ A few settings need more than a line:
 
 ### Migrating from 0.10.x
 
-0.11 moves the configuration onto the template's layout: config in `/etc/qbt-rules`, state in `/var/lib/qbt-rules`. Nothing reads `/config` any more, and nothing is moved for you. Copy (don't move: keep `/config` as it is until you're happy, so rolling back is just the old image) each file:
+0.11 moves the configuration onto the template's layout: `config.yaml` in `/etc/qbt-rules` (read-only is fine), and everything qbt-rules writes, `rules.yml` included, in `/var/lib/qbt-rules`. Nothing reads `/config` any more, and nothing is moved for you. Copy (don't move: keep `/config` as it is until you're happy, so rolling back is just the old image) each file:
 
 | 0.10.x | 0.11 | Notes |
 |--------|------|-------|
 | `/config/config.yml` | `/etc/qbt-rules/config.yaml` | Renamed: `.yaml`. Optional: drop it if you configure with variables. Edit it as below |
-| `/config/rules.yml` | `/etc/qbt-rules/rules.yml` | Keep it writable for the rules editor |
-| `/config/qbt-rules.db` | `/var/lib/qbt-rules/qbt-rules.db` | The job history; optional (a new, empty one is created) |
-| `/config/.history/` | `/var/lib/qbt-rules/.history/` | The rules editor's backups; optional |
-| `/config/qbt-rules.log` (and `.1`, `.2`, ...) | *(the console)* | Not copied. Set `QBT_RULES_LOGGING_FILE=/var/lib/qbt-rules/qbt-rules.log` to keep a file |
+| `/config/rules.yml` | `/var/lib/qbt-rules/rules.yml` | The **state** directory, not `/etc/qbt-rules`: the rules editor saves it. Make it writable by the server's user (`PUID`, 1000 by default), e.g. mode `0644`; a read-only copy (`0444`) opens read-only in the editor |
+| `/config/qbt-rules.db` (and `-wal`) | `/var/lib/qbt-rules/qbt-rules.db` | The job history; optional (a new, empty one is created). It is in WAL mode, so copy it consistently: `sqlite3 /config/qbt-rules.db ".backup /var/lib/qbt-rules/qbt-rules.db"`, or a plain copy with the old app stopped. A copy of the main file alone, made while it runs, can miss the jobs still in `qbt-rules.db-wal` |
+| `/config/.history/` | `/var/lib/qbt-rules/.history/` | The rules editor's backups; optional (0.10.1 deployments that never saved from the editor have none) |
+| `/config/qbt-rules.log` (and `.1`, `.2`, ...) | *(the console)* | Not copied: the log goes to the console now (`docker logs`, `kubectl logs`). Set `QBT_RULES_LOGGING_FILE=/var/lib/qbt-rules/qbt-rules.log` to keep a file as well |
 
-In `config.yaml`:
+In `config.yaml`, the edits a production 0.10.1 config needed (the server refuses to start until they are made, and lists them all at once):
 
-- **Delete every path under `/config`**: `queue.sqlite_path`, `rules.file`, `logging.file`. The defaults already point at the new places; a path under `/config` is refused at startup.
-- **`engine.dry_run` is now `dry_run`** (top level). `engine:` is refused with that message. The variable, `QBT_RULES_DRY_RUN`, is unchanged.
-- **`server.host` and `server.port`** still work (aliases of `listen.host` and `listen.port`); rename them when convenient.
+```diff
+-engine:
+-  dry_run: false
++dry_run: false
+ logging:
+   level: info
+-  file: /config/qbt-rules.log
+   trace: false
+   http_access: false
+ ...
+ queue:
+   backend: sqlite
+-  sqlite_path: /config/qbt-rules.db
+   cleanup_after: 7d
+-rules:
+-  file: /config/rules.yml
+```
+
+- **`engine.dry_run` is now a top-level `dry_run`.** `engine.dry_run` is refused with that message. The variable, `QBT_RULES_DRY_RUN`, is unchanged.
+- **Delete every path under `/config`**: `logging.file`, `queue.sqlite_path`, and the `rules:` block (`rules.file`). The defaults already point at the new places (`/var/lib/qbt-rules/rules.yml`, `/var/lib/qbt-rules/qbt-rules.db`, the console); a path under `/config` is refused at startup.
+- **`server.host` and `server.port`** still work, as deprecated aliases of `listen.host` and `listen.port`: the server logs a warning naming the new key. Rename them when convenient.
 - **`server.workers`** above `1` is refused (one process now): delete it.
 - **`server.api_key` and `client.api_key`** still holding the shipped placeholder count as unset: set a real key.
-- `version: 1` can stay or go; nothing reads it.
+- `version: 1` can stay or go; nothing reads it. Unknown keys are ignored, so check any you add against the [settings table](#settings) (`logging.trace`, for one, has never been a setting: it is `logging.trace_mode`).
+
+Credentials, the qBittorrent host, notifications, the queue backend, `cleanup_after`, the schedule and the `client` keys carry over unchanged.
+
+**Mount `/var/lib/qbt-rules` as a directory**, not single files: SQLite creates `qbt-rules.db-wal` and `-shm` beside the database, the rules editor replaces `rules.yml` atomically and writes `.history/` beside it, and with file-only mounts those land on the container's throwaway layer. A Kubernetes deployment that keeps its old volume can mount it twice with `subPath`s: `/etc/qbt-rules` holding `config.yaml` (read-only), and a directory at `/var/lib/qbt-rules` holding `rules.yml`, `qbt-rules.db` and `.history/`.
+
+**The first start prunes old jobs.** `queue.cleanup_after` (default `7d`) is applied at startup and then hourly; 0.10.1 never applied it, so the first start of 0.11 deletes every finished job older than that (on one production database, about 80% of them). The database file doesn't shrink (no `VACUUM`). The old database on `/config` is untouched, for rollback. Set `queue.cleanup_after` higher, or `0` to keep everything, before the first start if you want the history.
 
 Environment variables:
 
 | 0.10.x | 0.11 |
 |--------|------|
 | Every `QBT_RULES_<SECTION>_<FIELD>` and its `_FILE` form | Unchanged |
-| `QBT_RULES_DRY_RUN`, `QBT_RULES_RULES_FILE`, `QBT_RULES_SCHEDULE_<N>_CRON` / `_CONTEXT` | Unchanged (`QBT_RULES_RULES_FILE` now works: 0.10.x documented it but never read it) |
-| `QBT_RULES_SERVER_PORT`, `QBT_RULES_SERVER_HOST` | Aliases of `QBT_RULES_LISTEN_PORT` and `QBT_RULES_LISTEN_HOST`. Set `QBT_RULES_LISTEN_PORT` instead: the healthcheck reads only that |
+| `QBT_RULES_DRY_RUN`, `QBT_RULES_RULES_FILE`, `QBT_RULES_SCHEDULE_<N>_CRON` / `_CONTEXT` | Unchanged (`QBT_RULES_RULES_FILE` now works: 0.10.x documented it but never read it; a relative path is under `QBT_RULES_STATE_DIR`) |
+| `QBT_RULES_SERVER_PORT`, `QBT_RULES_SERVER_HOST` | Deprecated aliases of `QBT_RULES_LISTEN_PORT` and `QBT_RULES_LISTEN_HOST`, with a warning at startup. Set `QBT_RULES_LISTEN_PORT` instead: the healthcheck reads only that |
 | `CONFIG_DIR` | Refused at startup: remove it (use `QBT_RULES_CONFIG` for another config file) |
 | `QBT_RULES_CONFIG_DIR` | Refused at startup: remove it (use `QBT_RULES_CONFIG` and `QBT_RULES_STATE_DIR`) |
+| `QBT_RULES_LOG_LEVEL` | Refused: it was never a setting; use `QBT_RULES_LOGGING_LEVEL` |
 | `--config-dir DIR` | Refused: use `--config FILE` |
-| *(new)* | `QBT_RULES_CONFIG` (the config file), `QBT_RULES_STATE_DIR` (state) |
+| *(new)* | `QBT_RULES_CONFIG` (the config file), `QBT_RULES_STATE_DIR` (state, `rules.yml` included) |
 
-A Kubernetes deployment that keeps its old volume can mount it twice with `subPath`s: one directory at `/etc/qbt-rules` holding `config.yaml` and `rules.yml`, another at `/var/lib/qbt-rules` holding `qbt-rules.db` and `.history/`. Mount directories, not single files, so the rules editor can replace `rules.yml` atomically.
+**Rules.** `qbt-rules validate` is stricter than 0.10.1's `--validate`. In particular, `delete_torrent` with `keep_files` is an error: 0.10.1 ignored `keep_files` and deleted the files, so write `delete_files: true` (what such a rule has been doing) or `delete_files: false` (keep them). The server still starts and runs the rule as 0.10.1 did, but the dashboard's editor won't save `rules.yml` until it validates.
 
 ## Secrets
 

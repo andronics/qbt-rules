@@ -8,24 +8,29 @@
 # belong in _FILE, never in this file. ${VAR} and ${VAR:-default} are expanded
 # from the environment.
 #
-# The rules live in rules.yml beside this file (contrib/rules.example.yml is a
-# starting point); state lives in /var/lib/qbt-rules.
+# This is the only file in /etc/qbt-rules, which can be read-only. The rules
+# live in rules.yml in the state directory, /var/lib/qbt-rules, where the
+# dashboard's editor can save them (contrib/rules.example.yml is a starting
+# point).
 # Full reference: the wiki's In-Depth-Configuration page.
 
 listen:
   # Address and port of the HTTP API and dashboard. The image's healthcheck
-  # polls listen.port. (server.host and server.port are accepted as aliases.)
+  # polls listen.port. (server.host and server.port are deprecated aliases:
+  # they work, with a warning at startup.)
   host: 0.0.0.0
   port: 5000
 
-# State: the SQLite job database and the rules editor's history (.history/)
+# State: rules.yml, the SQLite job database and the rules editor's history
+# (.history/). Must be writable.
 state_dir: /var/lib/qbt-rules
 
 # true: only log what rules would do (env QBT_RULES_DRY_RUN)
 dry_run: false
 
 rules:
-  # Empty: rules.yml beside this file. Must be writable for the rules editor.
+  # Empty: rules.yml in state_dir (a relative path is under state_dir too).
+  # Must be writable for the rules editor.
   file: ""
 
 server:

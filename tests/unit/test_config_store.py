@@ -21,9 +21,10 @@ from qbt_rules.config_store import (
 
 @pytest.fixture
 def rules_file(tmp_path):
-    # rules.yml beside the config file (/etc/qbt-rules in the image)
-    (tmp_path / "etc").mkdir()
-    path = tmp_path / "etc" / "rules.yml"
+    # rules.yml. In the image it sits in the state directory beside .history/; here it gets a
+    # directory of its own, so the tests can tell its directory's permissions from the history's
+    (tmp_path / "rules").mkdir()
+    path = tmp_path / "rules" / "rules.yml"
     path.write_text("rules: []  # original\n")
     path.chmod(0o640)
     return path
@@ -222,6 +223,14 @@ class TestFirstSave:
         assert path.read_text() == "rules: []\n"
         assert snap.etag == compute_etag(b"rules: []\n")
         assert store.history() == []  # nothing to keep a copy of
+
+    def test_first_save_creates_a_missing_state_directory(self, tmp_path: Path) -> None:
+        # A bare-metal first run: /var/lib/qbt-rules doesn't exist yet, but its parent is ours
+        state = tmp_path / "var" / "lib" / "qbt-rules"
+        store = EditableFile(state / "rules.yml", state / ".history")
+        assert store.writable() == (True, None)
+        store.write("rules: []\n", store.read().etag)
+        assert (state / "rules.yml").read_text() == "rules: []\n"
 
     def test_a_file_that_appeared_meanwhile_is_a_conflict(
         self, tmp_path: Path, history_dir: Path

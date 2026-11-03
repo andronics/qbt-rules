@@ -1,10 +1,16 @@
 """Integration tests for resolver with Config and Engine"""
 
+from pathlib import Path
 from typing import Any
 
 import yaml
 
 from qbt_rules.config_loader import load_config
+
+
+def state_in(directory: Path) -> dict[str, str]:
+    """rules.yml lives in the state directory: these tests keep everything in one directory"""
+    return {"QBT_RULES_STATE_DIR": str(directory)}
 
 
 class TestResolverConfigIntegration:
@@ -65,7 +71,7 @@ class TestResolverConfigIntegration:
             yaml.dump(rules_content, f)
 
         # Load config
-        config = load_config(config_dir / "config.yaml", environ={})
+        config = load_config(config_dir / "config.yaml", environ=state_in(config_dir))
 
         # Get resolved rules
         rules = config.get_rules()
@@ -119,7 +125,7 @@ class TestResolverConfigIntegration:
             yaml.dump(rules_content, f)
 
         # Load config
-        config = load_config(config_dir / "config.yaml", environ={})
+        config = load_config(config_dir / "config.yaml", environ=state_in(config_dir))
 
         # Get rules
         rules = config.get_rules()
@@ -169,7 +175,7 @@ class TestResolverConfigIntegration:
             yaml.dump(rules_content, f)
 
         # Load config
-        config = load_config(config_dir / "config.yaml", environ={})
+        config = load_config(config_dir / "config.yaml", environ=state_in(config_dir))
 
         # Get rules twice
         rules1 = config.get_rules()
@@ -213,7 +219,7 @@ class TestResolverConfigIntegration:
             yaml.dump(rules_content, f)
 
         # Load config
-        config = load_config(config_dir / "config.yaml", environ={})
+        config = load_config(config_dir / "config.yaml", environ=state_in(config_dir))
 
         # Get rules and verify
         rules1 = config.get_rules()
@@ -275,7 +281,7 @@ class TestResolverConfigIntegration:
             yaml.dump(rules_content, f)
 
         # Load config
-        config = load_config(config_dir / "config.yaml", environ={})
+        config = load_config(config_dir / "config.yaml", environ=state_in(config_dir))
 
         # Get raw rules
         raw_rules = config.get_rules(resolved=False)
@@ -387,7 +393,7 @@ class TestResolverConfigIntegration:
             yaml.dump(rules_content, f)
 
         # Load config
-        config = load_config(config_dir / "config.yaml", environ={})
+        config = load_config(config_dir / "config.yaml", environ=state_in(config_dir))
 
         # Get resolved rules
         rules = config.get_rules()

@@ -126,7 +126,7 @@ actions and their parameters. Warnings alone pass.
 
 | Argument | Description |
 |---|---|
-| `RULES_FILE` | The rules file to check (default: rules.file, rules.yml beside the config). |
+| `RULES_FILE` | The rules file to check (default: rules.file, rules.yml in the state directory). |
 
 | Option | Environment variable | Description |
 |---|---|---|
@@ -175,8 +175,8 @@ qbt-rules config
 
 ```text
 Settings: /etc/qbt-rules/config.yaml
-/etc/qbt-rules/rules.yml:14:15: error: Unknown action type 'explode' (rules[1].actions[0].type)
-Rules: /etc/qbt-rules/rules.yml: 2 rule(s), 1 error(s), 0 warning(s), 0 note(s)
+/var/lib/qbt-rules/rules.yml:14:15: error: Unknown action type 'explode' (rules[1].actions[0].type)
+Rules: /var/lib/qbt-rules/rules.yml: 2 rule(s), 1 error(s), 0 warning(s), 0 note(s)
 error: validation failed: 1 error(s)
 ```
 

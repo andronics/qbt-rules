@@ -2,9 +2,11 @@
 
 The engine (lookup order, coercion, ``_FILE``, YAML errors) is interpose's and tested there;
 these tests pin what is the project's: the keys and variables, the defaults, the checks, and
-what load_config adds (${VAR} expansion, aliases, refusals, the schedule, the problems list).
+what load_config adds (${VAR} expansion, aliases and their warnings, refusals, all reported at
+once, the schedule, the problems list).
 """
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -196,7 +198,8 @@ def test_defaults_when_no_file(config_path: Path) -> None:
     cfg = load_config(config_path, environ={})
     assert (cfg.host, cfg.port) == ("0.0.0.0", 5000)  # noqa: S104
     assert cfg.config_file == config_path
-    assert cfg.rules_file == config_path.parent / "rules.yml"
+    # rules.yml is state: the editor writes it, and /etc/qbt-rules stays read-only
+    assert cfg.rules_file == Path("/var/lib/qbt-rules/rules.yml")
     assert cfg.state_dir == Path("/var/lib/qbt-rules")
     assert cfg.sqlite_path == Path("/var/lib/qbt-rules/qbt-rules.db")
     assert cfg.history_dir == Path("/var/lib/qbt-rules/.history")
@@ -208,7 +211,8 @@ def test_defaults_when_no_file(config_path: Path) -> None:
     assert cfg.schedule == ()
     assert not cfg.api_key
     assert cfg.sources["listen.port"] == "default"
-    assert cfg.sources["rules.file"] == f"default: {config_path.parent / 'rules.yml'}"
+    assert cfg.sources["rules.file"] == "default: /var/lib/qbt-rules/rules.yml"
+    assert cfg.warnings == ()
     assert cfg.values["queue.sqlite_path"] == "/var/lib/qbt-rules/qbt-rules.db"
 
 
@@ -255,6 +259,133 @@ def test_old_config_yml_beside_a_missing_config_yaml(tmp_path: Path) -> None:
         load_config(tmp_path / "config.yaml", environ={})
 
 
+# -- every refusal at once ---------------------------------------------------------------------
+
+# Production's 0.10.1 config.yml, as the side-by-side run found it: four refusals, then one
+# found per run. Each must be in the first run's single error.
+PRODUCTION_CONFIG = """\
+engine:
+  dry_run: false
+logging:
+  level: info
+  file: /config/qbt-rules.log
+queue:
+  backend: sqlite
+  sqlite_path: /config/qbt-rules.db
+  cleanup_after: 7d
+rules:
+  file: /config/rules.yml
+"""
+
+
+def test_every_refusal_is_reported_at_once(config_path: Path) -> None:
+    config_path.write_text(PRODUCTION_CONFIG, encoding="utf-8")
+    with pytest.raises(ConfigError) as caught:
+        load_config(config_path, environ={})
+    message = str(caught.value)
+    assert message.startswith("the configuration has 4 problems to fix before qbt-rules starts:")
+    lines = message.splitlines()[1:]
+    assert len(lines) == 4
+    assert all(line.startswith("  - ") for line in lines)
+    assert "engine.dry_run is now dry_run" in lines[0]
+    for key, value in [
+        ("rules.file", "/config/rules.yml"),
+        ("queue.sqlite_path", "/config/qbt-rules.db"),
+        ("logging.file", "/config/qbt-rules.log"),
+    ]:
+        assert any(
+            f"{key}: {value} is under /config" in line and "Remove the setting" in line
+            for line in lines
+        ), key
+
+
+def test_refusals_from_every_source_are_collected(tmp_path: Path, config_path: Path) -> None:
+    (tmp_path / "rules.yml").write_text("rules: []\n", encoding="utf-8")  # the old place
+    config_path.write_text(
+        "metrics: {multiproc_dir: /tmp/m}\nserver: {port: 8080}\nlisten: {port: 9090}\n",
+        encoding="utf-8",
+    )
+    sqlite_path = tmp_path / "sqlite-path"
+    sqlite_path.write_text("/config/qbt-rules.db\n", encoding="utf-8")
+    environ = {
+        "CONFIG_DIR": "/config",
+        "QBT_RULES_LOG_LEVEL": "DEBUG",
+        "QBT_RULES_QUEUE_SQLITE_PATH_FILE": str(sqlite_path),
+        "QBT_RULES_SERVER_HOST": "127.0.0.1",
+        "QBT_RULES_LISTEN_HOST": "0.0.0.0",  # noqa: S104
+        "QBT_RULES_STATE_DIR": str(tmp_path / "state"),
+    }
+    with pytest.raises(ConfigError) as caught:
+        load_config(config_path, environ=environ)
+    message = str(caught.value)
+    expected = [
+        r"CONFIG_DIR is no longer read: .*QBT_RULES_CONFIG",
+        r"QBT_RULES_LOG_LEVEL is not a qbt-rules setting: use QBT_RULES_LOGGING_LEVEL",
+        r"metrics\.multiproc_dir is no longer read",
+        r"queue\.sqlite_path: /config/qbt-rules\.db is under /config.*"
+        r"\(QBT_RULES_QUEUE_SQLITE_PATH_FILE\)",
+        r"rules\.yml is not read: rules\.yml now lives in the state directory",
+        r"QBT_RULES_SERVER_HOST and QBT_RULES_LISTEN_HOST are both set, to different values",
+        r"server\.port and listen\.port are both set, to different values",
+    ]
+    assert message.startswith(f"the configuration has {len(expected)} problems")
+    for pattern in expected:
+        assert re.search(pattern, message), pattern
+
+
+def test_an_unreadable_path_file_variable_is_reported_by_interpose(
+    tmp_path: Path, config_path: Path
+) -> None:
+    environ = {"QBT_RULES_STATE_DIR_FILE": str(tmp_path / "missing")}
+    with pytest.raises(ConfigError, match=r"cannot read QBT_RULES_STATE_DIR_FILE"):
+        load_config(config_path, environ=environ)
+
+
+def test_one_refusal_is_its_message_alone(config_path: Path) -> None:
+    with pytest.raises(ConfigError) as caught:
+        load_config(config_path, environ={"QBT_RULES_LOG_LEVEL": "DEBUG"})
+    assert str(caught.value) == (
+        "QBT_RULES_LOG_LEVEL is not a qbt-rules setting: use QBT_RULES_LOGGING_LEVEL"
+    )
+
+
+# -- rules.yml's old place, beside config.yaml ---------------------------------------------------
+
+
+def test_rules_yml_beside_the_config_file_is_refused(tmp_path: Path, config_path: Path) -> None:
+    # The 0.11 development line read /etc/qbt-rules/rules.yml until it moved to the state
+    # directory: a copy left there would otherwise be silently ignored (no rules)
+    old = tmp_path / "rules.yml"
+    old.write_text("rules: []\n", encoding="utf-8")
+    state = tmp_path / "state"
+    with pytest.raises(ConfigError) as caught:
+        load_config(config_path, environ={"QBT_RULES_STATE_DIR": str(state)})
+    assert str(caught.value) == (
+        f"{old} is not read: rules.yml now lives in the state directory, so the rules file is "
+        f"{state / 'rules.yml'}. Move it there (writable by the server, for the rules editor), or "
+        "point rules.file (QBT_RULES_RULES_FILE) at it"
+    )
+
+
+def test_rules_yml_beside_the_config_file_is_fine_once_moved(
+    tmp_path: Path, config_path: Path
+) -> None:
+    (tmp_path / "rules.yml").write_text("rules: []\n", encoding="utf-8")
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "rules.yml").write_text("rules: []\n", encoding="utf-8")
+    environ = {"QBT_RULES_STATE_DIR": str(state)}
+    assert load_config(config_path, environ=environ).rules_file == state / "rules.yml"
+    # Or pointed at where it is, or the state directory is the config directory
+    environ = {
+        "QBT_RULES_STATE_DIR": str(tmp_path / "empty"),
+        "QBT_RULES_RULES_FILE": str(tmp_path / "rules.yml"),
+    }
+    assert load_config(config_path, environ=environ).rules_file == tmp_path / "rules.yml"
+    environ = {"QBT_RULES_STATE_DIR": str(tmp_path)}
+    assert load_config(config_path, environ=environ).rules_file == tmp_path / "rules.yml"
+
+
 def test_file_values(config_path: Path) -> None:
     config_path.write_text(
         "listen: {port: 9000}\ndry_run: true\nqbittorrent: {host: 'http://q:1'}\n"
@@ -268,9 +399,9 @@ def test_file_values(config_path: Path) -> None:
         "http://q:1",
         "WARNING",
     )
-    # Relative paths: the log under state_dir, rules.yml beside the config file
+    # Relative paths are under state_dir: the log and the rules file
     assert cfg.log_file == Path("/srv/qbt-rules.log")
-    assert cfg.rules_file == config_path.parent / "my-rules.yml"
+    assert cfg.rules_file == Path("/srv/my-rules.yml")
     assert cfg.sources["listen.port"] == "file"
 
 
@@ -312,6 +443,47 @@ def test_key_aliases(config_path: Path) -> None:
     # The same value under both names is fine
     config_path.write_text("server: {port: 8080}\nlisten: {port: 8080}\n", encoding="utf-8")
     assert load_config(config_path, environ={}).port == 8080
+
+
+def test_key_aliases_warn(config_path: Path) -> None:
+    # Design record 0001: the aliases work, with a deprecation warning naming the canonical key
+    config_path.write_text("server:\n  host: 127.0.0.1\n  port: 8080\n", encoding="utf-8")
+    assert load_config(config_path, environ={}).warnings == (
+        f"{config_path}: server.host is deprecated: it is an alias of listen.host. Rename it to "
+        "listen.host",
+        f"{config_path}: server.port is deprecated: it is an alias of listen.port. Rename it to "
+        "listen.port",
+    )
+    # Also when listen.port has the same value: server.port is still there to remove
+    config_path.write_text("server: {port: 8080}\nlisten: {port: 8080}\n", encoding="utf-8")
+    (warning,) = load_config(config_path, environ={}).warnings
+    assert "server.port is deprecated" in warning
+    # The canonical keys alone: no warning
+    config_path.write_text("listen: {host: 127.0.0.1, port: 8080}\n", encoding="utf-8")
+    assert load_config(config_path, environ={}).warnings == ()
+
+
+@pytest.mark.parametrize(
+    ("variable", "canonical"),
+    [
+        ("QBT_RULES_SERVER_HOST", "QBT_RULES_LISTEN_HOST"),
+        ("QBT_RULES_SERVER_PORT", "QBT_RULES_LISTEN_PORT"),
+    ],
+)
+def test_variable_aliases_warn(config_path: Path, variable: str, canonical: str) -> None:
+    (warning,) = load_config(config_path, environ={variable: "8080"}).warnings
+    assert warning.startswith(f"{variable} is deprecated: it is an alias of {canonical}")
+    assert warning.endswith(f"set {canonical} instead")
+
+
+def test_alias_file_variables_warn(tmp_path: Path, config_path: Path) -> None:
+    value = tmp_path / "port"
+    value.write_text("8080\n", encoding="utf-8")
+    cfg = load_config(config_path, environ={"QBT_RULES_SERVER_PORT_FILE": str(value)})
+    assert cfg.port == 8080
+    (warning,) = cfg.warnings
+    assert "QBT_RULES_SERVER_PORT_FILE is deprecated" in warning
+    assert "set QBT_RULES_LISTEN_PORT_FILE instead" in warning
 
 
 def test_variable_aliases(config_path: Path) -> None:

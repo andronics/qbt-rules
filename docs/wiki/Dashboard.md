@@ -12,7 +12,7 @@ The dashboard reuses the exact same data the [JSON API](HTTP-API-Reference) alre
 | Jobs | `/jobs` | Paginated job list, optionally filtered by `?status=` |
 | Job detail | `/jobs/<job_id>` | Full job record — status, timing, result, error |
 | Rules | `/rules` | Read-only view of the currently-loaded `rules.yml`, in execution order, with each rule's resolved YAML |
-| Rules editor | `/rules/edit` | Edit `rules.yml` in the browser: validates as you type, saves with conflict detection, keeps previous versions in `.history/` (see [HTTP API Reference](HTTP-API-Reference#rules-editor-endpoints)) |
+| Rules editor | `/rules/edit` | Edit `rules.yml` in the browser: validates as you type, saves with conflict detection, keeps previous versions in `.history/` (see [HTTP API Reference](HTTP-API-Reference#rules-editor-endpoints) and [Saving rules.yml](#saving-rulesyml)) |
 | Login | `/login` | API key entry form |
 
 ### Authentication
@@ -34,6 +34,19 @@ A valid key starts the same session and then redirects to the same URL **without
 Every link, form action, script URL and redirect the dashboard emits is relative to the current page (`../jobs`, `./login?next=...`), never an absolute path. So the dashboard works under a path prefix (for example a proxy or ingress that serves it at `https://example.org/qbt/` and strips `/qbt` before passing requests on) without any setting: the browser resolves each link against wherever it really is. Open the prefix with its trailing slash (`/qbt/`, not `/qbt`). The rules editor's calls to the JSON API are relative too.
 
 Static files (`/static/...`, the editor's script and the vendored Ace editor) need no login. Pages ask for them with `?v=<version>`, so an upgrade never runs a cached old script; they're served with `Cache-Control: no-cache` and an ETag, so a reload revalidates cheaply.
+
+### Saving rules.yml
+
+The editor saves `rules.yml` where the server reads it: `/var/lib/qbt-rules/rules.yml`, in the state directory, which the container already gives to `PUID:PGID` (or wherever `rules.file` points). That is why `rules.yml` isn't in `/etc/qbt-rules`: the config directory can stay read-only. With no `rules.yml` yet, the first save creates it. Every save that changes the file keeps the previous version in `/var/lib/qbt-rules/.history/` (the newest 20), and the engine picks the new rules up on its next job, with no restart.
+
+The editor opens read-only, with a banner saying why, when:
+
+- `server.editor_enabled` is `false`;
+- `rules.yml` is read-only on disk (for example mode `0444`, as a copy from a read-only volume can be): make it writable by the server's user (`chmod 644`) to edit here;
+- `rules.yml` doesn't exist and its directory can't be written, so the first save couldn't create it;
+- the history directory can't be written, so the previous version couldn't be kept.
+
+It still validates as you type in every case. A save of a file with errors is refused (`422`), so a `rules.yml` that `qbt-rules validate` rejects (such as 0.10.1's ignored `keep_files` on `delete_torrent`) has to be fixed before the first save.
 
 ### Rules View Availability
 

@@ -41,8 +41,9 @@ contrib/docker/secrets/
 .claude/settings.local.json
 CLAUDE.local.md
 
-# qbt-rules: a bare-metal run's ./config (config.yml, rules.yml, the rules editor's
-# .history/, the database and logs) and logs written beside it
+# qbt-rules: a bare-metal run's ./config (config.yaml) and ./state (rules.yml, the
+# rules editor's .history/, the database and logs), and logs written beside them
 /config/
+/state/
 *.log
 logs/
