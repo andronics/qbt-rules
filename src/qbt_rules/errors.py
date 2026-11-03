@@ -4,7 +4,6 @@ Provides clear, actionable error messages without Python stack traces
 """
 
 import sys
-from typing import Optional
 
 from qbt_rules.log_setup import get_logger
 
@@ -15,7 +14,7 @@ class QBittorrentError(Exception):
     """Base exception for all qBittorrent automation errors"""
 
     def __init__(
-        self, code: str, message: str, details: Optional[dict] = None, fix: Optional[str] = None
+        self, code: str, message: str, details: dict | None = None, fix: str | None = None
     ):
         self.code = code
         self.message = message
@@ -40,7 +39,7 @@ class QBittorrentError(Exception):
 class AuthenticationError(QBittorrentError):
     """Authentication with qBittorrent failed"""
 
-    def __init__(self, host: str, response_text: Optional[str] = None):
+    def __init__(self, host: str, response_text: str | None = None):
         details = {"Host": host}
         if response_text:
             details["Response"] = response_text
@@ -68,7 +67,7 @@ class ConnectionError(QBittorrentError):
 class APIError(QBittorrentError):
     """qBittorrent API call failed"""
 
-    def __init__(self, endpoint: str, status_code: int, response_text: Optional[str] = None):
+    def __init__(self, endpoint: str, status_code: int, response_text: str | None = None):
         details = {"Endpoint": endpoint, "Status Code": status_code}
         if response_text:
             details["Response"] = response_text[:200]  # Limit response length
@@ -87,7 +86,7 @@ class ConfigurationError(QBittorrentError):
     def __init__(self, file_path: str, reason: str):
         super().__init__(
             code="CFG-001",
-            message=f"Cannot load configuration",
+            message="Cannot load configuration",
             details={"File": file_path, "Problem": reason},
             fix="Check that the configuration file exists and has valid YAML syntax",
         )
@@ -96,7 +95,7 @@ class ConfigurationError(QBittorrentError):
 class LoggingSetupError(QBittorrentError):
     """Cannot setup file logging"""
 
-    def __init__(self, log_path: str, reason: str, config_dir: Optional[str] = None):
+    def __init__(self, log_path: str, reason: str, config_dir: str | None = None):
         details = {"Log Path": log_path, "Problem": reason}
         if config_dir:
             details["CONFIG_DIR"] = config_dir
@@ -115,7 +114,7 @@ class RuleValidationError(QBittorrentError):
     def __init__(self, rule_name: str, reason: str):
         super().__init__(
             code="RULE-001",
-            message=f"Invalid rule configuration",
+            message="Invalid rule configuration",
             details={"Rule": rule_name, "Problem": reason},
             fix="Check the rule syntax in rules.yml",
         )
@@ -130,7 +129,7 @@ class FieldError(QBittorrentError):
         )
         super().__init__(
             code="FIELD-001",
-            message=f"Invalid field reference",
+            message="Invalid field reference",
             details={"Field": field, "Problem": reason, "Valid prefixes": valid_prefixes},
             fix="Use dot notation with API prefix (e.g., 'info.name', 'trackers.url')",
         )
@@ -143,7 +142,7 @@ class OperatorError(QBittorrentError):
         valid_operators = "==, !=, >, <, >=, <=, contains, not_contains, matches, in, not_in, older_than, newer_than"
         super().__init__(
             code="OP-001",
-            message=f"Unknown operator",
+            message="Unknown operator",
             details={"Operator": operator, "Field": field, "Valid operators": valid_operators},
             fix="Use one of the supported operators",
         )
@@ -267,10 +266,10 @@ class CircularRefError(ResolverError):
     """Circular reference detected"""
 
     def __init__(self, ref_path: str, ref_stack: list):
-        chain = " -> ".join(ref_stack + [ref_path])
+        chain = " -> ".join([*ref_stack, ref_path])
         super().__init__(
             code="REF-003",
-            message=f"Circular reference detected",
+            message="Circular reference detected",
             details={
                 "Reference chain": chain,
                 "Problem": f"'{ref_path}' references itself directly or indirectly",
@@ -288,7 +287,7 @@ class RefTypeMismatchError(ResolverError):
         allowed_groups: list,
         actual_group: str,
         location: str,
-        available_refs: list = None,
+        available_refs: list | None = None,
     ):
         # Format allowed groups for display
         if len(allowed_groups) == 1:
@@ -335,7 +334,7 @@ def handle_errors(func):
         except Exception as e:
             # Unexpected error - show generic message
             logger.error("Unexpected error occurred")
-            logger.error(f"  • Error: {type(e).__name__}: {str(e)}")
+            logger.error(f"  • Error: {type(e).__name__}: {e!s}")
             logger.error("  • Fix: Please report this issue with the error details above")
             logger.debug("Full stack trace:", exc_info=True)
             sys.exit(1)

@@ -17,7 +17,6 @@ import pytest
 
 from qbt_rules import metrics
 
-
 # The metrics module's enabled/disabled state is reset before and after
 # every test in the whole suite by tests/conftest.py's autouse
 # reset_metrics_module_state fixture (needed there rather than only here

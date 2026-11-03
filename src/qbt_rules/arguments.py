@@ -6,7 +6,6 @@ Provides consistent CLI interface across all triggers
 import argparse
 import os
 from pathlib import Path
-from typing import Optional
 
 from qbt_rules.__version__ import __version__
 from qbt_rules.rules_validation import ERROR, format_path, lint_rules
@@ -33,7 +32,7 @@ def create_parser() -> argparse.ArgumentParser:
     """
 
     parser = argparse.ArgumentParser(
-        description=f"qbt-rules - rules engine",
+        description="qbt-rules - rules engine",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -263,7 +262,7 @@ See PLAN.md or config.default.yml for complete configuration reference.
     return parser
 
 
-def validate_torrent_hash(torrent_hash: Optional[str]) -> str:
+def validate_torrent_hash(torrent_hash: str | None) -> str:
     """
     Validate torrent hash format
 
@@ -287,7 +286,7 @@ def validate_torrent_hash(torrent_hash: Optional[str]) -> str:
     try:
         int(torrent_hash, 16)
     except ValueError:
-        raise ValueError(f"Invalid torrent hash format: must be hexadecimal")
+        raise ValueError("Invalid torrent hash format: must be hexadecimal")
 
     return torrent_hash.lower()
 
@@ -319,7 +318,7 @@ def process_args(args: argparse.Namespace) -> Path:
     return config_dir
 
 
-def handle_utility_args(args: argparse.Namespace, config) -> Optional[int]:
+def handle_utility_args(args: argparse.Namespace, config) -> int | None:
     """
     Handle utility arguments (--validate, --list-rules)
 

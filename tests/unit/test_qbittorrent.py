@@ -2,12 +2,12 @@
 Tests for QBittorrentAPI class.
 """
 
+from unittest.mock import Mock, patch
+
 import pytest
 
-
+from qbt_rules.errors import AuthenticationError, ConnectionError
 from qbt_rules.qbittorrent import QBittorrentAPI as QBittorrentAPIv4
-from qbt_rules.errors import AuthenticationError, ConnectionError, APIError
-from unittest.mock import Mock, patch, MagicMock
 
 
 class TestQBittorrentAPIv4Init:

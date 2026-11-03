@@ -1,9 +1,10 @@
 """Comprehensive tests for RulesEngine class in engine.py."""
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-from qbt_rules.engine import RulesEngine, RuleStats
+from unittest.mock import Mock, patch
 
+import pytest
+
+from qbt_rules.engine import RulesEngine
 
 # ============================================================================
 # Initialization
@@ -795,13 +796,12 @@ class TestErrorHandling:
 
         engine = RulesEngine(mock_api, mock_config)
 
-        with pytest.raises(Exception):
-            with patch("qbt_rules.engine.logger.info") as mock_log:
-                engine.run(context="adhoc-run")
+        with pytest.raises(Exception), patch("qbt_rules.engine.logger.info") as mock_log:
+            engine.run(context="adhoc-run")
 
-                # Summary should still be logged
-                summary_calls = [call for call in mock_log.call_args_list if "Summary" in str(call)]
-                assert len(summary_calls) > 0
+            # Summary should still be logged
+            summary_calls = [call for call in mock_log.call_args_list if "Summary" in str(call)]
+            assert len(summary_calls) > 0
 
 
 # ============================================================================

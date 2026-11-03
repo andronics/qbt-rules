@@ -1,27 +1,25 @@
 """Comprehensive tests for config_loader.py - Configuration loading and management."""
 
-import pytest
-import os
 import logging
-import tempfile
-from pathlib import Path
+import os
 from unittest.mock import patch
+
+import pytest
+
 from qbt_rules.config_loader import (
-    expand_env_vars,
-    load_yaml_file,
     Config,
-    load_config,
+    copy_default_if_missing,
+    expand_env_vars,
     get_nested_config,
+    load_config,
+    load_yaml_file,
     parse_bool,
-    parse_int,
     parse_duration,
+    parse_int,
     parse_retention,
     resolve_config,
-    copy_default_if_missing,
-    DEFAULT_CONFIG_SHARE_PATH,
 )
 from qbt_rules.errors import ConfigurationError
-
 
 # ============================================================================
 # get_nested_config()
@@ -314,7 +312,7 @@ class TestResolveConfig:
 
         # Mock open to raise a generic exception
         with patch.dict(os.environ, {"ENV_VAR_FILE": str(secret_file)}):
-            with patch("builtins.open", side_effect=IOError("Generic error")):
+            with patch("builtins.open", side_effect=OSError("Generic error")):
                 result = resolve_config(
                     cli_value=None,
                     env_var="ENV_VAR",

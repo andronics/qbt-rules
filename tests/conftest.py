@@ -1,13 +1,14 @@
 """Pytest configuration and comprehensive fixtures for qbt-rules test suite."""
 
 import atexit
-import shutil
-import pytest
-import tempfile
 import os
-from typing import Dict, Any, List, Optional
-from unittest.mock import Mock, MagicMock
+import shutil
+import tempfile
 from pathlib import Path
+from typing import Any
+from unittest.mock import Mock
+
+import pytest
 
 # prometheus_client resolves its multiprocess-vs-single-process value
 # storage exactly once, at its own first import anywhere in the process --
@@ -311,7 +312,7 @@ def mock_api():
 
 
 @pytest.fixture
-def sample_torrent() -> Dict[str, Any]:
+def sample_torrent() -> dict[str, Any]:
     """Basic sample torrent - seeding, good ratio."""
     return {
         "hash": "abc123def456",
@@ -340,7 +341,7 @@ def sample_torrent() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def downloading_torrent() -> Dict[str, Any]:
+def downloading_torrent() -> dict[str, Any]:
     """Torrent currently downloading."""
     return {
         "hash": "download123",
@@ -369,7 +370,7 @@ def downloading_torrent() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def seeding_torrent() -> Dict[str, Any]:
+def seeding_torrent() -> dict[str, Any]:
     """Torrent seeding with active upload."""
     return {
         "hash": "seed789",
@@ -398,7 +399,7 @@ def seeding_torrent() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def paused_torrent() -> Dict[str, Any]:
+def paused_torrent() -> dict[str, Any]:
     """Paused torrent."""
     return {
         "hash": "paused456",
@@ -427,7 +428,7 @@ def paused_torrent() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def completed_torrent() -> Dict[str, Any]:
+def completed_torrent() -> dict[str, Any]:
     """Recently completed torrent."""
     import time
 
@@ -459,7 +460,7 @@ def completed_torrent() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def old_seeded_torrent() -> Dict[str, Any]:
+def old_seeded_torrent() -> dict[str, Any]:
     """Old torrent that has been seeding for a long time."""
     import time
 
@@ -491,7 +492,7 @@ def old_seeded_torrent() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def large_torrent() -> Dict[str, Any]:
+def large_torrent() -> dict[str, Any]:
     """Very large torrent (100 GB)."""
     return {
         "hash": "largetorrent",
@@ -520,7 +521,7 @@ def large_torrent() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def small_torrent() -> Dict[str, Any]:
+def small_torrent() -> dict[str, Any]:
     """Very small torrent (10 MB)."""
     return {
         "hash": "smalltorrent",
@@ -554,7 +555,7 @@ def small_torrent() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def mock_trackers() -> List[Dict[str, Any]]:
+def mock_trackers() -> list[dict[str, Any]]:
     """Mock tracker data."""
     return [
         {
@@ -591,7 +592,7 @@ def mock_trackers() -> List[Dict[str, Any]]:
 
 
 @pytest.fixture
-def mock_files() -> List[Dict[str, Any]]:
+def mock_files() -> list[dict[str, Any]]:
     """Mock file data."""
     return [
         {
@@ -628,7 +629,7 @@ def mock_files() -> List[Dict[str, Any]]:
 
 
 @pytest.fixture
-def mock_peers() -> Dict[str, Dict[str, Any]]:
+def mock_peers() -> dict[str, dict[str, Any]]:
     """Mock peer data."""
     return {
         "192.168.1.100:51413": {
@@ -669,7 +670,7 @@ def mock_peers() -> Dict[str, Dict[str, Any]]:
 
 
 @pytest.fixture
-def mock_properties() -> Dict[str, Any]:
+def mock_properties() -> dict[str, Any]:
     """Mock torrent properties."""
     return {
         "save_path": "/downloads/torrents/",
@@ -709,7 +710,7 @@ def mock_properties() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def mock_webseeds() -> List[Dict[str, Any]]:
+def mock_webseeds() -> list[dict[str, Any]]:
     """Mock webseed data."""
     return [
         {
@@ -722,7 +723,7 @@ def mock_webseeds() -> List[Dict[str, Any]]:
 
 
 @pytest.fixture
-def mock_transfer_info() -> Dict[str, Any]:
+def mock_transfer_info() -> dict[str, Any]:
     """Mock global transfer info."""
     return {
         "dl_info_speed": 2097152,  # 2 MB/s
@@ -737,7 +738,7 @@ def mock_transfer_info() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def mock_app_preferences() -> Dict[str, Any]:
+def mock_app_preferences() -> dict[str, Any]:
     """Mock application preferences."""
     return {
         "locale": "en",
@@ -851,7 +852,7 @@ def mock_app_preferences() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def simple_rule() -> Dict[str, Any]:
+def simple_rule() -> dict[str, Any]:
     """Simple rule with basic conditions."""
     return {
         "id": "simple-test-rule",
@@ -867,7 +868,7 @@ def simple_rule() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def complex_rule() -> Dict[str, Any]:
+def complex_rule() -> dict[str, Any]:
     """Complex rule with nested conditions and multiple actions."""
     return {
         "name": "Complex test rule",

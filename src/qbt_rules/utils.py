@@ -2,13 +2,12 @@
 Shared utility functions for qBittorrent automation
 """
 
+import logging
 import re
 import time
-import logging
-from typing import List, Dict, Any
 
 
-def parse_tags(torrent: Dict) -> List[str]:
+def parse_tags(torrent: dict) -> list[str]:
     """
     Parse tags from torrent dictionary into list
 

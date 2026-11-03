@@ -1,12 +1,9 @@
 """End-to-end tests simulating real-world resolver usage"""
 
 import pytest
-import tempfile
 import yaml
-from pathlib import Path
 
 from qbt_rules.config_loader import Config
-from qbt_rules.engine import RulesEngine
 
 
 class TestResolverRealWorldScenarios:

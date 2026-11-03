@@ -2,16 +2,16 @@
 
 import os
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 import pytest
 
 from qbt_rules.arguments import (
-    smart_config_default,
     create_parser,
-    validate_torrent_hash,
-    process_args,
     handle_utility_args,
+    process_args,
+    smart_config_default,
+    validate_torrent_hash,
 )
 
 

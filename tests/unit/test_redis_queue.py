@@ -11,12 +11,11 @@ Test coverage for:
 - Key management and data structures
 """
 
-import json
-import pytest
-import time
 import threading
-from datetime import datetime, timedelta, timezone
-from typing import List
+import time
+from datetime import UTC, datetime, timedelta
+
+import pytest
 
 # Skip all tests if Redis not available
 pytest_plugins = ("pytest_mock",)
@@ -30,7 +29,7 @@ except ImportError:
 
 if REDIS_AVAILABLE:
     from qbt_rules.queue_backends.redis_queue import RedisQueue
-    from qbt_rules.queue_manager import JobStatus, QueueManager
+    from qbt_rules.queue_manager import JobStatus
 
 
 # Import error test - NOT skipped (tests the import error handling itself)
@@ -40,7 +39,6 @@ class TestRedisImportError:
     def test_import_error_message_when_redis_not_installed(self):
         """Should raise ImportError with installation instructions when redis not available"""
         import sys
-        import importlib.util
 
         # Save current state
         saved_redis = sys.modules.get("redis")
@@ -59,7 +57,7 @@ class TestRedisImportError:
 
             # Attempt import should raise ImportError
             with pytest.raises(ImportError) as exc_info:
-                import qbt_rules.queue_backends.redis_queue
+                import qbt_rules.queue_backends.redis_queue  # noqa: F401  the import is the test
 
             # Verify error message
             error_msg = str(exc_info.value)
@@ -245,7 +243,7 @@ class TestRedisQueueEnqueue:
 
     def test_enqueue_no_context_index_without_context(self, queue, redis_client):
         """Should not create context index when context is None"""
-        job_id = queue.enqueue(context=None)
+        queue.enqueue(context=None)
 
         # Should not exist any context index
         context_keys = redis_client.keys("qbt_rules:jobs:context:*")
@@ -283,9 +281,9 @@ class TestRedisQueueEnqueue:
 
     def test_enqueue_stores_created_at(self, queue):
         """Should store ISO format created_at timestamp"""
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         job_id = queue.enqueue()
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
 
         job = queue.get_job(job_id)
         created_at = datetime.fromisoformat(job["created_at"])
@@ -352,7 +350,7 @@ class TestRedisQueueDequeue:
 
     def test_dequeue_updates_status_to_processing(self, queue):
         """Should update job status to PROCESSING"""
-        job_id = queue.enqueue()
+        queue.enqueue()
 
         job = queue.dequeue()
 
@@ -360,10 +358,10 @@ class TestRedisQueueDequeue:
 
     def test_dequeue_sets_started_at(self, queue):
         """Should set started_at timestamp"""
-        before = datetime.now(timezone.utc)
-        job_id = queue.enqueue()
+        before = datetime.now(UTC)
+        queue.enqueue()
         job = queue.dequeue()
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
 
         assert job["started_at"] is not None
         started_at = datetime.fromisoformat(job["started_at"])
@@ -502,9 +500,9 @@ class TestRedisQueueListJobs:
 
     def test_list_jobs_filter_by_status_and_context(self, queue):
         """Should filter by both status and context (intersection)"""
-        job1_id = queue.enqueue(context="test")
+        queue.enqueue(context="test")
         job2_id = queue.enqueue(context="test")
-        job3_id = queue.enqueue(context="other")
+        queue.enqueue(context="other")
 
         # Dequeue job1
         queue.dequeue()
@@ -558,7 +556,7 @@ class TestRedisQueueListJobs:
     def test_list_jobs_ordered_by_created_at_desc(self, queue):
         """Should order jobs by created_at descending (newest first)"""
         job_ids = []
-        for i in range(3):
+        for _i in range(3):
             job_ids.append(queue.enqueue())
             time.sleep(0.01)  # Ensure different timestamps
 
@@ -624,7 +622,7 @@ class TestRedisQueueUpdateStatus:
         job_id = queue.enqueue()
         queue.dequeue()
 
-        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
+        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
         job = queue.get_job(job_id)
         assert job["status"] == JobStatus.COMPLETED
@@ -634,7 +632,7 @@ class TestRedisQueueUpdateStatus:
         job_id = queue.enqueue()
         queue.dequeue()
 
-        completed_time = datetime.now(timezone.utc)
+        completed_time = datetime.now(UTC)
         queue.update_status(job_id, JobStatus.COMPLETED, completed_at=completed_time)
 
         job = queue.get_job(job_id)
@@ -648,7 +646,7 @@ class TestRedisQueueUpdateStatus:
 
         result_data = {"torrents": 10, "actions": 5}
         queue.update_status(
-            job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc), result=result_data
+            job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC), result=result_data
         )
 
         job = queue.get_job(job_id)
@@ -669,7 +667,7 @@ class TestRedisQueueUpdateStatus:
         job_id = queue.enqueue()
         queue.dequeue()
 
-        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
+        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
         processing_key = f"qbt_rules:jobs:status:{JobStatus.PROCESSING}"
         completed_key = f"qbt_rules:jobs:status:{JobStatus.COMPLETED}"
@@ -693,7 +691,7 @@ class TestRedisQueueUpdateStatus:
         """Should set started_at when provided"""
         job_id = queue.enqueue()
 
-        started_time = datetime.now(timezone.utc)
+        started_time = datetime.now(UTC)
         queue.update_status(job_id, JobStatus.PROCESSING, started_at=started_time)
 
         job = queue.get_job(job_id)
@@ -758,7 +756,7 @@ class TestRedisQueueCancelJob:
         """Should not cancel already completed job"""
         job_id = queue.enqueue()
         queue.dequeue()
-        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
+        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
         result = queue.cancel_job(job_id)
 
@@ -773,10 +771,10 @@ class TestRedisQueueCleanup:
         # Create old job
         job_id = queue.enqueue()
         queue.dequeue()
-        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
+        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
         # Manually set old timestamp (10 days ago)
-        old_timestamp = (datetime.now(timezone.utc) - timedelta(days=10)).timestamp()
+        old_timestamp = (datetime.now(UTC) - timedelta(days=10)).timestamp()
         time_key = "qbt_rules:jobs:by_time"
         redis_client.zadd(time_key, {job_id: old_timestamp})
 
@@ -793,7 +791,7 @@ class TestRedisQueueCleanup:
         queue.update_status(job_id, JobStatus.FAILED, error="Test error")
 
         # Set old timestamp
-        old_timestamp = (datetime.now(timezone.utc) - timedelta(days=10)).timestamp()
+        old_timestamp = (datetime.now(UTC) - timedelta(days=10)).timestamp()
         time_key = "qbt_rules:jobs:by_time"
         redis_client.zadd(time_key, {job_id: old_timestamp})
 
@@ -808,7 +806,7 @@ class TestRedisQueueCleanup:
         queue.cancel_job(job_id)
 
         # Set old timestamp
-        old_timestamp = (datetime.now(timezone.utc) - timedelta(days=10)).timestamp()
+        old_timestamp = (datetime.now(UTC) - timedelta(days=10)).timestamp()
         time_key = "qbt_rules:jobs:by_time"
         redis_client.zadd(time_key, {job_id: old_timestamp})
 
@@ -822,7 +820,7 @@ class TestRedisQueueCleanup:
         job_id = queue.enqueue()
 
         # Set old timestamp
-        old_timestamp = (datetime.now(timezone.utc) - timedelta(days=10)).timestamp()
+        old_timestamp = (datetime.now(UTC) - timedelta(days=10)).timestamp()
         time_key = "qbt_rules:jobs:by_time"
         redis_client.zadd(time_key, {job_id: old_timestamp})
 
@@ -837,7 +835,7 @@ class TestRedisQueueCleanup:
         queue.dequeue()  # PROCESSING
 
         # Set old timestamp
-        old_timestamp = (datetime.now(timezone.utc) - timedelta(days=10)).timestamp()
+        old_timestamp = (datetime.now(UTC) - timedelta(days=10)).timestamp()
         time_key = "qbt_rules:jobs:by_time"
         redis_client.zadd(time_key, {job_id: old_timestamp})
 
@@ -850,10 +848,10 @@ class TestRedisQueueCleanup:
         """Should remove job from all indexes"""
         job_id = queue.enqueue(context="test-context")
         queue.dequeue()
-        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
+        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
         # Set old timestamp
-        old_timestamp = (datetime.now(timezone.utc) - timedelta(days=10)).timestamp()
+        old_timestamp = (datetime.now(UTC) - timedelta(days=10)).timestamp()
         time_key = "qbt_rules:jobs:by_time"
         redis_client.zadd(time_key, {job_id: old_timestamp})
 
@@ -879,13 +877,11 @@ class TestRedisQueueCleanup:
         for _ in range(5):
             job_id = queue.enqueue()
             queue.dequeue()
-            queue.update_status(
-                job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc)
-            )
+            queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
             job_ids.append(job_id)
 
         # Set all to old timestamps
-        old_timestamp = (datetime.now(timezone.utc) - timedelta(days=10)).timestamp()
+        old_timestamp = (datetime.now(UTC) - timedelta(days=10)).timestamp()
         time_key = "qbt_rules:jobs:by_time"
         for job_id in job_ids:
             redis_client.zadd(time_key, {job_id: old_timestamp})
@@ -903,7 +899,7 @@ class TestRedisQueueCleanup:
         queue.dequeue()
         pending = queue.enqueue()
 
-        old_timestamp = (datetime.now(timezone.utc) - timedelta(days=10)).timestamp()
+        old_timestamp = (datetime.now(UTC) - timedelta(days=10)).timestamp()
         for job_id in (finished, processing, pending):
             redis_client.zadd("qbt_rules:jobs:by_time", {job_id: old_timestamp})
 
@@ -955,15 +951,13 @@ class TestRedisQueueGetStats:
         """Should return counts for all job statuses"""
         queue.enqueue()
         queue.enqueue()
-        job_id = queue.enqueue()
+        queue.enqueue()
 
         queue.dequeue()  # Job 1: PROCESSING
         job = queue.dequeue()  # Job 2: PROCESSING
 
         # Complete job 2
-        queue.update_status(
-            job["job_id"], JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc)
-        )
+        queue.update_status(job["job_id"], JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
         # Now we have:
         # - Job 1: PROCESSING
@@ -982,12 +976,12 @@ class TestRedisQueueGetStats:
     def test_get_stats_calculates_average_execution_time(self, queue):
         """Should calculate average execution time for completed jobs"""
         # Create completed jobs with known execution times
-        for i in range(3):
+        for _i in range(3):
             job_id = queue.enqueue()
-            job = queue.dequeue()
+            queue.dequeue()
 
-            started = datetime.now(timezone.utc) - timedelta(seconds=10)
-            completed = datetime.now(timezone.utc)
+            started = datetime.now(UTC) - timedelta(seconds=10)
+            completed = datetime.now(UTC)
 
             queue.update_status(
                 job_id, JobStatus.COMPLETED, started_at=started, completed_at=completed
@@ -1011,7 +1005,7 @@ class TestRedisQueueGetStats:
         """Should handle completed jobs without proper timestamps"""
         job_id = queue.enqueue()
         queue.dequeue()
-        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
+        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
         # started_at may be missing or invalid
 
         # Manually corrupt started_at
@@ -1128,7 +1122,7 @@ class TestRedisQueueCloseAndCleanup:
 
     def test_del_calls_close(self, queue, mocker):
         """Should call close() when object is deleted"""
-        close_spy = mocker.spy(queue, "close")
+        mocker.spy(queue, "close")
 
         del queue
 

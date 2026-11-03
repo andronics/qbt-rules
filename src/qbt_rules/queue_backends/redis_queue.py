@@ -10,9 +10,8 @@ In-memory queue implementation using Redis with:
 
 import json
 import logging
-import time
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 try:
     import redis
@@ -21,7 +20,7 @@ except ImportError:
         "Redis backend requires 'redis' package. Install with: pip install qbt-rules[redis]"
     )
 
-from qbt_rules.queue_manager import QueueManager, JobStatus
+from qbt_rules.queue_manager import JobStatus, QueueManager
 
 logger = logging.getLogger(__name__)
 
@@ -79,17 +78,17 @@ class RedisQueue(QueueManager):
 
     def _key(self, *parts: str) -> str:
         """Build Redis key with prefix"""
-        return ":".join([self.KEY_PREFIX] + list(parts))
+        return ":".join([self.KEY_PREFIX, *list(parts)])
 
     def enqueue(
         self,
-        context: Optional[str] = None,
-        hash_filter: Optional[str] = None,
+        context: str | None = None,
+        hash_filter: str | None = None,
         dry_run: bool = False,
     ) -> str:
         """Add job to queue"""
         job_id = self.generate_job_id()
-        created_at = datetime.now(timezone.utc)
+        created_at = datetime.now(UTC)
         timestamp = created_at.timestamp()
 
         # Create job data
@@ -130,7 +129,7 @@ class RedisQueue(QueueManager):
         logger.debug(f"Enqueued job {job_id} (context={context}, hash={hash_filter})")
         return job_id
 
-    def dequeue(self) -> Optional[Dict[str, Any]]:
+    def dequeue(self) -> dict[str, Any] | None:
         """Get next pending job and mark as processing"""
         # Atomic pop from pending queue
         job_id = self.redis.lpop(self._key("queue", "pending"))
@@ -138,7 +137,7 @@ class RedisQueue(QueueManager):
         if not job_id:
             return None
 
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
 
         pipeline = self.redis.pipeline()
 
@@ -162,7 +161,7 @@ class RedisQueue(QueueManager):
 
         return self._hash_to_dict(job_data)
 
-    def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
         """Get job by ID"""
         job_key = self._key("jobs", job_id)
         job_data = self.redis.hgetall(job_key)
@@ -174,11 +173,11 @@ class RedisQueue(QueueManager):
 
     def list_jobs(
         self,
-        status: Optional[str] = None,
-        context: Optional[str] = None,
+        status: str | None = None,
+        context: str | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List jobs with filtering"""
         limit = min(limit, 100)
 
@@ -222,7 +221,7 @@ class RedisQueue(QueueManager):
 
         return jobs
 
-    def count_jobs(self, status: Optional[str] = None) -> int:
+    def count_jobs(self, status: str | None = None) -> int:
         """Count jobs by status"""
         if status:
             return self.redis.scard(self._key("jobs", "status", status))
@@ -234,10 +233,10 @@ class RedisQueue(QueueManager):
         self,
         job_id: str,
         status: str,
-        started_at: Optional[datetime] = None,
-        completed_at: Optional[datetime] = None,
-        result: Optional[Dict[str, Any]] = None,
-        error: Optional[str] = None,
+        started_at: datetime | None = None,
+        completed_at: datetime | None = None,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
     ) -> bool:
         """Update job status and fields"""
         if not self.validate_status(status):
@@ -305,7 +304,7 @@ class RedisQueue(QueueManager):
 
     def cleanup_old_jobs(self, retention_period: int) -> int:
         """Remove old completed/failed/cancelled jobs"""
-        cutoff_date = datetime.now(timezone.utc) - timedelta(seconds=retention_period)
+        cutoff_date = datetime.now(UTC) - timedelta(seconds=retention_period)
         cutoff_timestamp = cutoff_date.timestamp()
 
         # Get old job IDs from time-sorted set
@@ -350,7 +349,7 @@ class RedisQueue(QueueManager):
         """Get number of pending jobs"""
         return self.redis.llen(self._key("queue", "pending"))
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get queue statistics"""
         stats = {
             "total_jobs": self.count_jobs(),
@@ -392,7 +391,7 @@ class RedisQueue(QueueManager):
             logger.error(f"Queue health check failed: {e}")
             return False
 
-    def _hash_to_dict(self, hash_data: Dict[str, str]) -> Dict[str, Any]:
+    def _hash_to_dict(self, hash_data: dict[str, str]) -> dict[str, Any]:
         """
         Convert Redis hash to job dictionary
 

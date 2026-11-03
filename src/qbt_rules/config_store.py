@@ -33,11 +33,12 @@ import os
 import re
 import stat
 import tempfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any
 
 import yaml
 
@@ -74,10 +75,10 @@ class FileNotWritableError(Exception):
 class FileSnapshot:
     text: str
     etag: str
-    modified_at: Optional[str]
+    modified_at: str | None
     size: int
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "content": self.text,
             "etag": self.etag,
@@ -91,11 +92,11 @@ def compute_etag(data: bytes) -> str:
 
 
 def _iso(ts: float) -> str:
-    return datetime.fromtimestamp(ts, timezone.utc).isoformat()
+    return datetime.fromtimestamp(ts, UTC).isoformat()
 
 
 class EditableFile:
-    def __init__(self, path: Path, history_dir: Optional[Path] = None, keep: int = HISTORY_KEEP):
+    def __init__(self, path: Path, history_dir: Path | None = None, keep: int = HISTORY_KEEP):
         self.path = Path(path)
         self.history_dir = Path(history_dir) if history_dir else self.path.parent / HISTORY_DIRNAME
         self.keep = keep
@@ -112,7 +113,7 @@ class EditableFile:
             size=len(data),
         )
 
-    def writable(self) -> Tuple[bool, Optional[str]]:
+    def writable(self) -> tuple[bool, str | None]:
         """(can save, why not) -- checked before every write, and shown in
         the editor up front so it opens read-only instead of failing on save"""
         if not os.access(self.path, os.W_OK):
@@ -143,7 +144,7 @@ class EditableFile:
             finally:
                 fcntl.flock(lock_file, fcntl.LOCK_UN)
 
-    def write(self, text: str, if_match: str) -> Tuple[FileSnapshot, bool]:
+    def write(self, text: str, if_match: str) -> tuple[FileSnapshot, bool]:
         """
         Replace the file's content, if it's still what the caller last read
 
@@ -224,7 +225,7 @@ class EditableFile:
     # -- history ------------------------------------------------------------
 
     def _backup(self, data: bytes):
-        version_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        version_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
         (self.history_dir / f"{self.path.name}.{version_id}").write_bytes(data)
         for old in self._versions()[self.keep :]:
             try:
@@ -232,7 +233,7 @@ class EditableFile:
             except OSError:
                 pass
 
-    def _versions(self) -> List[Tuple[str, Path]]:
+    def _versions(self) -> list[tuple[str, Path]]:
         """(id, path) newest first"""
         prefix = f"{self.path.name}."
         found = []
@@ -242,14 +243,14 @@ class EditableFile:
                     found.append((p.name[len(prefix) :], p))
         return sorted(found, reverse=True)
 
-    def history(self) -> List[Dict[str, Any]]:
+    def history(self) -> list[dict[str, Any]]:
         out = []
         for version_id, p in self._versions():
-            saved = datetime.strptime(version_id, "%Y%m%dT%H%M%S%fZ").replace(tzinfo=timezone.utc)
+            saved = datetime.strptime(version_id, "%Y%m%dT%H%M%S%fZ").replace(tzinfo=UTC)
             out.append({"id": version_id, "saved_at": saved.isoformat(), "size": p.stat().st_size})
         return out
 
-    def read_version(self, version_id: str) -> Optional[str]:
+    def read_version(self, version_id: str) -> str | None:
         if not _VERSION_ID.match(version_id or ""):
             return None
         p = self.history_dir / f"{self.path.name}.{version_id}"
@@ -272,7 +273,7 @@ def _env_var_for(config_key: str) -> str:
     return ENV_VAR_MAP.get(config_key, "QBT_RULES_" + config_key.upper().replace(".", "_"))
 
 
-def redacted_config_view(text: str, environ: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+def redacted_config_view(text: str, environ: dict[str, str] | None = None) -> dict[str, Any]:
     """
     config.yml for display: credentials masked, env overrides pointed out
 
@@ -311,16 +312,16 @@ def redacted_config_view(text: str, environ: Optional[Dict[str, str]] = None) ->
             ],
         }
 
-    spans: List[Tuple[int, int]] = []
-    redacted: List[str] = []
-    issues: List[Dict[str, Any]] = []
+    spans: list[tuple[int, int]] = []
+    redacted: list[str] = []
+    issues: list[dict[str, Any]] = []
 
     def walk(node, path):
         if isinstance(node, yaml.MappingNode):
             for key_node, value_node in node.value:
                 if not isinstance(key_node, yaml.ScalarNode):
                     continue
-                key_path = path + [str(key_node.value)]
+                key_path = [*path, str(key_node.value)]
                 dotted = ".".join(key_path)
                 if isinstance(value_node, yaml.ScalarNode):
                     if (

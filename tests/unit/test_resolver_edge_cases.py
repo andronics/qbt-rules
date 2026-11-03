@@ -2,15 +2,14 @@
 
 import pytest
 
-from qbt_rules.resolver import RuleResolver
 from qbt_rules.errors import (
-    InvalidRefError,
-    UnknownRefError,
-    InvalidVariableError,
-    UnknownVariableError,
     CircularRefError,
+    InvalidRefError,
     RefTypeMismatchError,
+    UnknownRefError,
+    UnknownVariableError,
 )
+from qbt_rules.resolver import RuleResolver
 
 
 class TestVariableEdgeCases:

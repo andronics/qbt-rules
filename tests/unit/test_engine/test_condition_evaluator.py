@@ -1,11 +1,11 @@
 """Comprehensive tests for ConditionEvaluator class in engine.py."""
 
+from unittest.mock import Mock, patch
+
 import pytest
-import re
-from unittest.mock import Mock, MagicMock, patch
+
 from qbt_rules.engine import ConditionEvaluator
 from qbt_rules.errors import DataNotReadyError, FieldError, OperatorError
-
 
 # ============================================================================
 # Initialization and Cache Management

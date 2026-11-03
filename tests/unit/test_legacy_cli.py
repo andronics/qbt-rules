@@ -2,29 +2,29 @@
 Tests for qbt_rules.legacy_cli module (v0.4.0 client-server architecture)
 """
 
-import pytest
 import os
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock, call
 from argparse import Namespace
-import json
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+import pytest
 
 from qbt_rules.legacy_cli import (
-    resolve_section_config,
-    get_logging_config,
-    get_qbittorrent_config,
-    get_server_config,
-    get_client_config,
     PLACEHOLDER_API_KEY,
-    get_queue_config,
-    get_notifications_config,
-    run_server_mode,
-    run_client_mode,
-    wait_for_job,
-    list_jobs_command,
-    job_status_command,
     cancel_job_command,
+    get_client_config,
+    get_logging_config,
+    get_notifications_config,
+    get_qbittorrent_config,
+    get_queue_config,
+    get_server_config,
+    job_status_command,
+    list_jobs_command,
+    resolve_section_config,
+    run_client_mode,
+    run_server_mode,
     stats_command,
+    wait_for_job,
 )
 
 
@@ -615,6 +615,7 @@ class TestGetClientConfig:
     def test_shipped_default_config_has_the_placeholder(self):
         """PLACEHOLDER_API_KEY must track config.default.yml"""
         from pathlib import Path
+
         import yaml
 
         default = yaml.safe_load(

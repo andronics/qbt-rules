@@ -5,10 +5,10 @@ Supports multiple backend implementations (SQLite, Redis) with consistent API.
 All jobs flow through the queue for sequential execution.
 """
 
-from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timezone
 import uuid
+from abc import ABC, abstractmethod
+from datetime import UTC, datetime
+from typing import Any
 
 
 class JobStatus:
@@ -21,7 +21,7 @@ class JobStatus:
     CANCELLED = "cancelled"
 
     @classmethod
-    def all(cls) -> List[str]:
+    def all(cls) -> list[str]:
         """Get all valid status values"""
         return [cls.PENDING, cls.PROCESSING, cls.COMPLETED, cls.FAILED, cls.CANCELLED]
 
@@ -41,8 +41,8 @@ class QueueManager(ABC):
     @abstractmethod
     def enqueue(
         self,
-        context: Optional[str] = None,
-        hash_filter: Optional[str] = None,
+        context: str | None = None,
+        hash_filter: str | None = None,
         dry_run: bool = False,
     ) -> str:
         """
@@ -60,7 +60,7 @@ class QueueManager(ABC):
         pass
 
     @abstractmethod
-    def dequeue(self) -> Optional[Dict[str, Any]]:
+    def dequeue(self) -> dict[str, Any] | None:
         """
         Get next pending job from queue
 
@@ -73,7 +73,7 @@ class QueueManager(ABC):
         pass
 
     @abstractmethod
-    def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
         """
         Get job by ID
 
@@ -88,11 +88,11 @@ class QueueManager(ABC):
     @abstractmethod
     def list_jobs(
         self,
-        status: Optional[str] = None,
-        context: Optional[str] = None,
+        status: str | None = None,
+        context: str | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         List jobs with filtering and pagination
 
@@ -108,7 +108,7 @@ class QueueManager(ABC):
         pass
 
     @abstractmethod
-    def count_jobs(self, status: Optional[str] = None) -> int:
+    def count_jobs(self, status: str | None = None) -> int:
         """
         Count jobs by status
 
@@ -125,10 +125,10 @@ class QueueManager(ABC):
         self,
         job_id: str,
         status: str,
-        started_at: Optional[datetime] = None,
-        completed_at: Optional[datetime] = None,
-        result: Optional[Dict[str, Any]] = None,
-        error: Optional[str] = None,
+        started_at: datetime | None = None,
+        completed_at: datetime | None = None,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
     ) -> bool:
         """
         Update job status and optional fields
@@ -185,7 +185,7 @@ class QueueManager(ABC):
         pass
 
     @abstractmethod
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """
         Get queue statistics
 
@@ -224,16 +224,16 @@ class QueueManager(ABC):
     def create_job_dict(
         self,
         job_id: str,
-        context: Optional[str],
-        hash_filter: Optional[str],
+        context: str | None,
+        hash_filter: str | None,
         status: str = JobStatus.PENDING,
-        created_at: Optional[datetime] = None,
-        started_at: Optional[datetime] = None,
-        completed_at: Optional[datetime] = None,
-        result: Optional[Dict[str, Any]] = None,
-        error: Optional[str] = None,
+        created_at: datetime | None = None,
+        started_at: datetime | None = None,
+        completed_at: datetime | None = None,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
         dry_run: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create standardized job dictionary
 
@@ -241,7 +241,7 @@ class QueueManager(ABC):
             Job dictionary with all fields
         """
         if created_at is None:
-            created_at = datetime.now(timezone.utc)
+            created_at = datetime.now(UTC)
 
         return {
             "job_id": job_id,

@@ -3,10 +3,10 @@ Centralized logging configuration for qBittorrent automation
 Provides consistent logging setup across all modules and triggers
 """
 
-import sys
 import logging
 import logging.handlers
-from typing import Dict, Any, Optional
+import sys
+from typing import Any
 
 # Standard log formats
 LOG_FORMAT_SIMPLE = "%(asctime)s | %(levelname)-8s | %(message)s"
@@ -22,10 +22,10 @@ DEFAULT_BACKUP_COUNT = 5
 
 # Settings of the file handler installed by the last setup_logging() call,
 # kept so set_file_rotation() can rebuild it in another process
-_file_settings: Optional[Dict[str, Any]] = None
+_file_settings: dict[str, Any] | None = None
 
 
-def setup_logging(logging_config: Dict[str, Any]):
+def setup_logging(logging_config: dict[str, Any]):
     """
     Setup logging configuration with fallback to console-only
 
@@ -88,7 +88,7 @@ def setup_logging(logging_config: Dict[str, Any]):
     except (PermissionError, OSError) as e:
         # Fall back to console-only logging
         print(f"Cannot setup file logging: {e}", file=sys.stderr)
-        print(f"Continuing with console-only logging", file=sys.stderr)
+        print("Continuing with console-only logging", file=sys.stderr)
 
     # Console handler (always works) -- stderr, not stdout, so diagnostic
     # logging never contaminates stdout data output (tables/JSON) from the
@@ -112,7 +112,7 @@ def setup_logging(logging_config: Dict[str, Any]):
     logger.addHandler(console_handler)
 
 
-def _build_file_handler(settings: Dict[str, Any], rotate: bool) -> logging.Handler:
+def _build_file_handler(settings: dict[str, Any], rotate: bool) -> logging.Handler:
     if rotate:
         handler = logging.handlers.RotatingFileHandler(
             settings["file"],

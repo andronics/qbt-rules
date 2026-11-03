@@ -8,16 +8,16 @@ File-based queue implementation using SQLite with:
 - Automatic schema migration
 """
 
-import sqlite3
 import json
 import logging
+import sqlite3
 import threading
-from pathlib import Path
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
 
-from qbt_rules.queue_manager import QueueManager, JobStatus
+from qbt_rules.queue_manager import JobStatus, QueueManager
 
 logger = logging.getLogger(__name__)
 
@@ -198,13 +198,13 @@ class SQLiteQueue(QueueManager):
 
     def enqueue(
         self,
-        context: Optional[str] = None,
-        hash_filter: Optional[str] = None,
+        context: str | None = None,
+        hash_filter: str | None = None,
         dry_run: bool = False,
     ) -> str:
         """Add job to queue"""
         job_id = self.generate_job_id()
-        created_at = datetime.now(timezone.utc)
+        created_at = datetime.now(UTC)
 
         with self._transaction() as conn:
             # Insert job
@@ -235,7 +235,7 @@ class SQLiteQueue(QueueManager):
         logger.debug(f"Enqueued job {job_id} (context={context}, hash={hash_filter})")
         return job_id
 
-    def dequeue(self) -> Optional[Dict[str, Any]]:
+    def dequeue(self) -> dict[str, Any] | None:
         """Get next pending job and mark as processing"""
         with self._transaction() as conn:
             # Get next job from queue (FIFO)
@@ -252,7 +252,7 @@ class SQLiteQueue(QueueManager):
             job_id = row["job_id"]
 
             # Mark job as processing
-            started_at = datetime.now(timezone.utc)
+            started_at = datetime.now(UTC)
             conn.execute(
                 """
                 UPDATE jobs
@@ -274,7 +274,7 @@ class SQLiteQueue(QueueManager):
 
         return self._row_to_dict(job_row)
 
-    def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
         """Get job by ID"""
         conn = self._get_connection()
         cursor = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
@@ -287,11 +287,11 @@ class SQLiteQueue(QueueManager):
 
     def list_jobs(
         self,
-        status: Optional[str] = None,
-        context: Optional[str] = None,
+        status: str | None = None,
+        context: str | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List jobs with filtering"""
         # Limit max to 100
         limit = min(limit, 100)
@@ -318,7 +318,7 @@ class SQLiteQueue(QueueManager):
 
         return [self._row_to_dict(row) for row in rows]
 
-    def count_jobs(self, status: Optional[str] = None) -> int:
+    def count_jobs(self, status: str | None = None) -> int:
         """Count jobs by status"""
         conn = self._get_connection()
 
@@ -333,10 +333,10 @@ class SQLiteQueue(QueueManager):
         self,
         job_id: str,
         status: str,
-        started_at: Optional[datetime] = None,
-        completed_at: Optional[datetime] = None,
-        result: Optional[Dict[str, Any]] = None,
-        error: Optional[str] = None,
+        started_at: datetime | None = None,
+        completed_at: datetime | None = None,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
     ) -> bool:
         """Update job status and fields"""
         if not self.validate_status(status):
@@ -392,7 +392,7 @@ class SQLiteQueue(QueueManager):
 
     def cleanup_old_jobs(self, retention_period: int) -> int:
         """Remove old completed/failed/cancelled jobs"""
-        cutoff_date = datetime.now(timezone.utc) - timedelta(seconds=retention_period)
+        cutoff_date = datetime.now(UTC) - timedelta(seconds=retention_period)
 
         # Cancelled jobs never get a completed_at, so fall back to created_at
         conn = self._get_connection()
@@ -415,7 +415,7 @@ class SQLiteQueue(QueueManager):
         """Get number of pending jobs"""
         return self.count_jobs(JobStatus.PENDING)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get queue statistics"""
         conn = self._get_connection()
 
@@ -456,7 +456,7 @@ class SQLiteQueue(QueueManager):
             logger.error(f"Queue health check failed: {e}")
             return False
 
-    def _row_to_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
+    def _row_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
         """
         Convert SQLite row to job dictionary
 

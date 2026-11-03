@@ -20,7 +20,7 @@ the string for the engine to resolve later.
 
 import copy
 import re
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from qbt_rules.errors import (
     CircularRefError,
@@ -72,9 +72,9 @@ class RuleResolver:
 
     def __init__(
         self,
-        refs: Dict[str, Any],
-        instance_id: Optional[str] = None,
-        instances: Optional[Dict[str, Any]] = None,
+        refs: dict[str, Any],
+        instance_id: str | None = None,
+        instances: dict[str, Any] | None = None,
     ):
         """
         Initialize resolver with refs block and optional instance override
@@ -112,7 +112,7 @@ class RuleResolver:
                 f"Applied instance '{instance_id}' variable overrides: {list(instance_vars.keys())}"
             )
 
-    def get_block_meta(self, kind: str, name: str) -> Dict[str, Any]:
+    def get_block_meta(self, kind: str, name: str) -> dict[str, Any]:
         """
         Look up optional metadata for a reusable $ref block.
 
@@ -128,7 +128,7 @@ class RuleResolver:
         """
         return self.meta.get(kind, {}).get(name, {})
 
-    def resolve_rule(self, rule: Dict[str, Any]) -> Dict[str, Any]:
+    def resolve_rule(self, rule: dict[str, Any]) -> dict[str, Any]:
         """
         Fully resolve a rule: expand refs, then substitute variables
 
@@ -194,8 +194,8 @@ class RuleResolver:
     def _expand_refs(
         self,
         node: Any,
-        ref_stack: Set[str],
-        allowed_groups: Optional[List[str]] = None,
+        ref_stack: set[str],
+        allowed_groups: list[str] | None = None,
         path: str = "",
     ) -> Any:
         """
@@ -313,7 +313,7 @@ class RuleResolver:
         "tracker",
     )
 
-    def _substitute_tokens(self, node: Any, rule: Dict[str, Any]) -> Any:
+    def _substitute_tokens(self, node: Any, rule: dict[str, Any]) -> Any:
         """
         Recursively substitute ${vars.*} and ${rule.*} tokens in a data structure
 
@@ -439,13 +439,13 @@ class RuleResolver:
 
         return self.vars[name]
 
-    def _resolve_token(self, token_path: str, rule: Dict[str, Any]) -> Any:
+    def _resolve_token(self, token_path: str, rule: dict[str, Any]) -> Any:
         """Dispatch a vars.x or rule.x token path to the matching resolver"""
         if token_path == "rule" or token_path.startswith("rule."):
             return self._resolve_rule_field(token_path, rule)
         return self._resolve_var(token_path)
 
-    def _resolve_rule_field(self, field_path: str, rule: Dict[str, Any]) -> Any:
+    def _resolve_rule_field(self, field_path: str, rule: dict[str, Any]) -> Any:
         """
         Resolve a rule's own field by dot-notation path -- one or more
         segments deep, e.g. 'rule.id' or the nested 'rule.meta.description'.

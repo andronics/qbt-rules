@@ -9,17 +9,14 @@ Tests the complete system working together:
 - End-to-end job lifecycle
 """
 
-import pytest
 import time
-import tempfile
-import os
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
+import pytest
+
+from qbt_rules.__version__ import __version__
+from qbt_rules.queue_manager import JobStatus, create_queue
 from qbt_rules.web import create_app
 from qbt_rules.worker import Worker
-from qbt_rules.queue_manager import create_queue, JobStatus
-from qbt_rules.__version__ import __version__
 
 
 @pytest.fixture
@@ -380,7 +377,7 @@ class TestListAndFilterJobs:
         worker_instance.start()
 
         # Create multiple jobs
-        for i in range(5):
+        for _i in range(5):
             client.post("/api/execute", headers=auth_headers)
 
         time.sleep(1.0)
@@ -440,7 +437,7 @@ class TestHealthChecks:
         worker_instance.start()
 
         # Enqueue some jobs
-        for i in range(3):
+        for _i in range(3):
             client.post("/api/execute", headers=auth_headers)
 
         response = client.get("/api/health")

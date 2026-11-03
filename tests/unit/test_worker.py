@@ -11,14 +11,14 @@ Test coverage for:
 - Graceful shutdown
 """
 
-import pytest
-import time
 import threading
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch, call
+import time
+from datetime import UTC, datetime
 
-from qbt_rules.worker import Worker
+import pytest
+
 from qbt_rules.queue_manager import JobStatus
+from qbt_rules.worker import Worker
 
 
 @pytest.fixture
@@ -489,9 +489,9 @@ class TestWorkerProcessJob:
 
         mocker.patch.object(worker, "_execute_job", return_value={})
 
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         worker._process_job(job)
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
 
         call_args = mock_queue.update_status.call_args[1]
         started_at = call_args["started_at"]
@@ -504,9 +504,9 @@ class TestWorkerProcessJob:
 
         mocker.patch.object(worker, "_execute_job", return_value={})
 
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         worker._process_job(job)
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
 
         call_args = mock_queue.update_status.call_args[1]
         completed_at = call_args["completed_at"]
@@ -758,7 +758,7 @@ class TestWorkerIntegration:
         jobs = [{"job_id": f"job-{i}", "context": "test", "hash": None} for i in range(3)]
 
         # Return jobs then None
-        mock_queue.dequeue.side_effect = jobs + [None]
+        mock_queue.dequeue.side_effect = [*jobs, None]
 
         mocker.patch.object(worker, "_execute_job", return_value={"torrents_processed": 1})
 
@@ -777,7 +777,7 @@ class TestWorkerIntegration:
         ]
 
         # Return jobs then None
-        mock_queue.dequeue.side_effect = jobs + [None]
+        mock_queue.dequeue.side_effect = [*jobs, None]
 
         # First job fails, second succeeds
         mocker.patch.object(
@@ -883,7 +883,7 @@ class TestWorkerJobCleanup:
         done = queue.enqueue()
         queue.cancel_job(done)
         pending = queue.enqueue()
-        old = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+        old = (datetime.now(UTC) - timedelta(days=10)).isoformat()
         queue._get_connection().execute("UPDATE jobs SET created_at = ?", (old,))
 
         worker = Worker(queue=queue, api=mock_api, config=mock_config, cleanup_after=604800)

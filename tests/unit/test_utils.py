@@ -1,22 +1,21 @@
 """Comprehensive tests for utils.py - All utility functions."""
 
-import pytest
 import time
 from unittest.mock import patch
+
 from qbt_rules.utils import (
-    parse_tags,
+    format_bytes,
+    format_duration,
+    format_speed,
+    is_larger_than,
+    is_newer_than,
+    is_older_than,
+    is_smaller_than,
     parse_duration,
     parse_size,
-    is_larger_than,
-    is_smaller_than,
-    is_older_than,
-    is_newer_than,
-    format_bytes,
-    format_speed,
-    format_duration,
+    parse_tags,
     validate_field_name,
 )
-
 
 # ============================================================================
 # parse_tags()
