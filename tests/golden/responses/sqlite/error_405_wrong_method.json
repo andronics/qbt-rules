@@ -3,11 +3,11 @@
   "backend": "sqlite",
   "request": "POST /api/jobs",
   "status": 405,
-  "content_type": "text/html; charset=utf-8",
+  "content_type": "application/json",
   "headers": {
-    "Allow": "GET, HEAD, OPTIONS"
+    "Allow": "GET"
   },
   "timestamp_paths": [],
   "masked": [],
-  "body": "<!doctype html>\n<html lang=en>\n<title>405 Method Not Allowed</title>\n<h1>Method Not Allowed</h1>\n<p>The method is not allowed for the requested URL.</p>\n"
+  "body": "{\"error\":\"Method Not Allowed\",\"message\":\"POST is not allowed for this endpoint\"}\n"
 }

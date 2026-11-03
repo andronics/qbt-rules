@@ -1,0 +1,41 @@
+# Template-owned: template-container. Deletes branch images (dev-*, feat-*, and their -<sha>
+# variants) older than 7 days from GHCR. Scoped to those tag patterns, so it
+# never touches latest, edge, main or release tags.
+#
+# Token: secrets.PACKAGES_DELETE_TOKEN if set, else GITHUB_TOKEN (see the step). The
+# secret is a classic personal access token with read:packages and delete:packages:
+# GitHub Packages takes no fine-grained or GitHub App token, GITHUB_TOKEN aside.
+name: Docker image cleanup
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Preview deletions without executing
+        type: boolean
+        default: false
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: snok/container-retention-policy@d3bdcf5ce9b05f685154e4a16c39233b245e3d53 # v3.1.0
+        with:
+          # A personal account's packages are /user/packages: snok reads any other
+          # value as an organisation's name, and /orgs/andronics is a 404.
+          account: user
+          # GITHUB_TOKEN fetches this image by name and deletes its versions when the
+          # package grants this repository's Actions the Admin role, which it has by
+          # default when container-build.yml published it (Package settings -> Manage
+          # Actions access). Otherwise set PACKAGES_DELETE_TOKEN: a classic PAT with
+          # read:packages and delete:packages, owned by andronics.
+          token: ${{ secrets.PACKAGES_DELETE_TOKEN || secrets.GITHUB_TOKEN }}
+          image-names: qbt-rules
+          image-tags: "dev-* feat-*"
+          cut-off: 7d
+          dry-run: ${{ inputs.dry-run || false }}

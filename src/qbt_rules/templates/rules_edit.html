@@ -188,7 +188,7 @@
   <button class="btn ed-side-toggle" id="btn-side" type="button" aria-controls="ed-side">Outline</button>
   <div class="ed-tabs" role="tablist">
     <button class="ed-tab" role="tab" id="tab-rules" aria-selected="true" type="button">rules.yml</button>
-    <button class="ed-tab" role="tab" id="tab-config" aria-selected="false" type="button">config.yml<span class="ro">read-only</span></button>
+    <button class="ed-tab" role="tab" id="tab-config" aria-selected="false" type="button">config.yaml<span class="ro">read-only</span></button>
   </div>
   <div class="ed-state" aria-live="polite">
     <span class="ed-dot busy" id="state-dot"></span>
@@ -212,7 +212,7 @@
   <button class="btn" id="btn-draft-discard" type="button">Discard</button>
 </div>
 <div class="ed-banner info" id="banner-config" hidden>
-  config.yml is shown read-only with credentials masked. It is read once at startup, so changes need a restart &mdash; edit it on disk.
+  config.yaml is shown read-only with credentials masked. It is read once at startup, so changes need a restart &mdash; edit it on disk.
 </div>
 
 <div class="ed-body" id="ed-body">
@@ -304,27 +304,28 @@
 {% block scripts %}
 {% if config_available %}
 <script>
+  // Relative URLs (web.relative_url): they work under any path prefix
   window.QBT_EDITOR = {
     csrfToken: {{ csrf_token()|tojson }},
     urls: {
-      source: {{ url_for('rules_source')|tojson }},
-      validate: {{ url_for('rules_validate')|tojson }},
-      history: {{ url_for('rules_history')|tojson }},
-      catalog: {{ url_for('rules_catalog')|tojson }},
-      config: {{ url_for('config_source')|tojson }},
-      execute: {{ url_for('execute')|tojson }},
-      jobsApi: {{ url_for('list_jobs')|tojson }},
-      jobsPage: {{ url_for('dashboard_jobs')|tojson }},
-      acePath: {{ url_for('static', filename='vendor/ace')|tojson }}
+      source: {{ href('rules_source')|tojson }},
+      validate: {{ href('rules_validate')|tojson }},
+      history: {{ href('rules_history')|tojson }},
+      catalog: {{ href('rules_catalog')|tojson }},
+      config: {{ href('config_source')|tojson }},
+      execute: {{ href('execute')|tojson }},
+      jobsApi: {{ href('list_jobs')|tojson }},
+      jobsPage: {{ href('dashboard_jobs')|tojson }},
+      acePath: {{ static_href('vendor/ace', versioned=False)|tojson }}
     }
   };
 </script>
-<script src="{{ url_for('static', filename='vendor/ace/ace.js', v=version) }}"></script>
-<script src="{{ url_for('static', filename='vendor/ace/mode-yaml.js', v=version) }}"></script>
-<script src="{{ url_for('static', filename='vendor/ace/ext-language_tools.js', v=version) }}"></script>
-<script src="{{ url_for('static', filename='vendor/ace/ext-searchbox.js', v=version) }}"></script>
-<script src="{{ url_for('static', filename='vendor/ace/theme-tomorrow_night.js', v=version) }}"></script>
-<script src="{{ url_for('static', filename='vendor/ace/theme-tomorrow.js', v=version) }}"></script>
-<script src="{{ url_for('static', filename='editor.js', v=version) }}"></script>
+<script src="{{ static_href('vendor/ace/ace.js') }}"></script>
+<script src="{{ static_href('vendor/ace/mode-yaml.js') }}"></script>
+<script src="{{ static_href('vendor/ace/ext-language_tools.js') }}"></script>
+<script src="{{ static_href('vendor/ace/ext-searchbox.js') }}"></script>
+<script src="{{ static_href('vendor/ace/theme-tomorrow_night.js') }}"></script>
+<script src="{{ static_href('vendor/ace/theme-tomorrow.js') }}"></script>
+<script src="{{ static_href('editor.js') }}"></script>
 {% endif %}
 {% endblock %}

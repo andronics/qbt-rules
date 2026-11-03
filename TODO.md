@@ -1,9 +1,15 @@
-# qbt-rules — TODO
+# TODO
 
-Currently-open items only. Resolved bugs and their postmortems live in
-`BUGS.md`; `PLAN.md` is the (mostly complete) v0.4.0 architecture doc.
+Short-lived working list. Bugs and features with discussion belong in GitHub issues; this file is for what
+the team (and its AI assistants) should know at a glance. The postmortems that were in `BUGS.md` and the
+v0.4.0 architecture notes that were in `PLAN.md` are in the git history.
 
 ## Open
+
+- [ ] Redis queue depth counts only the pending list, so a status change that bypasses dequeue or
+  cancel makes the depth disagree with the status counts (#28 item 7; #28 is closed, so this wants
+  its own issue).
+- [ ] Annotate the legacy tests for strict mypy and empty the override in pyproject.toml (#35)
 
 - **Kubernetes-style `kind:`/`metadata:`/`spec:` envelope for rules.yml
   resources** — deferred, not decided against. Rationale for waiting: k8s's
@@ -29,12 +35,12 @@ Currently-open items only. Resolved bugs and their postmortems live in
   ETag/If-Match -- which is deliberately *not* the per-resource CRUD API the
   `kind:`/`spec:` item above is waiting for: one document, one shape, no
   routing. The trigger for revisiting that item is the next step here, a
-  structured builder (the `ui/demo-rule-builder*.html` concepts) that edits
+  structured builder (the `ui/demo-rule-builder*.html` concepts, in the git history) that edits
   one rule or one `refs` block at a time -- that needs addressable
   resources, and ruamel.yaml round-tripping to patch them without losing
   comments (PyYAML stays the parser that decides meaning; ruamel reads some
   scalars differently). Other follow-ups:
-  - config.yml editing. Read-only today: it holds credentials (shown
+  - config.yaml editing. Read-only today: it holds credentials (shown
     masked), is only read at startup, and a bad save stops the server from
     starting instead of leaving old rules running. Needs masked values
     merged back on save, a restart-required flow, and stricter validation
@@ -52,7 +58,7 @@ Currently-open items only. Resolved bugs and their postmortems live in
 
 ## Decided against (don't re-propose without reading this first)
 
-- **`priority:` field on rules** — documented in the advanced example,
+- **`priority:` field on rules** — documented in the wiki's Advanced Rules Example,
   never implemented (`engine.py` never reads it; rules run in strict file
   order). Decided not to build it: any `rules.yml` without explicit
   priorities needs a deterministic tie-break, and a subtle bug there

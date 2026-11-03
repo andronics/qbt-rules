@@ -1,58 +1,49 @@
-.graphify
-
+# Template-owned: template-python (a slot: base's required entries are checked by scripts/checks.d/00-base.sh).
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
 *.egg-info/
-dist/
 build/
-
-# Virtual environments
-venv/
+dist/
 .venv/
-env/
-ENV/
 
-# IDE
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Local knowledge graphs (graphify): rebuilt locally, never committed
+.graphify/
+graphify-out/
+
+# Secrets and local state: never committed
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+private/
+/data/
+contrib/docker/config/
+contrib/docker/state/
+contrib/docker/secrets/
+
+# Editors and AI assistants' local files
 .vscode/
 .idea/
 *.swp
-*.swo
 *~
+.DS_Store
+.claude/settings.local.json
+CLAUDE.local.md
 
-# Logs
+# qbt-rules: a bare-metal run's ./config (config.yaml) and ./state (rules.yml, the
+# rules editor's .history/, the database and logs), and logs written beside them
+/config/
+/state/
 *.log
 logs/
-
-# Environment files
-.env
-.env.local
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.mypy_cache/
-.ruff_cache/
-
-# User-specific config
-config/config.yml
-config/rules.yml
-
-# User-specific logs
-config/logs/*.log
-
-# graphify local cache/output
-.graphify/
-
-# Saved tracker pages (usernames, user IDs, home IP) and graphify output: never commit
-data/
-graphify-out/

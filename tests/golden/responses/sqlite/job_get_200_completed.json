@@ -11,5 +11,5 @@
     "started_at"
   ],
   "masked": [],
-  "body": "{\"completed_at\":\"Tue, 03 Nov 2026 12:00:04 GMT\",\"context\":\"weekly-cleanup\",\"created_at\":\"Tue, 03 Nov 2026 12:00:00 GMT\",\"dry_run\":false,\"error\":null,\"hash\":null,\"job_id\":\"00000000-0000-4000-8000-000000000001\",\"result\":{\"actions_executed\":2,\"rules_matched\":1,\"torrents_processed\":12},\"started_at\":\"Tue, 03 Nov 2026 12:00:01 GMT\",\"status\":\"completed\"}\n"
+  "body": "{\"completed_at\":\"2026-11-03T12:00:04+00:00\",\"context\":\"weekly-cleanup\",\"created_at\":\"2026-11-03T12:00:00+00:00\",\"dry_run\":false,\"error\":null,\"hash\":null,\"job_id\":\"00000000-0000-4000-8000-000000000001\",\"result\":{\"actions_executed\":2,\"rules_matched\":1,\"torrents_processed\":12},\"started_at\":\"2026-11-03T12:00:01+00:00\",\"status\":\"completed\"}\n"
 }

@@ -38,7 +38,7 @@ def create_queue(backend: str = "sqlite", **kwargs: Any) -> QueueManager:
         ValueError: If backend is unknown or unavailable
     """
     if backend == "sqlite":
-        sqlite_path = kwargs.get("sqlite_path", "/config/qbt-rules.db")
+        sqlite_path = kwargs.get("sqlite_path", "/var/lib/qbt-rules/qbt-rules.db")
         return SQLiteQueue(db_path=sqlite_path)
 
     elif backend == "redis":

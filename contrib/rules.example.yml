@@ -1,0 +1,511 @@
+# qBittorrent Automation - Rules Configuration
+#
+# Rules define conditions and actions to automate torrent management.
+# All field references use dot notation with API prefix: info.*, trackers.*, files.*, etc.
+#
+# Copy to /var/lib/qbt-rules/rules.yml (the state directory, writable, so the
+# dashboard's rules editor can save it), or start from an empty file in the
+# editor, which creates it on its first save.
+# For settings, see config.yaml (contrib/qbt-rules.example.yaml).
+
+# Schema marker for this file, read via Config.rules_version (defaults to 1
+# when absent, so files written before this existed are unaffected). Not
+# consulted by qbt-rules today -- a forward-compat hook for tooling that
+# needs to tell "this file predates schema versioning" from "this file
+# already declared one." Safe to leave as-is; only bump if you're following
+# a future migration guide that tells you to.
+version: 1
+
+# Optional: Reusable references (v0.5.0+)
+# Define reusable variables, conditions, and actions to reduce repetition.
+# Use ${vars.name} for variable substitution and $ref: path for structure expansion.
+#
+# Uncomment and customize the refs block below to use the resolver layer:
+
+# refs:
+#   vars:
+#     # Scalar values - thresholds, patterns, lists
+#     min_ratio: 1.0
+#     high_ratio: 2.5
+#     cleanup_age: "30 days"
+#     private_ratio_threshold: 1.0
+#     hd_pattern: '(?i).*(1080p|2160p|4k).*'
+#     protected_categories: ["keep", "seedbox", "archive"]
+#
+#   conditions:
+#     # Reusable condition groups
+#     private-tracker:
+#       any:
+#         - field: trackers.url
+#           operator: contains
+#           value: ".private"
+#         - field: trackers.url
+#           operator: contains
+#           value: "privatehd.to"
+#
+#     well-seeded:
+#       all:
+#         - field: info.ratio
+#           operator: ">="
+#           value: ${vars.min_ratio}
+#         - field: info.completion_on
+#           operator: older_than
+#           value: ${vars.cleanup_age}
+#
+#     hd-content:
+#       all:
+#         - field: info.name
+#           operator: matches
+#           value: ${vars.hd_pattern}
+#
+#     protected:
+#       any:
+#         - field: info.category
+#           operator: in
+#           value: ${vars.protected_categories}
+#         - field: info.tags
+#           operator: contains
+#           value: "keep"
+#
+#   actions:
+#     # Reusable action sequences
+#     safe-delete:
+#       - type: add_tag
+#         params:
+#           tags: ["pending-delete"]
+#       - type: stop
+#
+#     force-seed:
+#       - type: force_start
+#       - type: add_tag
+#         params:
+#           tags: ["force-seeding"]
+#
+#     tag-hd:
+#       - type: add_tag
+#         params:
+#           tags: ["hd", "auto-tagged"]
+#
+#   meta:
+#     # Optional descriptive metadata for the conditions/actions blocks
+#     # above -- never read during $ref expansion, purely for tooling
+#     # (e.g. a block-library UI) to display a description or tags.
+#     conditions:
+#       private-tracker:
+#         description: "Matches when any tracker URL looks private/gated"
+#     actions:
+#       safe-delete:
+#         description: "Tag for review and stop, instead of deleting outright"
+
+# Example rules using refs (uncomment to enable):
+# - id: cleanup-well-seeded-private
+#   meta:
+#     description: "Cleanup well-seeded private tracker torrents"
+#   enabled: true
+#   conditions:
+#     - $ref: conditions.private-tracker
+#     - $ref: conditions.well-seeded
+#     - none:
+#         - $ref: conditions.protected
+#   actions:
+#     - $ref: actions.safe-delete
+#
+# - id: force-seed-private-under-ratio
+#   meta:
+#     description: "Force seed private tracker under ratio"
+#   enabled: true
+#   conditions:
+#     - $ref: conditions.private-tracker
+#     - all:
+#         - field: info.ratio
+#           operator: "<"
+#           value: ${vars.private_ratio_threshold}
+#   actions:
+#     - $ref: actions.force-seed
+
+rules:
+  - id: block-unwanted-archives
+    meta:
+      description: "Block unwanted archive files on add"
+    enabled: true
+    stop_on_match: true  # Don't process other rules if matched
+    context: torrent-imported  # Context can be any custom string you define
+    conditions:
+      any:
+        - field: files.name
+          operator: matches
+          value: '(?i)\.(rar|zip|7z|tar|gz|bz2|xz)$'
+    actions:
+      - type: add_tag
+        params:
+          tags:
+            - blocked-archive
+            - auto-filtered
+      - type: stop
+      # Uncomment to auto-delete instead of stop:
+      # - type: delete_torrent
+      #   params:
+      #     delete_files: true
+
+  - id: skip-sample-files
+    meta:
+      description: "Don't download sample files"
+    enabled: false  # set true to use
+    context: torrent-imported
+    conditions:
+      any:
+        - field: files.name
+          operator: matches
+          value: '(?i)(^|/)sample'
+    actions:
+      # priority: 0/skip, 1/normal, 6/high, 7/maximum. pattern is a regex on
+      # each file's path within the torrent; leave it out to change every file
+      - type: set_file_priority
+        params:
+          priority: skip
+          pattern: '(?i)(^|/)sample'
+
+  - id: tag-private-trackers
+    meta:
+      description: "Tag private tracker torrents"
+    enabled: true
+    stop_on_match: false
+    conditions:
+      all:
+        - field: trackers.url
+          operator: contains
+          value: .private
+    actions:
+      - type: add_tag
+        params:
+          tags:
+            - private
+
+  - id: auto-categorize-hd-movies
+    meta:
+      description: "Auto-categorize HD movies"
+    enabled: true
+    stop_on_match: false
+    conditions:
+      all:
+        - field: info.name
+          operator: matches
+          value: (?i).*(1080p|2160p|4k).*
+        - field: info.category
+          operator: ==
+          value: ''
+    actions:
+      - type: set_category
+        params:
+          category: movies-hd
+      - type: add_tag
+        params:
+          tags:
+            - hd
+            - auto-categorized
+
+  - id: auto-categorize-tv-shows
+    meta:
+      description: "Auto-categorize TV shows"
+    enabled: true
+    stop_on_match: false
+    conditions:
+      all:
+        - field: info.name
+          operator: matches
+          value: '(?i).*(s\d{2}e\d{2}|season).*'
+        - field: info.category
+          operator: ==
+          value: ''
+    actions:
+      - type: set_category
+        params:
+          category: tv
+
+  - id: remove-dead-tracker-torrents
+    meta:
+      description: "Remove torrents with all dead trackers"
+    enabled: true
+    stop_on_match: false
+    conditions:
+      all:
+        - field: info.added_on
+          operator: older_than
+          value: 14 days
+        - field: trackers.status
+          operator: in
+          value:
+            - 0
+            - 4
+    actions:
+      - type: delete_torrent
+        params:
+          delete_files: false
+
+  - id: remove-stalled-magnets
+    meta:
+      description: "Remove stalled magnet links"
+    enabled: true
+    stop_on_match: false
+    conditions:
+      all:
+        - field: info.state
+          operator: ==
+          value: metaDL
+        - field: info.added_on
+          operator: older_than
+          value: 7 days
+    actions:
+      - type: delete_torrent
+        params:
+          delete_files: true
+
+  - id: pause-well-seeded
+    meta:
+      description: "Pause well-seeded torrents"
+    enabled: true
+    stop_on_match: false
+    conditions:
+      all:
+        - field: info.ratio
+          operator: '>='
+          value: 2
+        - field: info.seeding_time
+          operator: '>'
+          value: 604800  # 168 hours in seconds
+        - field: info.num_leechs
+          operator: ==
+          value: 0
+      none:
+        - field: info.category
+          operator: in
+          value:
+            - seedbox
+            - long-term
+    actions:
+      - type: stop
+      - type: add_tag
+        params:
+          tags:
+            - auto-stopped
+            - seeded
+
+  - id: force-start-private-under-ratio
+    meta:
+      description: "Force start private tracker torrents under ratio"
+    enabled: true
+    stop_on_match: false
+    conditions:
+      all:
+        - field: info.ratio
+          operator: <
+          value: 1
+        - field: info.state
+          operator: in
+          value:
+            - stalledUP
+            - queuedUP
+        - field: trackers.url
+          operator: contains
+          value: .private
+    actions:
+      - type: force_start
+      - type: add_tag
+        params:
+          tags:
+            - private-seeding
+
+  - id: delete-old-completed
+    meta:
+      description: "Delete old completed torrents"
+    enabled: true
+    stop_on_match: true
+    conditions:
+      all:
+        - field: info.completion_on
+          operator: older_than
+          value: 30 days
+        - field: info.ratio
+          operator: '>='
+          value: 1
+      none:
+        - field: info.category
+          operator: in
+          value:
+            - seedbox
+            - keep
+    actions:
+      - type: delete_torrent
+        params:
+          delete_files: true
+
+  - id: emergency-space-cleanup
+    meta:
+      description: "Emergency space cleanup"
+    enabled: false
+    stop_on_match: false
+    conditions:
+      all:
+        - field: info.ratio
+          operator: '>='
+          value: 0.5
+        - field: info.completion_on
+          operator: older_than
+          value: 3 days
+    actions:
+      - type: delete_torrent
+        params:
+          delete_files: true
+
+  - id: remove-errored
+    meta:
+      description: "Remove errored torrents"
+    enabled: true
+    stop_on_match: false
+    conditions:
+      all:
+        - field: info.state
+          operator: ==
+          value: error
+    actions:
+      - type: delete_torrent
+        params:
+          delete_files: false
+
+  - id: remove-missing-files
+    meta:
+      description: "Remove missing files torrents"
+    enabled: true
+    stop_on_match: false
+    conditions:
+      all:
+        - field: info.state
+          operator: ==
+          value: missingFiles
+        - field: info.added_on
+          operator: older_than
+          value: 1 day
+    actions:
+      - type: delete_torrent
+        params:
+          delete_files: true
+
+  - id: tag-specific-tracker
+    meta:
+      description: "Tag torrents from specific tracker"
+    enabled: false
+    stop_on_match: false
+    conditions:
+      all:
+        - field: trackers.url
+          operator: matches
+          value: '^https://tracker\.example\.com.*'
+    actions:
+      - type: add_tag
+        params:
+          tags:
+            - tracker-example
+
+  - id: pause-no-seeders
+    meta:
+      description: "Pause torrents with no seeders"
+    enabled: false
+    stop_on_match: false
+    conditions:
+      all:
+        - field: info.state
+          operator: ==
+          value: stalledDL
+        - field: info.added_on
+          operator: older_than
+          value: 3 days
+        - field: trackers.num_seeds
+          operator: ==
+          value: 0
+    actions:
+      - type: stop
+      - type: add_tag
+        params:
+          tags:
+            - no-seeds
+
+  - id: limit-upload-old-torrents
+    meta:
+      description: "Limit upload speed for old torrents"
+    enabled: false
+    stop_on_match: false
+    conditions:
+      all:
+        - field: info.ratio
+          operator: '>='
+          value: 5
+        - field: info.seeding_time
+          operator: '>'
+          value: 2592000  # 720 hours in seconds
+    actions:
+      - type: set_upload_limit
+        params:
+          limit: 102400
+
+  - id: tag-encryption-required
+    meta:
+      description: "Tag torrents when encryption is required"
+    enabled: false
+    stop_on_match: false
+    context: torrent-imported  # Context can be any custom string you define
+    conditions:
+      all:
+        - field: app.encryption
+          operator: ==
+          value: 2  # 2 = require encrypted connections
+    actions:
+      - type: add_tag
+        params:
+          tags:
+            - encrypted-only
+
+  - id: tag-hd-private
+    meta:
+      description: "Tag HD content from private trackers"
+    enabled: false
+    stop_on_match: false
+    conditions:
+      all:
+        - field: info.name
+          operator: matches
+          value: (?i).*(1080p|2160p).*
+        - field: info.size
+          operator: '>'
+          value: 10737418240
+        - field: trackers.url
+          operator: contains
+          value: .private
+    actions:
+      - type: add_tag
+        params:
+          tags:
+            - hd
+            - private
+            - large
+      - type: set_category
+        params:
+          category: private-hd
+
+  - id: recheck-stalled-downloads
+    meta:
+      description: "Recheck stalled downloads"
+    enabled: false
+    stop_on_match: false
+    conditions:
+      all:
+        - field: info.state
+          operator: ==
+          value: stalledDL
+        - field: info.progress
+          operator: '>'
+          value: 0.9
+        - field: info.last_activity
+          operator: older_than
+          value: 12 hours
+    actions:
+      - type: recheck

@@ -1,0 +1,28 @@
+# Written by Copier: never edit by hand. `copier update` reads it to know
+# which template version and answers this project was made from.
+_commit: v2.4.3
+_src_path: gh:andronics/template-python
+base_answers:
+    code_owners: '@andronics'
+    dependabot_automerge: 'off'
+    description: A rules engine for qBittorrent automation, with a job queue, scheduler
+        and web dashboard
+    github_owner: andronics
+    license: Unlicense
+    owner_is_org: false
+    personal_data_guard: true
+    project_name: qbt-rules
+container_image: true
+contrib:
+- docker
+extra_ports: []
+health_path: /healthz
+image_extras:
+- redis
+integration_ci: false
+kind: service
+package_name: qbt_rules
+port: 5000
+puid_pgid: true
+python_version: '3.13'
+timezone: Europe/London

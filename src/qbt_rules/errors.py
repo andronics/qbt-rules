@@ -5,7 +5,9 @@ Provides clear, actionable error messages without Python stack traces
 
 import sys
 from collections.abc import Callable
-from typing import Any, ParamSpec, TypeVar
+from typing import Any
+
+from interpose.settings import ConfigError
 
 from qbt_rules.log_setup import get_logger
 
@@ -110,9 +112,8 @@ class LoggingSetupError(QBittorrentError):
             message="Cannot setup file logging",
             details=details,
             fix=(
-                "Set LOG_FILE environment variable to a writable path (e.g., "
-                "LOG_FILE=./logs/qbittorrent.log), or ensure CONFIG_DIR points to a writable "
-                "location"
+                "Set QBT_RULES_LOGGING_FILE to a writable path (e.g., "
+                "/var/lib/qbt-rules/qbt-rules.log), or unset it to log to the console only"
             ),
         )
 
@@ -339,11 +340,7 @@ class RefTypeMismatchError(ResolverError):
         )
 
 
-P = ParamSpec("P")
-R = TypeVar("R")
-
-
-def handle_errors(func: Callable[P, R]) -> Callable[P, R]:
+def handle_errors[**P, R](func: Callable[P, R]) -> Callable[P, R]:
     """Decorator for user-friendly error handling"""
 
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -352,6 +349,10 @@ def handle_errors(func: Callable[P, R]) -> Callable[P, R]:
         except QBittorrentError as e:
             # Our custom errors - display nicely
             logger.error(str(e))
+            sys.exit(1)
+        except ConfigError as e:
+            # A setting (config.py, on interpose): the message names it and the fix
+            logger.error(f"Configuration error: {e}")
             sys.exit(1)
         except KeyboardInterrupt:
             logger.info("\nOperation cancelled by user")

@@ -1,80 +1,105 @@
-# qbt-rules Dockerfile - Multi-stage build
-# Supports both SQLite (default) and Redis queue backends
+# qbt-rules: multi-stage build. Template-owned skeleton; project-specific
+# stages (extra binaries, assets) go between the builder and the runtime stage.
 
 # ============================================================
-# Stage 1: Builder
+# Stage 1: builder
 # ============================================================
-FROM python:3.11-slim AS builder
+FROM python:3.13-slim AS builder
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# git, for uv to fetch interpose (pinned to a git tag: template-python decision 0003),
+# and the `build:` packages in contrib/system-packages.txt (project-owned): compilers
+# and headers for dependencies that build from source
+# hadolint ignore=DL3008,SC2046
+RUN --mount=type=bind,source=contrib/system-packages.txt,target=/tmp/system-packages.txt \
+    set -- git $(sed -n 's/^build://p' /tmp/system-packages.txt); \
+    if [ $# -gt 0 ]; then \
+        apt-get update \
+        && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@" \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
 
-# Create virtual environment
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+# Dependencies, then the package, into /opt/venv
 
-# Copy package files
+COPY --from=ghcr.io/astral-sh/uv:0.13.6 /uv /bin/uv
+
+# From the lock file, compiled, without dev dependencies, with the base image's
+# Python (never a downloaded one)
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never
+
 WORKDIR /build
-COPY pyproject.toml README.md ./
+
+# Dependencies first, so a source change doesn't reinstall them
+# with the optional extras the Copier answer `image_extras` names
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project --extra redis
+
 COPY src/ ./src/
-
-# Install dependencies and package (proper install, not editable)
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir . && \
-    pip install --no-cache-dir redis  # Include optional Redis support
+RUN uv sync --frozen --no-dev --no-editable --extra redis
 
 # ============================================================
-# Stage 2: Runtime
+# Stage 2: runtime
 # ============================================================
-FROM python:3.11-slim
+FROM python:3.13-slim
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# Set by CI (docker-build.yml) from the release; OCI labels for `docker inspect`
+ARG VERSION=0.0.0
+ARG REVISION=unknown
+ARG CREATED=unknown
+LABEL org.opencontainers.image.title="qbt-rules" \
+      org.opencontainers.image.description="A rules engine for qBittorrent automation, with a job queue, scheduler and web dashboard" \
+      org.opencontainers.image.source="https://github.com/andronics/qbt-rules" \
+      org.opencontainers.image.documentation="https://github.com/andronics/qbt-rules/wiki" \
+      org.opencontainers.image.licenses="Unlicense" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.created="${CREATED}"
 
-# Copy virtual environment from builder
+# The `runtime:` packages in contrib/system-packages.txt: libraries and tools the
+# project needs at run time. None listed: nothing runs
+# hadolint ignore=DL3008,SC2046
+RUN --mount=type=bind,source=contrib/system-packages.txt,target=/tmp/system-packages.txt \
+    set -- $(sed -n 's/^runtime://p' /tmp/system-packages.txt); \
+    if [ $# -gt 0 ]; then \
+        apt-get update \
+        && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@" \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
+
 COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1
 
-# Copy default config files to /usr/share (FHS standard location)
-RUN mkdir -p /usr/share/qbt-rules
-COPY config/config.default.yml /usr/share/qbt-rules/
-COPY config/rules.default.yml /usr/share/qbt-rules/
+RUN useradd --system --create-home --shell /usr/sbin/nologin --uid 1000 qbt-rules
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash --uid 1000 qbtrules && \
-    mkdir -p /config && \
-    chown -R qbtrules:qbtrules /config
+# Config is mounted at /etc/qbt-rules (missing is fine: defaults and
+# QBT_RULES_* variables apply); state lives in /var/lib/qbt-rules
+RUN mkdir -p /etc/qbt-rules /var/lib/qbt-rules \
+    && chown qbt-rules:qbt-rules /var/lib/qbt-rules
+COPY contrib/qbt-rules.example.yaml /usr/share/qbt-rules/config.example.yaml
 
-# Set working directory
-WORKDIR /app
+# Relative paths resolve in the state directory, never in / (where an old
+# volume such as /config could be read by mistake): template-python decision 0009
+WORKDIR /var/lib/qbt-rules
 
-# Starts as root only to give /config to PUID:PGID (default 1000:1000,
-# the qbtrules user), then drops to that user -- see docker/qbt-rules.sh.
-# The wrapper shadows the real qbt-rules on PATH so `docker exec` runs as
-# the same user as the server.
-# Its own directory, not /usr/local/bin: putting that first on PATH would
-# also make `python` the base image's interpreter instead of the venv's.
-COPY docker/qbt-rules.sh /opt/qbt-rules/bin/qbt-rules
+# Bind every interface whatever the app's default: in a container, the
+# published ports decide what is reachable, and loopback would be unreachable
+ENV QBT_RULES_LISTEN_HOST=0.0.0.0
+
+# Starts as root only to give the state directory to PUID:PGID (default
+# 1000:1000), then drops to that user: see docker/entrypoint.sh. It shadows the
+# real command on PATH so `docker exec <c> qbt-rules ...` goes through it too.
+COPY docker/entrypoint.sh /opt/qbt-rules/bin/qbt-rules
 RUN chmod 0755 /opt/qbt-rules/bin/qbt-rules
 ENV PATH="/opt/qbt-rules/bin:$PATH"
 
-# Default configuration directory
-ENV CONFIG_DIR=/config
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen(f\"http://127.0.0.1:{os.environ.get('QBT_RULES_LISTEN_PORT', '5000')}/healthz\", timeout=4)"]
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:5000/api/health').raise_for_status()" || exit 1
-
-# Expose server port
 EXPOSE 5000
+VOLUME ["/var/lib/qbt-rules"]
 
-# Volume for configuration and database
-VOLUME ["/config"]
-
-# Default command: run server
 ENTRYPOINT ["qbt-rules"]
-CMD ["--serve"]
+CMD ["serve"]

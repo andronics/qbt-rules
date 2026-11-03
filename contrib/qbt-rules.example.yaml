@@ -1,0 +1,107 @@
+# qbt-rules configuration: every setting, with its default.
+#
+# Copy to /etc/qbt-rules/config.yaml (or point QBT_RULES_CONFIG / --config
+# at it). A missing file is fine: every setting has a default, and the server
+# starts without an API key (it refuses requests and /api/health says why).
+# Every key can also be set as an environment variable, QBT_RULES_<KEY> (dots
+# become underscores), or read from a file with QBT_RULES_<KEY>_FILE. Secrets
+# belong in _FILE, never in this file. ${VAR} and ${VAR:-default} are expanded
+# from the environment.
+#
+# This is the only file in /etc/qbt-rules, which can be read-only. The rules
+# live in rules.yml in the state directory, /var/lib/qbt-rules, where the
+# dashboard's editor can save them (contrib/rules.example.yml is a starting
+# point).
+# Full reference: the wiki's In-Depth-Configuration page.
+
+listen:
+  # Address and port of the HTTP API and dashboard. The image's healthcheck
+  # polls listen.port. (server.host and server.port are deprecated aliases:
+  # they work, with a warning at startup.)
+  host: 0.0.0.0
+  port: 5000
+
+# State: rules.yml, the SQLite job database and the rules editor's history
+# (.history/). Must be writable.
+state_dir: /var/lib/qbt-rules
+
+# true: only log what rules would do (env QBT_RULES_DRY_RUN)
+dry_run: false
+
+rules:
+  # Empty: rules.yml in state_dir (a relative path is under state_dir too).
+  # Must be writable for the rules editor.
+  file: ""
+
+server:
+  # REQUIRED for the API and dashboard (openssl rand -hex 32). Secret: use
+  # QBT_RULES_SERVER_API_KEY_FILE.
+  api_key: ""
+  # Must be 1: the server is one process (kept so a 0.10.x config still loads)
+  workers: 1
+  # Allow saving rules.yml from the dashboard's rules editor
+  editor_enabled: true
+
+client:
+  # Server the CLI client submits jobs to
+  server_url: http://localhost:5000
+  # Empty: server.api_key (right for `docker exec` into the server's container)
+  api_key: ""
+
+queue:
+  # sqlite or redis
+  backend: sqlite
+  # Empty: qbt-rules.db in state_dir
+  sqlite_path: ""
+  # For backend: redis. Secret (may hold a password).
+  redis_url: redis://localhost:6379/0
+  # Delete finished jobs older than this (7d, 2w, 30 days, seconds); 0 keeps them
+  cleanup_after: 7d
+
+qbittorrent:
+  host: http://localhost:8080
+  username: admin
+  # Secret: use QBT_RULES_QBITTORRENT_PASSWORD_FILE
+  password: ""
+
+# Internal cron: enqueue a job with this context when each expression fires.
+# Or QBT_RULES_SCHEDULE_<N>_CRON / QBT_RULES_SCHEDULE_<N>_CONTEXT (N from 0),
+# which replace this list.
+schedule: []
+#  - cron: "*/30 * * * *"
+#    context: cron
+
+notifications:
+  # Default webhook for the notify action (secret: often holds a token)
+  webhook_url: ""
+  # generic, discord, slack or ntfy
+  service: generic
+
+integrations:
+  # For the arr_blocklist action
+  sonarr:
+    url: ""
+    api_key: ""
+  radarr:
+    url: ""
+    api_key: ""
+  # For the tracker.* fields (https://github.com/andronics/trackie)
+  trackie:
+    url: ""
+    max_age: 3 hours
+    timeout: "10"
+
+metrics:
+  # /metrics for Prometheus; it needs the API key (X-API-Key header or ?key=)
+  enabled: false
+
+logging:
+  # DEBUG, INFO, WARNING or ERROR
+  level: INFO
+  # Empty: the console only (docker logs). Relative paths are under state_dir.
+  file: ""
+  # Rotate the file at this size (0: never), keeping backup_count old files
+  max_bytes: 10485760
+  backup_count: 5
+  trace_mode: false
+  http_access: false

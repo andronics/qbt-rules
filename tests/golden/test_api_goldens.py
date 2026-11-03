@@ -1,10 +1,11 @@
 """
 Golden responses for the JSON API -- the safety net for the Flask -> FastAPI port
 
-Every JSON route in web.py (plus /metrics and the 404/405/413/500
-handlers) is driven through the Flask test client against a real queue --
-SQLite and fakeredis -- and its status, Content-Type, selected headers
-(SELECTED_HEADERS) and exact body are compared with a stored golden file:
+Every JSON route in api.py (plus /metrics, the interpose Registry's text, and
+the 404/405/413/500 handlers) is driven through FastAPI's TestClient against
+a real queue -- SQLite and fakeredis -- and its status, Content-Type,
+selected headers (SELECTED_HEADERS) and exact body are compared with a
+stored golden file:
 
     tests/golden/responses/<backend>/<case>.json
 
@@ -23,7 +24,7 @@ nothing is written.
 
 Determinism
 -----------
-- Time is frozen: every ``datetime.now()`` in web.py, queue_manager.py,
+- Time is frozen: every ``datetime.now()`` in api.py, queue_manager.py,
   both queue backends and config_store.py reads a settable Clock (seeded
   jobs get distinct, whole-second timestamps; requests run at FROZEN_AT).
   rules.yml's mtime -- the editor's ``modified_at`` -- is pinned to the
@@ -37,44 +38,42 @@ Determinism
 Masked -- the only values not captured as-is (each listed in the golden's
 "masked" field):
 - ``python_version`` in /api/version: the interpreter running the tests.
-- The temporary config directory in ``path`` fields (and anywhere else it
-  appears) is replaced with ``<config_dir>``.
-- /metrics: only the on-demand state gauges (STATE_METRICS) are kept. The
-  multiprocess event counters/histograms aggregate every request made in
-  the whole pytest session, so their values depend on test order.
+- The temporary config and state directories in ``path`` fields (and
+  anywhere else they appear) are replaced with ``<config_dir>`` and
+  ``<state_dir>``. rules.yml is in the state directory.
+- /metrics in metrics_200: only the state gauges (STATE_METRICS) are kept,
+  the part the 0.10.x prometheus_client golden could pin (its multiprocess
+  counters aggregated the whole pytest session). Each app has its own
+  registry now, so metrics_200_events pins the whole body, unmasked:
+  build info, the event counters and histograms (request durations are
+  zero there: the clock it reads is frozen).
 
-- The ``Allow`` header's methods are sorted: Werkzeug builds it from a
-  set, so its order changes from run to run.
+- The ``Allow`` header's methods are sorted, so a set's order can't
+  change a golden.
 
 Session cookies (Set-Cookie) are not captured: itsdangerous signs them
 with the real wall clock.
 
-Timestamps: SQLite vs Redis (READ THIS BEFORE THE PORT)
--------------------------------------------------------
-The goldens hold today's real output, which differs between backends:
-SQLite returns job timestamps as datetime objects, which Flask's jsonify
-renders as RFC 822 dates ("Tue, 03 Nov 2026 12:00:00 GMT" -- second
-precision, zone dropped), while Redis returns the stored ISO 8601 strings
-("2026-11-03T12:00:00+00:00"). The FastAPI port will emit ISO 8601 for
-both backends. Every field that is a timestamp is named in
-TIMESTAMP_FIELDS, and each golden lists the concrete JSON paths under
-"timestamp_paths". ``normalise_timestamps()`` rewrites RFC 822 values at
-those fields to ISO 8601 -- it is the one place the port's comparison
-should change (compare against ``normalise_timestamps(json.loads(body))``
-for the SQLite goldens). Seeded times are whole seconds, so that
-conversion is lossless. test_backends_agree_after_timestamp_normalisation
-proves that, once normalised, the two backends' goldens are identical
-apart from the backend class name.
+Timestamps
+----------
+Both backends write ISO 8601 ("2026-11-03T12:00:00+00:00"). Under Flask,
+SQLite's job timestamps were datetime objects that jsonify rendered as RFC
+822 dates ("Tue, 03 Nov 2026 12:00:00 GMT"); the port regenerated those
+goldens, and ``normalise_timestamps()`` (which rewrites RFC 822 values at
+TIMESTAMP_FIELDS as ISO 8601) is how that change was checked to touch
+nothing else. Every timestamp field is named in TIMESTAMP_FIELDS, and each
+golden lists the concrete JSON paths under "timestamp_paths".
+test_backends_agree_after_timestamp_normalisation proves the two backends'
+goldens are identical apart from the backend class name.
 
-JSON encoding (the port must match)
------------------------------------
-create_app() sets ``JSON_SORT_KEYS = False``, but Flask 3 ignores that
-config key (it moved to ``app.json.sort_keys``), so every JSON body today
-has its keys sorted, is compact (no spaces after ``,``/``:``) and ends
-with a newline. The goldens capture exactly that; FastAPI's default
-JSONResponse does neither sorting nor the trailing newline.
+JSON encoding
+-------------
+Flask's jsonify, kept byte for byte by api.CompatJSONResponse: keys
+sorted, compact (no spaces after ``,``/``:``), non-ASCII escaped, and a
+trailing newline.
 """
 
+import dataclasses
 import json
 import os
 import re
@@ -83,11 +82,13 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from fastapi.testclient import TestClient
+from interpose.secret import Secret
 
-from qbt_rules import config_store, metrics, queue_manager, web
+from qbt_rules import api, config_store, metrics, queue_manager
 from qbt_rules.queue_backends import sqlite_queue
 from qbt_rules.queue_manager import JobStatus, QueueManager
 
@@ -227,6 +228,9 @@ class StubWorker:
         self.running = True
         self.alive = True
 
+    def run(self, stop):  # registered as a thread, never started: no lifespan here
+        stop.wait()
+
     def is_alive(self):
         return self.alive
 
@@ -248,7 +252,7 @@ def _make_queue(backend: str, tmp_path: Path) -> QueueManager:
     queue = RedisQueue.__new__(RedisQueue)
     queue.redis_url = "redis://golden/0"
     queue.redis = fakeredis.FakeRedis(decode_responses=True)
-    queue.pool = None
+    queue.pool = None  # type: ignore[assignment]  # close() tolerates a None pool
     return queue
 
 
@@ -259,9 +263,10 @@ class Env:
         self.backend = backend
         self.clock = Clock(FROZEN_AT)
         self.monkeypatch = monkeypatch
+        self.mask_metrics = True
 
         frozen = _frozen_datetime(self.clock)
-        for module in (web, queue_manager, config_store, sqlite_queue):
+        for module in (api, queue_manager, config_store, sqlite_queue):
             monkeypatch.setattr(module, "datetime", frozen)
         if backend == "redis":
             from qbt_rules.queue_backends import redis_queue
@@ -274,9 +279,9 @@ class Env:
             "generate_job_id",
             staticmethod(lambda: f"00000000-0000-4000-8000-{next(ids):012d}"),
         )
-        monkeypatch.setattr(web, "__version__", FIXED_VERSION)
+        monkeypatch.setattr(api, "__version__", FIXED_VERSION)
 
-        # config.yml redaction and Config() both read QBT_RULES_* overrides
+        # config.yaml redaction and load_config() both read QBT_RULES_* overrides
         for name in list(os.environ):
             if name.startswith("QBT_RULES_") or name == "CONFIG_DIR":
                 monkeypatch.delenv(name)
@@ -295,40 +300,40 @@ class Env:
 
         self.config_dir = tmp_path / "config"
         self.config_dir.mkdir()
-        (self.config_dir / "config.yml").write_text(CONFIG)
+        (self.config_dir / "config.yaml").write_text(CONFIG)
+        # rules.yml and the editor's history (.history/) go in the state directory
+        self.state_dir = tmp_path / "state"
+        self.state_dir.mkdir()
         self.write_rules(RULES)
 
         self.queue = _make_queue(backend, tmp_path)
         self.worker = StubWorker()
 
     def write_rules(self, text: str):
-        path = self.config_dir / "rules.yml"
+        path = self.state_dir / "rules.yml"
         path.write_text(text)
         ts = self.clock.value.timestamp()
         os.utime(path, (ts, ts))
 
-    def client(self, with_config: bool = True, metrics_on: bool = False, **kwargs):
-        from qbt_rules.config_loader import Config
+    def client(self, with_config: bool = True, metrics_on: bool = False, editor: bool = True):
+        from qbt_rules.config import load_config
+        from qbt_rules.config_loader import Config as RulesConfig
 
-        config = Config(self.config_dir) if with_config else None
-        metrics_config = None
-        if metrics_on:
-            metrics.init(enabled=True)
-            metrics_config = {
-                "enabled": True,
-                "multiproc_dir": os.environ["PROMETHEUS_MULTIPROC_DIR"],
-            }
-        app = web.create_app(
-            self.queue,
-            self.worker,
-            API_KEY,
-            config=config,
-            metrics_config=metrics_config,
-            **kwargs,
+        environ = {"QBT_RULES_STATE_DIR": str(self.state_dir)}
+        settings = dataclasses.replace(
+            load_config(self.config_dir / "config.yaml", environ),
+            api_key=Secret(API_KEY),
+            editor_enabled=editor,
+            metrics_enabled=metrics_on,
         )
-        # TESTING stays off: with it on, Flask re-raises unhandled errors
-        # instead of running the 500 handler a real deployment would
-        return app.test_client()
+        services = api.Services(
+            queue=self.queue,
+            worker=cast(api.WorkerLike, self.worker),
+            rules=RulesConfig(settings) if with_config else None,
+        )
+        app = api.create_app(settings, services)
+        # Redirects are part of what's captured, so they aren't followed
+        return Client(app)
 
     def seed_jobs(self):
         """Completed, failed and pending jobs a minute apart, moved through the
@@ -369,10 +374,16 @@ class Env:
         return {"completed": completed, "failed": failed, "pending": pending}
 
     def login(self, client):
-        client.post("/login", data={"key": API_KEY, "next": "/rules/edit"})
+        """The dashboard's login form, with the CSRF token it carries"""
+        form = client.get("/login").text
+        token = re.search(r'name="csrf_token" value="([^"]+)"', form)
+        assert token is not None
+        data = {"key": API_KEY, "next": "/rules/edit", "csrf_token": token.group(1)}
+        assert client.post("/login", data=data).status_code == 302
 
     def etag(self, client) -> str:
-        return client.get("/api/rules/source", headers=KEY).get_json()["etag"]
+        etag: str = client.get("/api/rules/source", headers=KEY).json()["etag"]
+        return etag
 
 
 # ---------------------------------------------------------------------------
@@ -388,6 +399,16 @@ def case(name: str):
         return fn
 
     return register
+
+
+class Client(TestClient):
+    """TestClient with the Flask test client's open(url, method=...) the cases use"""
+
+    def __init__(self, app):
+        super().__init__(app, follow_redirects=False)
+
+    def open(self, url: str, method: str = "GET", **kwargs):
+        return self.request(method, url, **kwargs)
 
 
 def _call(client, method: str, url: str, **kwargs):
@@ -488,9 +509,9 @@ def _(env):
     return _call(env.client(), "GET", "/api/jobs")
 
 
-@case("jobs_list_500_non_integer_limit")
+@case("jobs_list_400_non_integer_limit")
 def _(env):
-    # int('abc') is unhandled -> the generic 500 handler, not a 400
+    # A 500 under Flask (int('abc') was unhandled): #28 item 1
     return _call(env.client(), "GET", "/api/jobs?limit=abc", headers=KEY)
 
 
@@ -727,7 +748,7 @@ def _(env):
 def _(env):
     client = env.client()
     env.login(client)
-    etag = client.get("/api/rules/source").get_json()["etag"]
+    etag = client.get("/api/rules/source").json()["etag"]
     return _call(
         client,
         "PUT",
@@ -812,7 +833,7 @@ def _(env):
 def _(env):
     client = env.client()
     _save_once(env, client)
-    version_id = client.get("/api/rules/history", headers=KEY).get_json()["versions"][0]["id"]
+    version_id = client.get("/api/rules/history", headers=KEY).json()["versions"][0]["id"]
     return _call(client, "GET", f"/api/rules/history/{version_id}", headers=KEY)
 
 
@@ -860,6 +881,25 @@ def _(env):
     return _call(env.client(metrics_on=True), "GET", "/metrics", headers=KEY)
 
 
+@case("metrics_200_events")
+def _(env):
+    from types import SimpleNamespace
+
+    env.mask_metrics = False
+    env.monkeypatch.setattr(api, "time", SimpleNamespace(perf_counter=lambda: 100.0))
+    env.seed_jobs()
+    client = env.client(metrics_on=True)
+    # What the worker, the engine and the scheduler record, then two requests
+    metrics.record_job_duration(0.3)
+    metrics.record_job_duration(12.0)
+    metrics.record_action_executed("add_tag", True)
+    metrics.record_action_executed("delete_torrent", False)
+    metrics.record_scheduler_fire(True)
+    client.open("/api/stats", headers=KEY)
+    client.open("/api/stats")
+    return _call(client, "GET", "/metrics", headers=KEY)
+
+
 @case("metrics_401")
 def _(env):
     return _call(env.client(metrics_on=True), "GET", "/metrics")
@@ -880,7 +920,7 @@ def _(env):
 
 @case("error_405_wrong_method")
 def _(env):
-    # No 405 handler is registered: Werkzeug's HTML page, not JSON
+    # Werkzeug's HTML page under Flask; JSON like every other error now (#28 item 5)
     return _call(env.client(), "POST", "/api/jobs", headers=KEY)
 
 
@@ -896,13 +936,17 @@ def _mask(env: Env, body: str, content_type: str) -> "tuple[str, list[str]]":
     if config_dir in body:
         body = body.replace(config_dir, "<config_dir>")
         masked.append("config directory -> <config_dir>")
+    state_dir = str(env.state_dir)
+    if state_dir in body:
+        body = body.replace(state_dir, "<state_dir>")
+        masked.append("state directory -> <state_dir>")
 
     python_version = f'"python_version":"{sys.version.split()[0]}"'
     if python_version in body:
         body = body.replace(python_version, '"python_version":"<python_version>"')
         masked.append("python_version")
 
-    if content_type.startswith("text/plain") and "# TYPE qbt_rules_" in body:
+    if env.mask_metrics and content_type.startswith("text/plain") and "# TYPE qbt_rules_" in body:
         kept = []
         for line in body.splitlines(keepends=True):
             name = line.split()[2] if line.startswith("# ") else re.split(r"[{ ]", line)[0]
@@ -917,14 +961,14 @@ def _mask(env: Env, body: str, content_type: str) -> "tuple[str, list[str]]":
 def _selected_headers(response) -> dict[str, str]:
     headers = {h: response.headers[h] for h in SELECTED_HEADERS if h in response.headers}
     if "Allow" in headers:
-        # Werkzeug builds Allow from a set, so its order varies run to run
+        # Built from a set, so its order could vary run to run
         headers["Allow"] = ", ".join(sorted(m.strip() for m in headers["Allow"].split(",")))
     return headers
 
 
 def _record(env: Env, name: str, request: str, response) -> dict[str, Any]:
     content_type = response.headers.get("Content-Type", "")
-    body, masked = _mask(env, response.get_data(as_text=True), content_type)
+    body, masked = _mask(env, response.text, content_type)
     paths: list[str] = []
     if content_type.startswith("application/json"):
         paths = timestamp_paths(json.loads(body))
@@ -948,7 +992,8 @@ def _golden_path(backend: str, name: str) -> Path:
 def _load(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
-    return json.loads(path.read_text("utf-8"))
+    data: dict[str, Any] = json.loads(path.read_text("utf-8"))
+    return data
 
 
 @pytest.mark.parametrize("name", list(CASES))

@@ -5,15 +5,12 @@ import logging.handlers
 import sys
 from pathlib import Path
 
-import qbt_rules.log_setup as qbt_logging
 from qbt_rules.log_setup import (
-    CONSOLE_FORMAT_BARE,
     DEFAULT_BACKUP_COUNT,
     DEFAULT_MAX_BYTES,
     LOG_FORMAT_DETAILED,
     LOG_FORMAT_SIMPLE,
     get_logger,
-    set_file_rotation,
     setup_logging,
 )
 
@@ -22,18 +19,14 @@ def _logging_config(
     level="INFO",
     file=None,
     trace_mode=False,
-    http_access=False,
-    client_mode=False,
     max_bytes=DEFAULT_MAX_BYTES,
     backup_count=DEFAULT_BACKUP_COUNT,
 ):
-    """Build a resolved logging_config dict, matching legacy_cli.py's get_logging_config() shape."""
+    """The logging_config dict `qbt-rules serve` (cli.py) passes."""
     return {
         "level": level,
         "file": file,
         "trace_mode": trace_mode,
-        "http_access": http_access,
-        "client_mode": client_mode,
         "max_bytes": max_bytes,
         "backup_count": backup_count,
     }
@@ -76,6 +69,7 @@ class TestSetupLogging:
         # Verify format contains module/function/line info
         formatter = file_handlers[0].formatter
         assert formatter is not None
+        assert formatter._fmt is not None
         # The detailed format includes %(module)s %(funcName)s %(lineno)d
         assert "module" in formatter._fmt or "funcName" in formatter._fmt
 
@@ -92,6 +86,7 @@ class TestSetupLogging:
 
         formatter = file_handlers[0].formatter
         assert formatter is not None
+        assert formatter._fmt is not None
         # Simple format should not include module/function info
         assert "levelname" in formatter._fmt
         assert "message" in formatter._fmt
@@ -108,46 +103,18 @@ class TestSetupLogging:
         root_logger = logging.getLogger()
         return next(h for h in root_logger.handlers if isinstance(h, logging.FileHandler))
 
-    def test_client_mode_console_is_bare(self, tmp_path):
-        """Client mode (any invocation other than --serve) prints bare
-        messages to console, with no timestamp/level prefix -- someone
-        running a CLI command interactively shouldn't see logging
-        machinery on every line."""
-        log_file = tmp_path / "test.log"
-
-        setup_logging(_logging_config(level="INFO", file=log_file, client_mode=True))
-
-        assert self._console_handler().formatter._fmt == CONSOLE_FORMAT_BARE
-
-    def test_client_mode_file_still_gets_full_format(self, tmp_path):
-        """Client mode's console may be bare, but the file record keeps
-        full diagnostic detail for later review."""
-        log_file = tmp_path / "test.log"
-
-        setup_logging(_logging_config(level="INFO", file=log_file, client_mode=True))
-
-        assert self._file_handler().formatter._fmt == LOG_FORMAT_SIMPLE
-
-    def test_server_mode_console_keeps_full_format(self, tmp_path):
-        """Server mode (--serve) keeps the full timestamped format on
-        console, since that's what `docker logs` captures for live
-        monitoring."""
-        log_file = tmp_path / "test.log"
-
-        setup_logging(_logging_config(level="INFO", file=log_file, client_mode=False))
+    def test_console_and_file_share_the_timestamped_format(self, tmp_path):
+        """The console is what `docker logs` keeps, so it has the file's format."""
+        setup_logging(_logging_config(level="INFO", file=tmp_path / "test.log"))
 
         assert self._console_handler().formatter._fmt == LOG_FORMAT_SIMPLE
+        assert self._file_handler().formatter._fmt == LOG_FORMAT_SIMPLE
 
-    def test_trace_mode_overrides_client_mode_bare_console(self, tmp_path):
-        """--trace is an explicit request for verbose detail, so it wins
-        over client mode's normally-bare console format."""
-        log_file = tmp_path / "test.log"
-
-        setup_logging(
-            _logging_config(level="DEBUG", file=log_file, trace_mode=True, client_mode=True)
-        )
+    def test_trace_mode_adds_function_and_line_everywhere(self, tmp_path):
+        setup_logging(_logging_config(level="DEBUG", file=tmp_path / "test.log", trace_mode=True))
 
         assert self._console_handler().formatter._fmt == LOG_FORMAT_DETAILED
+        assert self._file_handler().formatter._fmt == LOG_FORMAT_DETAILED
 
     def test_file_permission_error_fallback(self, capsys):
         """File permission error falls back to console only."""
@@ -329,65 +296,6 @@ class TestLogRotation:
 
         assert log_file.stat().st_size > 500
         assert not (tmp_path / "test.log.1").exists()
-
-
-class TestSetFileRotation:
-    """Only one Gunicorn process should rotate the shared log file."""
-
-    def test_disable_swaps_to_watched_handler(self, tmp_path):
-        log_file = tmp_path / "test.log"
-        setup_logging(_logging_config(level="WARNING", file=log_file, trace_mode=True))
-        formatter = _file_handlers()[0].formatter
-
-        set_file_rotation(False)
-
-        [handler] = _file_handlers()
-        assert isinstance(handler, logging.handlers.WatchedFileHandler)
-        assert handler.baseFilename == str(log_file)
-        assert handler.level == logging.WARNING
-        assert handler.formatter is formatter
-        assert len(logging.getLogger().handlers) == 2  # console handler kept
-
-    def test_enable_swaps_back_to_rotating_handler(self, tmp_path):
-        setup_logging(_logging_config(file=tmp_path / "test.log", max_bytes=1234, backup_count=3))
-        set_file_rotation(False)
-
-        set_file_rotation(True)
-
-        [handler] = _file_handlers()
-        assert isinstance(handler, logging.handlers.RotatingFileHandler)
-        assert handler.maxBytes == 1234
-        assert handler.backupCount == 3
-
-    def test_enable_when_already_rotating_keeps_handler(self, tmp_path):
-        setup_logging(_logging_config(file=tmp_path / "test.log"))
-        [before] = _file_handlers()
-
-        set_file_rotation(True)
-
-        assert _file_handlers() == [before]
-
-    def test_watched_handler_follows_rotation_by_another_handler(self, tmp_path):
-        """Master (watching) keeps writing to the live file after a worker
-        (rotating) renames it, rather than to the rotated backup."""
-        log_file = tmp_path / "test.log"
-        setup_logging(_logging_config(file=log_file))
-        set_file_rotation(False)
-
-        log_file.rename(tmp_path / "test.log.1")  # what the rotating process does
-        logging.getLogger("test").warning("after rotation")
-
-        assert "after rotation" in log_file.read_text()
-        assert "after rotation" not in (tmp_path / "test.log.1").read_text()
-
-    def test_noop_without_file_logging(self, capsys):
-        setup_logging(_logging_config(file=Path("/root/forbidden/test.log")))
-        handlers = list(logging.getLogger().handlers)
-        assert qbt_logging._file_settings is None
-
-        set_file_rotation(False)
-
-        assert logging.getLogger().handlers == handlers
 
 
 class TestGetLogger:

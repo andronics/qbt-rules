@@ -1,0 +1,41 @@
+# qbt-rules under Docker Compose. Template-owned skeleton; see the wiki's
+# Deployment page.
+#
+#   docker compose -f contrib/docker/compose.yml up -d
+#   docker exec qbt-rules qbt-rules config     # effective config and sources
+#
+# Config: ./config/config.yaml (from contrib/qbt-rules.example.yaml), mounted
+# read-only. Secrets: as files under ./secrets, passed with QBT_RULES_<KEY>_FILE.
+
+services:
+  qbt-rules:
+    image: ghcr.io/andronics/qbt-rules:0.0.0 # x-release-please-version
+    container_name: qbt-rules
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:5000:5000"   # loopback only: put a reverse proxy in front
+
+    volumes:
+      - ./config:/etc/qbt-rules:ro
+      - ./state:/var/lib/qbt-rules
+      # - ./secrets:/run/secrets/qbt-rules:ro
+
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: "Europe/London"
+      # QBT_RULES_LOGGING_LEVEL: DEBUG
+      # QBT_RULES_SOME_TOKEN_FILE: /run/secrets/qbt-rules/some-token
+
+    # Hardening: read-only root, no new privileges, only the capabilities it needs
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    # The entrypoint chowns the state directory, then drops to PUID:PGID
+    cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
+
+    # The image's HEALTHCHECK polls /healthz

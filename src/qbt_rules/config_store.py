@@ -1,7 +1,8 @@
 """
 Reading and writing the config files the web editor works on
 
-EditableFile wraps one file (rules.yml) with what a browser editor needs:
+EditableFile wraps one file (rules.yml, in the state directory, /var/lib/qbt-rules, so the
+config directory can stay read-only) with what a browser editor needs:
 
 - An ETag (sha256 of the bytes on disk) handed out with every read, and
   required back with every write -- a write whose ETag no longer matches
@@ -13,16 +14,19 @@ EditableFile wraps one file (rules.yml) with what a browser editor needs:
   (the mount point can't be swapped out from under the mount), so that one
   case falls back to rewriting the file in place -- not atomic, which is
   why the backup below is taken first.
-- A backup of the previous content in <config_dir>/.history/ on every
-  save that changes anything, keeping the newest HISTORY_KEEP.
+- A backup of the previous content in the history directory (.history/
+  in the state directory, /var/lib/qbt-rules) on every save that changes
+  anything, keeping the newest HISTORY_KEEP.
+- A missing file reads as empty, and the first save creates it (and its
+  directory) -- so the editor works on a fresh install with no rules.yml yet.
 - A file the user made read-only (chmod 444) stays read-only: writable()
   reports it and write() refuses, rather than replace() quietly swapping
   in a new writable file (which a writable directory would allow).
 
-An fcntl lock serialises the check-then-write across Gunicorn worker
-processes, each of which has its own EditableFile.
+An fcntl lock (in the history directory) serialises the check-then-write across processes (the
+server, and a second instance pointed at the same files), each of which has its own EditableFile.
 
-redacted_config_view() is the read-only counterpart for config.yml, which
+redacted_config_view() is the read-only counterpart for config.yaml, which
 holds credentials and is only read at startup -- see its docstring.
 """
 
@@ -48,11 +52,10 @@ try:
 except ImportError:  # pragma: no cover - not POSIX
     fcntl = None  # type: ignore[assignment]  # checked before use; POSIX-only module
 
-from qbt_rules.config_loader import ENV_VAR_MAP
+from qbt_rules.config import ALIASES, ENV_PREFIX
 
 logger = logging.getLogger(__name__)
 
-HISTORY_DIRNAME = ".history"
 HISTORY_KEEP = 20
 
 # rules.yml.20261021T031542123456Z -- UTC, microseconds so two saves in
@@ -96,16 +99,27 @@ def _iso(ts: float) -> str:
     return datetime.fromtimestamp(ts, UTC).isoformat()
 
 
+def _nearest_existing(path: Path) -> Path:
+    """path, or its closest ancestor that exists (what mkdir -p would need to write)"""
+    while not path.exists() and path != path.parent:
+        path = path.parent
+    return path
+
+
 class EditableFile:
-    def __init__(self, path: Path, history_dir: Path | None = None, keep: int = HISTORY_KEEP):
+    def __init__(self, path: Path, history_dir: Path, keep: int = HISTORY_KEEP):
         self.path = Path(path)
-        self.history_dir = Path(history_dir) if history_dir else self.path.parent / HISTORY_DIRNAME
+        self.history_dir = Path(history_dir)
         self.keep = keep
 
     # -- reading ------------------------------------------------------------
 
     def read(self) -> FileSnapshot:
-        data = self.path.read_bytes()
+        """The file's content; a missing file is empty, with no modified_at"""
+        try:
+            data = self.path.read_bytes()
+        except FileNotFoundError:
+            return FileSnapshot(text="", etag=compute_etag(b""), modified_at=None, size=0)
         st = self.path.stat()
         return FileSnapshot(
             text=data.decode("utf-8"),
@@ -117,18 +131,29 @@ class EditableFile:
     def writable(self) -> tuple[bool, str | None]:
         """(can save, why not) -- checked before every write, and shown in
         the editor up front so it opens read-only instead of failing on save"""
-        if not os.access(self.path, os.W_OK):
+        if not self.path.exists():
+            # The first save creates the file, and its directory if need be (mkdir -p)
+            parent = _nearest_existing(self.path.parent)
+            if not os.access(parent, os.W_OK | os.X_OK):
+                return (
+                    False,
+                    f"{self.path} does not exist and {parent} is not writable, so it "
+                    "can't be created -- its directory (by default the state directory, "
+                    "/var/lib/qbt-rules) must be writable by the server",
+                )
+        elif not os.access(self.path, os.W_OK):
             try:
                 mode = stat.S_IMODE(self.path.stat().st_mode)
                 return (
                     False,
-                    f"{self.path.name} is read-only on disk (mode {mode:04o}) -- make it writable "
-                    "to edit here",
+                    f"{self.path} is read-only on disk (mode {mode:04o}) -- make it writable by "
+                    "the server to edit here",
                 )
             except OSError as e:
                 return False, f"{self.path.name} cannot be read: {e.strerror}"
-        if not os.access(self.path.parent, os.W_OK | os.X_OK):
-            return False, f"{self.path.parent} is not writable, so backups can't be kept"
+        history = _nearest_existing(self.history_dir)
+        if not os.access(history, os.W_OK | os.X_OK):
+            return False, f"{history} is not writable, so backups can't be kept"
         return True, None
 
     # -- writing ------------------------------------------------------------
@@ -167,26 +192,43 @@ class EditableFile:
 
         new_data = text.encode("utf-8")
         with self._lock():
+            existed = self.path.exists()
             current = self.read()
             if if_match != current.etag:
                 raise FileConflictError(current)
-            if new_data == current.text.encode("utf-8"):
+            if existed and new_data == current.text.encode("utf-8"):
                 return current, False
 
-            self._backup(current.text.encode("utf-8"))
-            self._replace(new_data)
+            if existed:
+                self._backup(current.text.encode("utf-8"))
+                self._replace(new_data)
+                kept = f"previous version kept in {self.history_dir}"
+            else:
+                self._create(new_data)
+                kept = "created"
             logger.info(
-                f"{self.path.name} saved from the web editor ({len(new_data)} bytes, "
-                f"previous version kept in {self.history_dir})"
+                f"{self.path.name} saved from the web editor ({len(new_data)} bytes, {kept})"
             )
             return self.read(), True
 
+    def _create(self, data: bytes) -> None:
+        """Write a new file: exclusive, so a file that appeared meanwhile isn't overwritten"""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(self.path, "xb") as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+        except FileExistsError:
+            raise FileConflictError(self.read()) from None
+
     def _replace(self, data: bytes) -> None:
         st = self.path.stat()
-        fd, tmp = tempfile.mkstemp(
-            prefix=f".{self.path.name}.", suffix=".tmp", dir=self.path.parent
-        )
+        tmp: str | None = None
         try:
+            fd, tmp = tempfile.mkstemp(
+                prefix=f".{self.path.name}.", suffix=".tmp", dir=self.path.parent
+            )
             with os.fdopen(fd, "wb") as f:
                 f.write(data)
                 f.flush()
@@ -198,11 +240,13 @@ class EditableFile:
                 os.chown(tmp, st.st_uid, st.st_gid)
             os.replace(tmp, self.path)
         except OSError as e:
-            with contextlib.suppress(OSError):
-                os.unlink(tmp)
-            if e.errno not in (errno.EBUSY, errno.EXDEV):
+            if tmp is not None:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp)
+            if e.errno not in (errno.EBUSY, errno.EXDEV, errno.EACCES, errno.EPERM):
                 raise
-            # Single-file bind mount: rewrite in place instead
+            # A single-file bind mount (EBUSY, EXDEV), or a writable file in a
+            # directory we can't write (EACCES, EPERM): rewrite in place instead
             logger.debug(f"Atomic replace of {self.path} failed ({e.strerror}); rewriting in place")
             with open(self.path, "r+b") as f:
                 f.write(data)
@@ -254,7 +298,7 @@ class EditableFile:
 
 
 # ---------------------------------------------------------------------------
-# config.yml, read-only
+# The config file (config.yaml), read-only
 # ---------------------------------------------------------------------------
 
 _SECRET_KEY = re.compile(
@@ -263,17 +307,20 @@ _SECRET_KEY = re.compile(
 REDACTED = "<redacted>"
 
 
-def _env_var_for(config_key: str) -> str:
-    """The env var that overrides a config.yml key -- legacy_cli.py's
-    resolve_section_config naming, plus ENV_VAR_MAP's exceptions"""
-    return ENV_VAR_MAP.get(config_key, "QBT_RULES_" + config_key.upper().replace(".", "_"))
+def _env_vars_for(config_key: str) -> list[str]:
+    """The variables that override a config-file key: its own name (interpose's
+    QBT_RULES_<KEY>), and for an aliased key (server.port, listen.port) the other's"""
+    keys = [config_key]
+    keys += [new for old, new in ALIASES.items() if old == config_key]
+    keys += [old for old, new in ALIASES.items() if new == config_key]
+    return [ENV_PREFIX + key.upper().replace(".", "_") for key in keys]
 
 
 def redacted_config_view(text: str, environ: Mapping[str, str] | None = None) -> dict[str, Any]:
     """
-    config.yml for display: credentials masked, env overrides pointed out
+    The config file (config.yaml) for display: credentials masked, env overrides pointed out
 
-    Read-only on purpose. config.yml is read once at startup (nothing in it
+    Read-only on purpose. config.yaml is read once at startup (nothing in it
     applies until a restart), its secrets can't round-trip through a masked
     view without merging them back in, and a bad save there stops the
     server from starting rather than leaving old rules running.
@@ -298,7 +345,7 @@ def redacted_config_view(text: str, environ: Mapping[str, str] | None = None) ->
             "issues": [
                 {
                     "severity": "error",
-                    "message": f"config.yml has a YAML syntax error, so it is not shown: {e}",
+                    "message": f"The config file has a YAML syntax error, so it is not shown: {e}",
                     "path": "",
                     "line": mark.line + 1 if mark else None,
                     "column": mark.column + 1 if mark else None,
@@ -327,8 +374,8 @@ def redacted_config_view(text: str, environ: Mapping[str, str] | None = None) ->
                     ):
                         spans.append((value_node.start_mark.index, value_node.end_mark.index))
                         redacted.append(dotted)
-                    env_var = _env_var_for(dotted)
-                    for name in (f"{env_var}_FILE", env_var):
+                    names = [n for v in _env_vars_for(dotted) for n in (f"{v}_FILE", v)]
+                    for name in names:
                         if name in environ:
                             issues.append(
                                 {

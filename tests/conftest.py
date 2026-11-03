@@ -1,52 +1,44 @@
-"""Pytest configuration and comprehensive fixtures for qbt-rules test suite."""
+"""Shared fixtures: the template's (clean_env, write_config) and the project's."""
 
-import atexit
 import os
-import shutil
-import tempfile
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
 import pytest
 
-# prometheus_client resolves its multiprocess-vs-single-process value
-# storage exactly once, at its own first import anywhere in the process --
-# changing PROMETHEUS_MULTIPROC_DIR afterward has no effect, since the
-# resolved ValueClass is cached module-level state for the rest of the
-# process's life. This must therefore be set here, at the very top of the
-# first file pytest loads (before any test module's own `from qbt_rules
-# import metrics`/engine.py/worker.py/etc. imports can trigger prometheus_client's
-# actual first import), not inside a per-test fixture in test_metrics.py.
-_metrics_test_dir = tempfile.mkdtemp(prefix="qbtr-test-metrics-")
-os.environ.setdefault("PROMETHEUS_MULTIPROC_DIR", _metrics_test_dir)
-atexit.register(shutil.rmtree, _metrics_test_dir, ignore_errors=True)
+from qbt_rules.config import ENV_PREFIX
 
 
 @pytest.fixture(autouse=True)
-def reset_metrics_module_state():
-    """
-    Reset qbt_rules.metrics's module-level enabled flag and Counter/Histogram
-    references before and after every test in the whole suite
+def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test sees the developer's own QBT_RULES_* variables."""
+    for name in list(os.environ):
+        if name.startswith(ENV_PREFIX):
+            monkeypatch.delenv(name)
 
-    Applies across every test file (not just test_metrics.py) since
-    test_web.py's /metrics tests also call metrics.init(enabled=True),
-    and without this reset that would otherwise leak "enabled" state into
-    every test that runs afterward in the same pytest session.
-    """
+
+@pytest.fixture
+def write_config(tmp_path: Path) -> Callable[..., Path]:
+    """Write a config file and return its path."""
+
+    def write(text: str) -> Path:
+        path = tmp_path / "config.yaml"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    return write
+
+
+@pytest.fixture(autouse=True)
+def reset_metrics_module_state() -> Iterator[None]:
+    """No test sees the metrics another test's app activated (metrics.activate)."""
     from qbt_rules import metrics
 
-    def _reset():
-        metrics._enabled = False
-        metrics._actions_executed = None
-        metrics._job_duration = None
-        metrics._scheduler_fires = None
-        metrics._http_requests = None
-        metrics._http_duration = None
-
-    _reset()
+    metrics.activate(None)
     yield
-    _reset()
+    metrics.activate(None)
 
 
 @pytest.fixture(autouse=True)
@@ -95,7 +87,7 @@ class MockQBittorrentAPI:
         }
 
         # Track API calls for verification
-        self.calls = {
+        self.calls: dict[str, list[Any]] = {
             "stop": [],
             "start": [],
             "force_start": [],
@@ -911,51 +903,6 @@ def mock_config():
     config.get = Mock(return_value=None)
     config.config_dir = Path("/config")
     return config
-
-
-@pytest.fixture
-def tmp_config_dir(tmp_path):
-    """Create temporary config directory with example files."""
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-
-    # Create config.yml
-    config_yml = config_dir / "config.yml"
-    config_yml.write_text("""
-qbittorrent:
-  host: http://localhost:8080
-  username: admin
-  password: adminpass
-
-logging:
-  level: INFO
-  trace: false
-
-dry_run: false
-""")
-
-    # Create rules.yml
-    rules_yml = config_dir / "rules.yml"
-    rules_yml.write_text("""
-rules:
-  - id: test-rule
-    meta:
-      description: "Test rule"
-    enabled: true
-    stop_on_match: false
-    conditions:
-      context: adhoc-run
-      all:
-        - field: info.ratio
-          operator: ">="
-          value: 1.0
-    actions:
-      - type: add_tag
-        params:
-          tag: "test"
-""")
-
-    return config_dir
 
 
 # ============================================================================

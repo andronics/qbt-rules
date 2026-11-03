@@ -1,0 +1,131 @@
+# Template-owned: template-python. The stack slot base-ci.yml's required `ci` job calls:
+# the jobs that need the project installed. Cheap checks (the wiki standard, version and
+# lock file) run in base-ci's `checks` job through scripts/checks.d/20-python.sh.
+name: Stack
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      # The `build:` packages in contrib/system-packages.txt (project-owned), for
+      # dependencies that build from source. None listed: nothing is installed.
+      - name: System packages
+        run: |
+          if grep -q '^build:.*[^[:space:]]' contrib/system-packages.txt; then
+            sudo apt-get update
+            sed -n 's/^build://p' contrib/system-packages.txt | xargs sudo apt-get install -y --no-install-recommends
+          fi
+
+      - name: Install (from the lock file)
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check
+
+      - name: Format
+        run: uv run ruff format --check
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Tests (with coverage floor)
+        run: uv run pytest
+
+      - name: Import and entry-point smoke test
+        run: |
+          uv run python -c "import qbt_rules; print('qbt_rules', qbt_rules.__version__)"
+          uv run qbt-rules --help > /dev/null
+
+      - name: Generated wiki sections and docs/openapi.json are current
+        if: matrix.python-version == '3.13'
+        run: uv run scripts/gen-wiki.py --check
+
+  # docs/openapi.json against the base branch's (the Test job keeps it current): a breaking
+  # change to the HTTP contract fails unless the PR declares it, with `!` in its Conventional
+  # Commit title (`feat!: ...`) or `BREAKING CHANGE:` in its body, so release-please bumps the
+  # major version. Pull requests only (template-python decision 0005).
+  api-breaking:
+    name: Breaking API changes are declared
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install oasdiff
+        env:
+          VERSION: 1.35.0
+          SHA256: a8023002fcb2eaa7f5758148a9303cb63d33b939886df312268bc0fc7b939140
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o "$RUNNER_TEMP/oasdiff.tar.gz" \
+            "https://github.com/oasdiff/oasdiff/releases/download/v$VERSION/oasdiff_${VERSION}_linux_amd64.tar.gz"
+          echo "$SHA256  $RUNNER_TEMP/oasdiff.tar.gz" | sha256sum -c --quiet
+          tar -xzf "$RUNNER_TEMP/oasdiff.tar.gz" -C "$HOME/.local/bin" oasdiff
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Compare docs/openapi.json with the base branch's
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          git fetch --quiet --depth=1 origin "$BASE_REF"
+          if ! git cat-file -e FETCH_HEAD:docs/openapi.json 2> /dev/null; then
+            echo "$BASE_REF has no docs/openapi.json yet: nothing to compare"
+            exit 0
+          fi
+          git show FETCH_HEAD:docs/openapi.json > "$RUNNER_TEMP/base-openapi.json"
+          rc=0
+          oasdiff breaking "$RUNNER_TEMP/base-openapi.json" docs/openapi.json --fail-on ERR || rc=$?
+          [ "$rc" -ne 0 ] || exit 0
+          # 1 is "breaking changes found"; anything else is oasdiff failing.
+          [ "$rc" -eq 1 ] || { echo "::error::oasdiff failed (exit $rc)"; exit "$rc"; }
+          if printf '%s\n' "$TITLE" | grep -qE '^[a-z]+(\([^)]*\))?!:' \
+              || printf '%s\n' "$BODY" | grep -q '^BREAKING[ -]CHANGE:'; then
+            echo "::warning::Breaking API change, declared by this PR: release-please bumps the major version"
+            exit 0
+          fi
+          echo "::error::Breaking API change: make it compatible, or declare it (feat!: in the PR title, or BREAKING CHANGE: in its body)"
+          exit 1
+
+  markdown:
+    name: Markdown lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The image, globs and config live in the script, so a local run matches this one.
+      - name: markdownlint
+        run: scripts/check-markdown.sh
+
+  manifests:
+    name: Dockerfile and contrib manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install validators
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o "$HOME/.local/bin/hadolint" \
+            https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64
+          chmod +x "$HOME/.local/bin/hadolint"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Validate
+        run: scripts/check-manifests.sh

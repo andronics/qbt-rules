@@ -1,5 +1,6 @@
 """Comprehensive tests for ActionExecutor class in engine.py."""
 
+from typing import Any
 from unittest.mock import Mock, patch
 
 from qbt_rules.engine import ActionExecutor
@@ -405,7 +406,7 @@ class TestPriorityActions:
     four already existed in qbittorrent.py, but weren't wired into the action
     dispatch -- using them from a rule fell through to the 'Unknown action
     type' branch (logged error, returned False), silently never doing
-    anything. Found while verifying advanced-rules-example.yml Rule 9,
+    anything. Found while verifying the Advanced Rules Example's Rule 9,
     which uses increase_priority as part of its process-hd-content action
     sequence."""
 
@@ -634,7 +635,7 @@ class TestActionExecutorIntegration:
         mock_api.stop_torrents = Mock(return_value=True)
         executor = ActionExecutor(mock_api, dry_run=False)
 
-        actions = [
+        actions: list[dict[str, Any]] = [
             {"type": "set_category", "params": {"category": "movies"}},
             {"type": "add_tag", "params": {"tags": ["hd"]}},
             {"type": "stop"},

@@ -84,7 +84,7 @@
 <div class="card">
   <div class="rules-head">
     <h2>Rules</h2>
-    {% if config_available %}<a class="edit-btn" href="{{ url_for('dashboard_rules_edit') }}">Edit rules.yml</a>{% endif %}
+    {% if config_available %}<a class="edit-btn" href="{{ href('dashboard_rules_edit') }}">Edit rules.yml</a>{% endif %}
   </div>
   {% if not config_available %}
   <p class="empty">Rules view is unavailable (server started without a config reference).</p>
@@ -121,7 +121,7 @@
         <summary>Show resolved YAML</summary>
         <pre>{{ rule_yaml }}</pre>
       </details>
-      <p class="rule-edit"><a href="{{ url_for('dashboard_rules_edit') }}#rule={{ rule.id|urlencode }}">Edit this rule</a></p>
+      <p class="rule-edit"><a href="{{ href('dashboard_rules_edit') }}#rule={{ rule.id|urlencode }}">Edit this rule</a></p>
     </div>
   </details>
   {% endfor %}

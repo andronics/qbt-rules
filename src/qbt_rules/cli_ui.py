@@ -1,8 +1,8 @@
 """
 CLI data-display rendering
 
-Dedicated output layer for data-display commands (--list-jobs, --job-status,
---stats, --cancel-job, --list-rules). Writes directly to stdout via print() --
+Dedicated output layer for data-display commands (jobs list, jobs status,
+jobs cancel, stats, rules list, execute). Writes directly to stdout via print() --
 never goes through the logging module, so diagnostic logging (timestamps,
 levels) stays fully separate from user-facing tables and detail dumps.
 """

@@ -191,7 +191,7 @@ class TestLoggingSetupError:
         """Logging error includes fix suggestion."""
         error = LoggingSetupError("/var/log/qbt.log", "Permission denied")
         assert error.fix is not None
-        assert "LOG_FILE" in error.fix
+        assert "QBT_RULES_LOGGING_FILE" in error.fix
 
 
 # ============================================================================

@@ -6,7 +6,7 @@ when its cron expression fires, replacing the need for an external cron
 job / systemd timer / sidecar container hitting the HTTP API on a schedule.
 
 Runs in a separate thread, structurally parallel to Worker. Calls
-queue.enqueue() directly -- no HTTP round-trip, no Flask request context
+queue.enqueue() directly -- no HTTP round-trip, no request context
 needed, since QueueManager.enqueue() has no such coupling.
 """
 
@@ -30,13 +30,9 @@ class Scheduler:
     Runs in a separate thread, checking each configured entry's next-fire
     time on every poll tick and enqueuing a job when it's due.
 
-    Gunicorn multi-worker note: this must be started once, before the
-    Gunicorn arbiter forks worker processes (the same place Worker.start()
-    is called in legacy_cli.py's run_server_mode()), and must NOT be restarted in
-    Gunicorn's post_fork hook the way Worker's thread is. A thread started
-    before fork() continues running in the master/arbiter process after
-    forking, so starting it there (and only there) means it fires exactly
-    once per cron tick regardless of server.workers.
+    The server runs one process (template-python decision 0008), and the
+    app's lifespan runs this once, in a thread (run()), so it fires once
+    per cron tick. A second replica would fire every entry a second time.
     """
 
     def __init__(
@@ -56,6 +52,7 @@ class Scheduler:
 
         self.running = False
         self.thread: threading.Thread | None = None
+        self._stop = threading.Event()
         self.last_fire: dict[str, Any] | None = None
 
         now = time.time()
@@ -84,7 +81,10 @@ class Scheduler:
             return
 
         self.running = True
-        self.thread = threading.Thread(target=self._run_loop, daemon=False, name="scheduler")
+        self._stop = threading.Event()
+        self.thread = threading.Thread(
+            target=self._run_loop, args=(self._stop,), daemon=False, name="scheduler"
+        )
         self.thread.start()
         logger.info("Scheduler thread started")
 
@@ -100,6 +100,7 @@ class Scheduler:
 
         logger.info("Stopping scheduler...")
         self.running = False
+        self._stop.set()
 
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=timeout)
@@ -108,6 +109,24 @@ class Scheduler:
                 logger.warning(f"Scheduler did not stop within {timeout}s timeout")
             else:
                 logger.info("Scheduler stopped gracefully")
+
+    @property
+    def has_entries(self) -> bool:
+        return bool(self._entries)
+
+    def run(self, stop: threading.Event) -> None:
+        """
+        The scheduler loop, in the calling thread, until stop is set
+
+        The server's target for api.BackgroundThreads (registered only when
+        there are entries)
+        """
+        self.thread = threading.current_thread()
+        self.running = True
+        try:
+            self._run_loop(stop)
+        finally:
+            self.running = False
 
     def is_alive(self) -> bool:
         """Check if scheduler thread is alive"""
@@ -131,11 +150,11 @@ class Scheduler:
             ],
         }
 
-    def _run_loop(self) -> None:
-        """Main scheduler loop - runs in separate thread"""
+    def _run_loop(self, stop: threading.Event) -> None:
+        """Main scheduler loop: until stop is set"""
         logger.info("Scheduler loop started")
 
-        while self.running:
+        while not stop.is_set():
             try:
                 now = time.time()
                 for entry in self._entries:
@@ -143,11 +162,11 @@ class Scheduler:
                         self._fire(entry)
                         entry["next_fire"] = entry["iter"].get_next(float)
 
-                time.sleep(self.poll_interval)
+                stop.wait(self.poll_interval)
 
             except Exception as e:
                 logger.error(f"Unexpected error in scheduler loop: {e}", exc_info=True)
-                time.sleep(self.poll_interval)
+                stop.wait(self.poll_interval)
 
         logger.info("Scheduler loop exited")
 

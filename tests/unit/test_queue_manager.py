@@ -137,7 +137,7 @@ class TestQueueManagerStaticMethods:
 
     def test_validate_status_none(self):
         """validate_status() returns False for None"""
-        assert QueueManager.validate_status(None) is False
+        assert QueueManager.validate_status(None) is False  # type: ignore[arg-type]  # runtime check of a non-str
 
     def test_validate_status_uppercase(self):
         """validate_status() returns False for uppercase"""
@@ -161,7 +161,7 @@ class TestQueueManagerCreateJobDict:
 
         # Create a concrete subclass for testing
         class ConcreteQueue(QueueManager):
-            def enqueue(self, context=None, hash_filter=None):
+            def enqueue(self, context=None, hash_filter=None, dry_run=False):
                 pass
 
             def dequeue(self):
@@ -173,7 +173,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(
@@ -215,7 +215,7 @@ class TestQueueManagerCreateJobDict:
         """create_job_dict() with hash filter"""
 
         class ConcreteQueue(QueueManager):
-            def enqueue(self, context=None, hash_filter=None):
+            def enqueue(self, context=None, hash_filter=None, dry_run=False):
                 pass
 
             def dequeue(self):
@@ -227,7 +227,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(
@@ -259,7 +259,7 @@ class TestQueueManagerCreateJobDict:
         """create_job_dict() with custom status"""
 
         class ConcreteQueue(QueueManager):
-            def enqueue(self, context=None, hash_filter=None):
+            def enqueue(self, context=None, hash_filter=None, dry_run=False):
                 pass
 
             def dequeue(self):
@@ -271,7 +271,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(
@@ -305,7 +305,7 @@ class TestQueueManagerCreateJobDict:
         """create_job_dict() with datetime timestamps"""
 
         class ConcreteQueue(QueueManager):
-            def enqueue(self, context=None, hash_filter=None):
+            def enqueue(self, context=None, hash_filter=None, dry_run=False):
                 pass
 
             def dequeue(self):
@@ -317,7 +317,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(
@@ -368,7 +368,7 @@ class TestQueueManagerCreateJobDict:
         """create_job_dict() with string timestamps (passthrough)"""
 
         class ConcreteQueue(QueueManager):
-            def enqueue(self, context=None, hash_filter=None):
+            def enqueue(self, context=None, hash_filter=None, dry_run=False):
                 pass
 
             def dequeue(self):
@@ -380,7 +380,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(
@@ -407,7 +407,10 @@ class TestQueueManagerCreateJobDict:
         created_str = "2025-01-01T12:00:00"
 
         job_dict = queue.create_job_dict(
-            job_id="test-id", context="weekly-cleanup", hash_filter=None, created_at=created_str
+            job_id="test-id",
+            context="weekly-cleanup",
+            hash_filter=None,
+            created_at=created_str,  # type: ignore[arg-type]  # str passthrough
         )
 
         # Should pass through string timestamps unchanged
@@ -417,7 +420,7 @@ class TestQueueManagerCreateJobDict:
         """create_job_dict() with result data"""
 
         class ConcreteQueue(QueueManager):
-            def enqueue(self, context=None, hash_filter=None):
+            def enqueue(self, context=None, hash_filter=None, dry_run=False):
                 pass
 
             def dequeue(self):
@@ -429,7 +432,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(
@@ -466,7 +469,7 @@ class TestQueueManagerCreateJobDict:
         """create_job_dict() with error message"""
 
         class ConcreteQueue(QueueManager):
-            def enqueue(self, context=None, hash_filter=None):
+            def enqueue(self, context=None, hash_filter=None, dry_run=False):
                 pass
 
             def dequeue(self):
@@ -478,7 +481,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(
@@ -518,7 +521,7 @@ class TestQueueManagerCreateJobDict:
         """create_job_dict() auto-creates created_at if not provided"""
 
         class ConcreteQueue(QueueManager):
-            def enqueue(self, context=None, hash_filter=None):
+            def enqueue(self, context=None, hash_filter=None, dry_run=False):
                 pass
 
             def dequeue(self):
@@ -530,7 +533,7 @@ class TestQueueManagerCreateJobDict:
             def list_jobs(self, status=None, context=None, limit=50, offset=0):
                 pass
 
-            def count_jobs(self, status=None):
+            def count_jobs(self, status=None, context=None):
                 pass
 
             def update_status(
@@ -652,7 +655,7 @@ class TestCreateQueueFactory:
                 del sys.modules[key]
 
             # Block redis import
-            sys.modules["redis"] = None
+            sys.modules["redis"] = None  # type: ignore[assignment]  # None blocks the import
 
             # Attempt to create Redis queue should raise ValueError
             with pytest.raises(ValueError) as exc_info:
@@ -712,4 +715,4 @@ class TestCreateQueueFactory:
     def test_create_queue_none_backend(self):
         """create_queue() raises ValueError for None"""
         with pytest.raises(ValueError):
-            create_queue(None)
+            create_queue(None)  # type: ignore[arg-type]  # runtime check of a non-str

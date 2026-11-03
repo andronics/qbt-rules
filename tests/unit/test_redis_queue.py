@@ -53,7 +53,7 @@ class TestRedisImportError:
                 del sys.modules["redis"]
 
             # Add sentinel to block redis import
-            sys.modules["redis"] = None
+            sys.modules["redis"] = None  # type: ignore[assignment]  # None blocks the import
 
             # Attempt import should raise ImportError
             with pytest.raises(ImportError) as exc_info:
@@ -93,7 +93,7 @@ def queue(redis_client, mocker):
     q = RedisQueue(redis_url="redis://localhost:6379/15")
     # Replace with actual client
     q.redis = redis_client
-    q.pool = None
+    q.pool = None  # type: ignore[assignment]  # close() tolerates a None pool
 
     yield q
 
@@ -575,6 +575,17 @@ class TestRedisQueueListJobs:
 
 class TestRedisQueueCountJobs:
     """Test count_jobs() method"""
+
+    def test_count_jobs_by_context(self, queue):
+        """Should take list_jobs()'s context filter too (#28 item 2)"""
+        queue.enqueue(context="nightly")
+        queue.enqueue(context="nightly")
+        queue.enqueue(context="other")
+        queue.dequeue()  # the oldest nightly job: PROCESSING
+
+        assert queue.count_jobs(context="nightly") == 2
+        assert queue.count_jobs(status=JobStatus.PENDING, context="nightly") == 1
+        assert queue.count_jobs(context="none-such") == 0
 
     def test_count_jobs_total(self, queue):
         """Should count total jobs when no status filter"""

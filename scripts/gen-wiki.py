@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""Regenerate the generated sections of docs/wiki/ from the code. Template-owned: template-python.
+
+    uv run scripts/gen-wiki.py           # rewrite the sections and docs/openapi.json
+    uv run scripts/gen-wiki.py --check   # CI: fail if any of them is stale
+
+A generated section sits between markers, and everything between them is replaced:
+
+    <!-- generated:start settings -->
+    ...
+    <!-- generated:end settings -->
+
+Blocks: settings (config.SETTINGS), cli (the Typer app), http-api (the OpenAPI schema).
+Write prose around the markers, never inside them.
+
+docs/openapi.json is the app's OpenAPI schema, committed so a review sees every change to the
+HTTP contract (models included, not just the endpoint table). Its info.version is fixed: the
+schema changes with the code, not with each release (template-python decision 0005).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+WIKI = Path("docs/wiki")
+OPENAPI = Path("docs/openapi.json")
+
+
+def _cell(text: object) -> str:
+    return str(text).replace("|", "\\|").replace("\n", " ")
+
+
+def settings() -> str:
+    from qbt_rules.config import SETTINGS
+
+    rows = [
+        "| Key | Environment variable | Default | Description |",
+        "|---|---|---|---|",
+    ]
+    for s in SETTINGS:
+        # A config.py from before list settings (its src/ is the project's) has no is_list.
+        is_list = bool(getattr(s, "is_list", False))
+        empty = "*(empty list)*" if is_list else "*(none)*"
+        default = empty if s.default == "" else f"`{s.default}`"
+        listed = " A list: YAML, or comma-separated." if is_list else ""
+        secret = " 🔒 Secret: use the `_FILE` variant." if s.secret else ""
+        rows.append(f"| `{s.key}` | `{s.env}` | {default} | {_cell(s.help)}{listed}{secret} |")
+    return "\n".join(rows)
+
+
+def cli() -> str:
+    import typer
+
+    from qbt_rules.cli import app
+
+    # Typer vendors click, so duck-type the command objects instead of
+    # importing click's classes.
+    root: Any = typer.main.get_command(app)
+    out: list[str] = []
+    for name, cmd in _leaves(root, ""):
+        out += [f"### `qbt-rules {name}`", "", (cmd.help or "").strip(), ""]
+        arguments = [p for p in cmd.params if getattr(p, "param_type_name", "") == "argument"]
+        if arguments:
+            out += ["| Argument | Description |", "|---|---|"]
+            for arg in arguments:
+                metavar = arg.metavar or arg.name.upper()
+                out.append(f"| `{metavar}` | {_cell(getattr(arg, 'help', '') or '')} |")
+            out.append("")
+        options = [p for p in cmd.params if getattr(p, "param_type_name", "") == "option"]
+        if options:
+            out += ["| Option | Environment variable | Description |", "|---|---|---|"]
+            for opt in options:
+                flags = ", ".join(f"`{o}`" for o in [*opt.opts, *opt.secondary_opts])
+                env = f"`{opt.envvar}`" if isinstance(opt.envvar, str) else ""
+                out.append(f"| {flags} | {env} | {_cell(opt.help or '')} |")
+            out.append("")
+    return "\n".join(out).rstrip()
+
+
+def _leaves(group: Any, prefix: str) -> list[tuple[str, Any]]:
+    """Every runnable command under a group, sub-apps (`app.add_typer`) included."""
+    leaves = []
+    for name, cmd in sorted(getattr(group, "commands", {}).items()):
+        if hasattr(cmd, "commands"):
+            leaves += _leaves(cmd, f"{prefix}{name} ")
+        else:
+            leaves.append((f"{prefix}{name}", cmd))
+    return leaves
+
+
+def _schema() -> dict[str, Any]:
+    from qbt_rules.api import create_app
+    from qbt_rules.config import load_config
+
+    schema: dict[str, Any] = create_app(load_config(Path("/nonexistent"), environ={})).openapi()
+    return schema
+
+
+def openapi_json() -> str:
+    schema = _schema()
+    schema["info"]["version"] = "snapshot"  # the contract, not the build: see the docstring
+    return json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
+
+
+def http_api() -> str:
+    schema = _schema()
+    rows = ["| Method | Path | Summary |", "|---|---|---|"]
+    for path, ops in sorted(schema["paths"].items()):
+        for method, op in sorted(ops.items()):
+            rows.append(f"| `{method.upper()}` | `{path}` | {_cell(op.get('summary', ''))} |")
+    return "\n".join(rows)
+
+
+BLOCKS: dict[str, Callable[..., str]] = {
+    "settings": settings,
+    "cli": cli,
+    "http-api": http_api,
+}
+
+
+def render(text: str) -> str:
+    def replace(m: re.Match[str]) -> str:
+        name = m.group(1)
+        if name not in BLOCKS:
+            raise SystemExit(f"error: unknown generated block {name!r}")
+        return f"{m.group(0).split('-->')[0]}-->\n{BLOCKS[name]()}\n<!-- generated:end {name} -->"
+
+    pattern = re.compile(
+        r"<!--\s*generated:start\s+(\S+)\s*-->.*?<!--\s*generated:end\s+\1\s*-->", re.S
+    )
+    return pattern.sub(replace, text)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--check", action="store_true", help="fail if a section is stale")
+    args = parser.parse_args(argv)
+
+    stale = []
+    for page in sorted(WIKI.glob("*.md")):
+        text = page.read_text(encoding="utf-8")
+        new = render(text)
+        if new != text:
+            stale.append(page)
+            if not args.check:
+                page.write_text(new, encoding="utf-8")
+    snapshot = openapi_json()
+    if not OPENAPI.is_file() or OPENAPI.read_text(encoding="utf-8") != snapshot:
+        stale.append(OPENAPI)
+        if not args.check:
+            OPENAPI.parent.mkdir(parents=True, exist_ok=True)
+            OPENAPI.write_text(snapshot, encoding="utf-8")
+    if args.check and stale:
+        for page in stale:
+            print(f"error: {page}: generated content is stale")
+        print("Run `uv run scripts/gen-wiki.py` and commit the result.")
+        return 1
+    print(("stale: " if args.check else "updated: ") + (", ".join(map(str, stale)) or "none"))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

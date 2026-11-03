@@ -8,17 +8,40 @@ Runs in separate thread with graceful shutdown support.
 import logging
 import threading
 import time
-import traceback
 from datetime import UTC, datetime
 from typing import Any
 
 from qbt_rules import metrics
 from qbt_rules.config_loader import Config
 from qbt_rules.engine import RulesEngine
+from qbt_rules.errors import QBittorrentError
 from qbt_rules.qbittorrent import QBittorrentAPI
 from qbt_rules.queue_manager import JobStatus, QueueManager
 
 logger = logging.getLogger(__name__)
+
+# The longest a failed job's error message gets (the traceback is in the server log)
+MAX_ERROR_LENGTH = 500
+
+
+def job_error(e: BaseException) -> str:
+    """A failed job's ``error``: one line naming the exception, never its traceback (#41).
+
+    A QBittorrentError's details and fix are folded onto the line, so ``Cannot reach
+    qBittorrent server`` keeps its host and what to check.
+    """
+    if isinstance(e, QBittorrentError):
+        extra = [f"{key}: {value}" for key, value in e.details.items()]
+        if e.fix:
+            extra.append(f"Fix: {e.fix}")
+        text = f"{e.message} ({'; '.join(extra)})" if extra else e.message
+    else:
+        text = str(e)
+    text = "; ".join(line.strip() for line in text.splitlines() if line.strip())
+    line = f"{type(e).__name__}: {text}" if text else type(e).__name__
+    if len(line) > MAX_ERROR_LENGTH:
+        line = line[: MAX_ERROR_LENGTH - 1] + "\u2026"
+    return line
 
 
 class Worker:
@@ -73,12 +96,13 @@ class Worker:
 
         self.running = False
         self.thread: threading.Thread | None = None
+        self._stop = threading.Event()
         self.last_job_completed: datetime | None = None
 
         logger.info("Worker initialized")
 
     def start(self) -> None:
-        """Start worker thread"""
+        """Start the worker in a thread of its own (tests; the server uses run())"""
         # Check if truly running (thread exists and is alive)
         if self.running and self.thread and self.thread.is_alive():
             logger.warning("Worker already running")
@@ -86,7 +110,10 @@ class Worker:
 
         # Reset state and start new thread
         self.running = True
-        self.thread = threading.Thread(target=self._run_loop, daemon=False, name="worker")
+        self._stop = threading.Event()
+        self.thread = threading.Thread(
+            target=self._run_loop, args=(self._stop,), daemon=False, name="worker"
+        )
         self.thread.start()
         logger.info("Worker thread started")
 
@@ -102,6 +129,7 @@ class Worker:
 
         logger.info("Stopping worker...")
         self.running = False
+        self._stop.set()
 
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=timeout)
@@ -110,6 +138,21 @@ class Worker:
                 logger.warning(f"Worker did not stop within {timeout}s timeout")
             else:
                 logger.info("Worker stopped gracefully")
+
+    def run(self, stop: threading.Event) -> None:
+        """
+        The worker loop, in the calling thread, until stop is set
+
+        The server's target for api.BackgroundThreads: the app's lifespan
+        starts it and, on shutdown, sets stop and joins the thread. A job
+        that is running finishes first (the join waits a few seconds for it).
+        """
+        self.thread = threading.current_thread()
+        self.running = True
+        try:
+            self._run_loop(stop)
+        finally:
+            self.running = False
 
     def is_alive(self) -> bool:
         """Check if worker thread is alive"""
@@ -131,11 +174,11 @@ class Worker:
             "queue_depth": self.queue.get_queue_depth(),
         }
 
-    def _run_loop(self) -> None:
-        """Main worker loop - runs in separate thread"""
+    def _run_loop(self, stop: threading.Event) -> None:
+        """Main worker loop: until stop is set"""
         logger.info("Worker loop started")
 
-        while self.running:
+        while not stop.is_set():
             try:
                 self._maybe_cleanup()
 
@@ -146,12 +189,12 @@ class Worker:
                     # Process job
                     self._process_job(job)
                 else:
-                    # Queue empty, sleep and retry
-                    time.sleep(self.poll_interval)
+                    # Queue empty: wait and retry, waking at once on stop
+                    stop.wait(self.poll_interval)
 
             except Exception as e:
                 logger.error(f"Unexpected error in worker loop: {e}", exc_info=True)
-                time.sleep(self.poll_interval)
+                stop.wait(self.poll_interval)
 
         logger.info("Worker loop exited")
 
@@ -222,22 +265,19 @@ class Worker:
             )
 
         except Exception as e:
-            # Mark job as failed
-            error_msg = f"{type(e).__name__}: {e!s}"
-            error_trace = traceback.format_exc()
-
+            # Mark job as failed: one line in the job, the traceback in the server log
+            error_msg = job_error(e)
             completed_at = datetime.now(UTC)
             self.queue.update_status(
                 job_id=job_id,
                 status=JobStatus.FAILED,
                 started_at=started_at,
                 completed_at=completed_at,
-                error=error_trace,
+                error=error_msg,
             )
             metrics.record_job_duration((completed_at - started_at).total_seconds())
 
-            logger.error(f"Job {job_id} failed: {error_msg}")
-            logger.debug(f"Job {job_id} traceback:\n{error_trace}")
+            logger.exception(f"Job {job_id} failed: {error_msg}")
 
     def _execute_job(
         self, context: str | None, hash_filter: str | None, job_dry_run: bool = False
