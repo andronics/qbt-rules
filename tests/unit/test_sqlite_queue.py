@@ -1689,3 +1689,114 @@ class TestSQLiteQueueCleanup:
         assert queue.get_job(cancelled) is not None
         assert "Cleaned up" not in caplog.text
         queue.close()
+
+
+class TestSQLiteQueueSpaceReclaim:
+    """Cleanup gives the space back: WAL truncated, db vacuumed after a large prune (#50)"""
+
+    @staticmethod
+    def _insert_finished(queue, count, days_old, payload=""):
+        """Insert finished jobs directly; fast enough for thousands of rows"""
+        when = (datetime.now(UTC) - timedelta(days=days_old)).isoformat()
+        conn = queue._get_connection()
+        conn.execute("BEGIN")
+        conn.executemany(
+            "INSERT INTO jobs (id, status, created_at, completed_at, result) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ((f"{days_old}-{i}", JobStatus.COMPLETED, when, when, payload) for i in range(count)),
+        )
+        conn.execute("COMMIT")
+
+    def test_journal_size_limit_set_on_connect(self, tmp_path):
+        queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
+        limit = queue._get_connection().execute("PRAGMA journal_size_limit").fetchone()[0]
+        assert limit == SQLiteQueue.JOURNAL_SIZE_LIMIT == 64 * 1024 * 1024
+        queue.close()
+
+    def test_cleanup_truncates_wal(self, tmp_path):
+        queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
+        self._insert_finished(queue, 50, days_old=10, payload="x" * 2000)
+        wal = tmp_path / "test.db-wal"
+        assert wal.stat().st_size > 0
+
+        assert queue.cleanup_old_jobs(retention_period=7 * 86400) == 50
+
+        assert wal.stat().st_size == 0
+        queue.close()
+
+    def test_cleanup_without_deletions_skips_checkpoint(self, tmp_path, monkeypatch):
+        queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
+        calls = []
+        monkeypatch.setattr(queue, "_checkpoint_truncate", lambda conn: calls.append(conn))
+        assert queue.cleanup_old_jobs(retention_period=7 * 86400) == 0
+        assert calls == []
+        queue.close()
+
+    def test_large_share_vacuums_and_shrinks_db(self, tmp_path, caplog):
+        queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
+        self._insert_finished(queue, 2000, days_old=10, payload="x" * 2000)
+        self._insert_finished(queue, 100, days_old=1)
+        queue._get_connection().execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        db = tmp_path / "test.db"
+        size_before = db.stat().st_size
+
+        with caplog.at_level("INFO", logger="qbt_rules.queue_backends.sqlite_queue"):
+            assert queue.cleanup_old_jobs(retention_period=7 * 86400) == 2000
+
+        assert "VACUUM after removing 2000 of 2100 jobs took" in caplog.text
+        assert db.stat().st_size < size_before / 4
+        assert (tmp_path / "test.db-wal").stat().st_size == 0
+        assert queue.count_jobs() == 100
+        queue.close()
+
+    @pytest.mark.parametrize(
+        ("old", "recent"),
+        [
+            (500, 0),  # 100% of the jobs, but too few rows
+            (1500, 6000),  # enough rows, but only 20% of the jobs
+        ],
+    )
+    def test_small_cleanup_does_not_vacuum(self, tmp_path, monkeypatch, old, recent):
+        queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
+        self._insert_finished(queue, old, days_old=10)
+        self._insert_finished(queue, recent, days_old=1)
+        vacuums = []
+        monkeypatch.setattr(queue, "_vacuum", lambda *args: vacuums.append(args))
+
+        assert queue.cleanup_old_jobs(retention_period=7 * 86400) == old
+        assert vacuums == []
+        queue.close()
+
+    def test_vacuum_failure_is_logged_not_raised(self, tmp_path, caplog):
+        queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
+        conn = queue._get_connection()
+        conn.execute("BEGIN")  # VACUUM can't run inside a transaction
+        with caplog.at_level("WARNING", logger="qbt_rules.queue_backends.sqlite_queue"):
+            assert queue._vacuum(conn) is None
+        conn.execute("ROLLBACK")
+        assert "VACUUM after cleanup failed" in caplog.text
+        queue.close()
+
+    def test_vacuum_waits_for_concurrent_writer(self, tmp_path):
+        """A write from another thread during VACUUM waits (busy_timeout), not fails"""
+        queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
+        self._insert_finished(queue, 3000, days_old=10, payload="x" * 1000)
+        errors: list[Exception] = []
+        done = threading.Event()
+
+        def writer():
+            while not done.is_set():
+                try:
+                    queue.enqueue(context="during-vacuum")
+                except Exception as e:  # pragma: no cover - the failure being tested
+                    errors.append(e)
+
+        thread = threading.Thread(target=writer)
+        thread.start()
+        try:
+            assert queue.cleanup_old_jobs(retention_period=7 * 86400) == 3000
+        finally:
+            done.set()
+            thread.join()
+        assert errors == []
+        queue.close()

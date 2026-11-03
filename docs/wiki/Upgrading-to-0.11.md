@@ -86,7 +86,7 @@ The log goes to the console only (`docker logs`, `kubectl logs`), not `/config/q
 
 ### The first start prunes old jobs
 
-`queue.cleanup_after` (default `7d`) is now applied at startup and then hourly; 0.10.x never applied it. So the **first start deletes every finished job older than that**: on one production database, about 80% of the history. The database file doesn't shrink. To keep the history, set `queue.cleanup_after` higher, or `0`, before the first start. The copy of the database left on `/config` is untouched.
+`queue.cleanup_after` (default `7d`) is now applied at startup and then hourly; 0.10.x never applied it. So the **first start deletes every finished job older than that**: on one production database, about 80% of the history. From 0.11.1 the database is vacuumed after a cleanup that removes a large share of the jobs, so the file shrinks too (0.11.0 left it, and its `-wal` file, at full size). To keep the history, set `queue.cleanup_after` higher, or `0`, before the first start. The copy of the database left on `/config` is untouched.
 
 ### Also
 
