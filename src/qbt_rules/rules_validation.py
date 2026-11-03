@@ -131,7 +131,7 @@ class Locator:
         if root is not None:
             self._walk(root, (), set())
 
-    def _walk(self, node: yaml.Node, path: Path, stack: set):
+    def _walk(self, node: yaml.Node, path: Path, stack: set[int]) -> None:
         if id(node) in stack:
             return  # recursive alias
         self.values[path] = node
@@ -195,7 +195,12 @@ class Locator:
         return None
 
 
-def _span(node: yaml.Node) -> dict[str, int]:
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    """value if it's a mapping, else {} (rules.yml blocks may be missing or malformed)"""
+    return value if isinstance(value, dict) else {}
+
+
+def _span(node: yaml.Node) -> dict[str, int | None]:
     """1-based line/column range of a node. A block mapping/sequence's
     end mark sits at the start of the following line, so only its first
     line is used -- underlining an entire rule would be noise."""
@@ -359,11 +364,11 @@ class _Linter:
     def __init__(self, raw: dict[str, Any], notifications: dict[str, Any] | None = None):
         self.raw = raw
         self.notifications = notifications
-        refs = raw.get("refs") if isinstance(raw.get("refs"), dict) else {}
-        self.vars = refs.get("vars") if isinstance(refs.get("vars"), dict) else {}
+        refs = _dict_or_empty(raw.get("refs"))
+        self.vars = _dict_or_empty(refs.get("vars"))
         self.issues: list[Issue] = []
 
-    def add(self, severity: str, message: str, path: Path, on_key: bool = False):
+    def add(self, severity: str, message: str, path: Path, on_key: bool = False) -> None:
         self.issues.append(Issue(severity, message, path, on_key=on_key))
 
     def effective(self, value: Any) -> tuple[Any, bool]:
@@ -379,9 +384,9 @@ class _Linter:
             return value, False
 
         # Embedded tokens interpolate as text, exactly as the resolver does
-        unknown = []
+        unknown: list[str] = []
 
-        def substitute(match):
+        def substitute(match: re.Match[str]) -> str:
             name = match.group(1)[len("vars.") :]
             if name not in self.vars:
                 unknown.append(name)
@@ -390,7 +395,7 @@ class _Linter:
 
         return TOKEN_PATTERN.sub(substitute, value), not unknown
 
-    def bool_value(self, raw_value: Any, label: str, path: Path):
+    def bool_value(self, raw_value: Any, label: str, path: Path) -> None:
         """The engine only tests truthiness, so a quoted "false" is true"""
         value, known = self.effective(raw_value)
         if not known or isinstance(value, bool):
@@ -436,7 +441,7 @@ class _Linter:
                     self.rule(rule, ("rules", i))
         return self.issues
 
-    def unused_refs(self, refs: dict[str, Any]):
+    def unused_refs(self, refs: dict[str, Any]) -> None:
         used_vars, used_refs = set(), set()
         for node in _walk_values(
             [self.raw.get("rules"), refs.get("conditions"), refs.get("actions")]
@@ -469,7 +474,7 @@ class _Linter:
 
     # -- rules --------------------------------------------------------------
 
-    def rule(self, rule: dict[str, Any], path: Path):
+    def rule(self, rule: dict[str, Any], path: Path) -> None:
         for key in rule:
             if key not in schema.RULE_KEYS:
                 self.add(
@@ -508,7 +513,7 @@ class _Linter:
 
     # -- conditions ---------------------------------------------------------
 
-    def top_conditions(self, node: Any, path: Path):
+    def top_conditions(self, node: Any, path: Path) -> None:
         """A rule's `conditions:` -- a list (implicit all) or a dict whose
         all/any/none keys are each evaluated and ANDed"""
         if node is None:
@@ -547,7 +552,7 @@ class _Linter:
         else:
             self.add(ERROR, "'conditions' must be a list or a mapping of all/any/none", path)
 
-    def condition_block(self, node: Any, path: Path):
+    def condition_block(self, node: Any, path: Path) -> None:
         """A refs.conditions.<name> block -- spliced in where it's used"""
         if isinstance(node, list):
             for i, child in enumerate(node):
@@ -571,7 +576,7 @@ class _Linter:
         else:
             self.add(ERROR, "A condition block must be a list or a mapping", path)
 
-    def group(self, node: Any, path: Path):
+    def group(self, node: Any, path: Path) -> None:
         if not isinstance(node, list):
             self.add(ERROR, f"'{path[-1]}' must be a list of conditions", path)
             return
@@ -583,7 +588,7 @@ class _Linter:
         for i, child in enumerate(node):
             self.condition(child, (*path, i))
 
-    def condition(self, node: Any, path: Path):
+    def condition(self, node: Any, path: Path) -> None:
         """One item inside a group: a leaf, a nested group, or a $ref"""
         if not isinstance(node, dict):
             self.add(
@@ -633,7 +638,7 @@ class _Linter:
         if operator and "value" in node:
             self.value(operator, node["value"], (*path, "value"))
 
-    def field(self, field: Any, path: Path):
+    def field(self, field: Any, path: Path) -> None:
         if not isinstance(field, str) or "." not in field:
             self.add(ERROR, "Field must be '<namespace>.<name>', e.g. info.ratio", path)
             return
@@ -648,7 +653,7 @@ class _Linter:
         elif namespace == "tracker" and name not in schema.TRACKER_FIELD_NAMES:
             self.add(ERROR, f"Unknown trackie field 'tracker.{name}'", path)
 
-    def value(self, operator: str, raw_value: Any, path: Path):
+    def value(self, operator: str, raw_value: Any, path: Path) -> None:
         value, known = self.effective(raw_value)
         if not known:
             return
@@ -703,7 +708,7 @@ class _Linter:
 
     # -- actions ------------------------------------------------------------
 
-    def action_list(self, node: Any, path: Path, in_rule: bool = False):
+    def action_list(self, node: Any, path: Path, in_rule: bool = False) -> None:
         if isinstance(node, dict) and "$ref" in node:
             return
         if isinstance(node, dict) and "type" in node and not in_rule:
@@ -721,7 +726,7 @@ class _Linter:
         for i, action in enumerate(node):
             self.action(action, (*path, i))
 
-    def action(self, node: Any, path: Path):
+    def action(self, node: Any, path: Path) -> None:
         if not isinstance(node, dict):
             self.add(ERROR, "An action must be a mapping with a 'type'", path)
             return
@@ -806,7 +811,9 @@ class _Linter:
             ):
                 self.add(ERROR, "notify needs params.url or notifications.webhook_url", path)
 
-    def param(self, action_type: str, name: str, pspec: dict[str, Any], raw_value: Any, path: Path):
+    def param(
+        self, action_type: str, name: str, pspec: dict[str, Any], raw_value: Any, path: Path
+    ) -> None:
         value, known = self.effective(raw_value)
         if not known:
             return
@@ -830,7 +837,7 @@ class _Linter:
                 self.add(ERROR, f"params.{name} is not a valid regular expression: {e}", path)
 
 
-def _walk_values(node: Any, _seen: set | None = None) -> Iterator[Any]:
+def _walk_values(node: Any, _seen: set[int] | None = None) -> Iterator[Any]:
     """Every value in a parsed document, depth first (aliases visited once)"""
     seen = _seen if _seen is not None else set()
     yield node
@@ -854,11 +861,11 @@ def lint_rules(raw: dict[str, Any], notifications: dict[str, Any] | None = None)
 
 def _summary(raw: dict[str, Any], locator: Locator) -> dict[str, Any]:
     """Outline of the document for the editor's sidebar"""
-    rules = []
+    rules: list[dict[str, Any]] = []
     for i, rule in enumerate(raw["rules"] if isinstance(raw.get("rules"), list) else []):
         if not isinstance(rule, dict):
             continue
-        meta = rule.get("meta") if isinstance(rule.get("meta"), dict) else {}
+        meta = _dict_or_empty(rule.get("meta"))
         context = rule.get("context")
         rules.append(
             {
@@ -872,15 +879,15 @@ def _summary(raw: dict[str, Any], locator: Locator) -> dict[str, Any]:
             }
         )
 
-    refs = raw.get("refs") if isinstance(raw.get("refs"), dict) else {}
-    ref_names = {}
+    refs = _dict_or_empty(raw.get("refs"))
+    ref_names: dict[str, list[dict[str, Any]]] = {}
     for group in ("vars", "conditions", "actions"):
-        block = refs.get(group) if isinstance(refs.get(group), dict) else {}
+        block = _dict_or_empty(refs.get(group))
         ref_names[group] = [
             {
                 "name": str(name),
                 "line": (
-                    locator.keys.get(("refs", group, name)).start_mark.line + 1
+                    locator.keys[("refs", group, name)].start_mark.line + 1
                     if ("refs", group, name) in locator.keys
                     else None
                 ),
@@ -888,7 +895,7 @@ def _summary(raw: dict[str, Any], locator: Locator) -> dict[str, Any]:
             for name in block
         ]
 
-    contexts = set()
+    contexts: set[Any] = set()
     for rule in rules:
         c = rule["context"]
         contexts.update([c] if isinstance(c, str) else (c or []))

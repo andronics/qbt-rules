@@ -55,9 +55,7 @@ jobs:
         run: ruff format --check
 
       - name: Type check with mypy
-        continue-on-error: true
-        run: |
-          mypy src/qbt_rules --ignore-missing-imports || echo "Type issues found (non-blocking)"
+        run: mypy
 
       - name: Verify version file
         run: |

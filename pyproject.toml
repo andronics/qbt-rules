@@ -53,6 +53,7 @@ dev = [
     "ruff>=0.11",
     "types-requests>=2.31.0",
     "types-PyYAML>=6.0.12",
+    "types-croniter",
 ]
 
 [project.urls]
@@ -132,24 +133,19 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "S", "T20"]
 
 # mypy configuration
 [tool.mypy]
-python_version = "3.8"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = false  # Gradually enable
-check_untyped_defs = true
-disallow_any_generics = false  # Gradually enable
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-strict_equality = true
+python_version = "3.11"
+strict = true
+files = ["src/qbt_rules"]
 
+# Modules not yet under strict typing. Each follow-up PR of the template-python
+# migration removes its modules from this list; it must end up empty.
 [[tool.mypy.overrides]]
 module = [
-    "qbt_rules.*",
+    "qbt_rules.queue_manager",
+    "qbt_rules.queue_backends.*",
+    "qbt_rules.worker",
+    "qbt_rules.scheduler",
+    "qbt_rules.web",
+    "qbt_rules.legacy_cli",
 ]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["tests.*"]
-disallow_untyped_defs = false
+ignore_errors = true

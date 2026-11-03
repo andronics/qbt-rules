@@ -5,9 +5,10 @@ Shared utility functions for qBittorrent automation
 import logging
 import re
 import time
+from typing import Any
 
 
-def parse_tags(torrent: dict) -> list[str]:
+def parse_tags(torrent: dict[str, Any]) -> list[str]:
     """
     Parse tags from torrent dictionary into list
 
@@ -253,7 +254,7 @@ def is_newer_than(timestamp: int, duration: str) -> bool:
     return age_seconds < duration_seconds
 
 
-def format_bytes(bytes_count: int) -> str:
+def format_bytes(bytes_count: float) -> str:
     """
     Format bytes into human-readable string
 

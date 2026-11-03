@@ -25,7 +25,7 @@ DEFAULT_BACKUP_COUNT = 5
 _file_settings: dict[str, Any] | None = None
 
 
-def setup_logging(logging_config: dict[str, Any]):
+def setup_logging(logging_config: dict[str, Any]) -> None:
     """
     Setup logging configuration with fallback to console-only
 
@@ -113,6 +113,7 @@ def setup_logging(logging_config: dict[str, Any]):
 
 
 def _build_file_handler(settings: dict[str, Any], rotate: bool) -> logging.Handler:
+    handler: logging.Handler
     if rotate:
         handler = logging.handlers.RotatingFileHandler(
             settings["file"],
@@ -126,7 +127,7 @@ def _build_file_handler(settings: dict[str, Any], rotate: bool) -> logging.Handl
     return handler
 
 
-def set_file_rotation(enabled: bool):
+def set_file_rotation(enabled: bool) -> None:
     """
     Switch this process's log file handler between rotating and watching
 

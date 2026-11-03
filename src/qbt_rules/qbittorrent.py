@@ -5,10 +5,15 @@ Wraps qbittorrent-api package for multi-version support (v4.1+ through v5.1.4+)
 Maintains backward compatibility with existing qbt-rules interface
 """
 
+from typing import TYPE_CHECKING, Any, cast
+
 import qbittorrentapi
 
 from qbt_rules.errors import AuthenticationError, ConnectionError
 from qbt_rules.log_setup import get_logger
+
+if TYPE_CHECKING:
+    from qbittorrentapi.torrents import TorrentStatusesT
 
 logger = get_logger(__name__)
 
@@ -51,7 +56,7 @@ class QBittorrentAPI:
         if connect_now:
             self._ensure_connected()
 
-    def _ensure_connected(self):
+    def _ensure_connected(self) -> None:
         """
         Ensure we're connected to qBittorrent (lazy initialization support)
 
@@ -85,7 +90,7 @@ class QBittorrentAPI:
         filter_type: str | None = None,
         category: str | None = None,
         tag: str | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """
         Get list of torrents
 
@@ -100,12 +105,16 @@ class QBittorrentAPI:
         self._ensure_connected()
 
         # Use qbittorrent-api Client
-        torrents = self.client.torrents_info(status_filter=filter_type, category=category, tag=tag)
+        # qbittorrent-api checks the filter value itself; callers pass config strings
+        status_filter = cast("TorrentStatusesT | None", filter_type)
+        torrents = self.client.torrents_info(
+            status_filter=status_filter, category=category, tag=tag
+        )
 
         # Convert to list of dicts (qbittorrent-api returns TorrentInfoList)
         return [dict(t) for t in torrents]
 
-    def get_torrent(self, torrent_hash: str) -> dict | None:
+    def get_torrent(self, torrent_hash: str) -> dict[str, Any] | None:
         """
         Get single torrent by hash
 
@@ -123,7 +132,7 @@ class QBittorrentAPI:
         # Return first torrent or None if not found
         return dict(torrents[0]) if torrents else None
 
-    def get_properties(self, torrent_hash: str) -> dict:
+    def get_properties(self, torrent_hash: str) -> dict[str, Any]:
         """
         Get detailed torrent properties
 
@@ -136,7 +145,7 @@ class QBittorrentAPI:
         props = self.client.torrents_properties(torrent_hash=torrent_hash)
         return dict(props)
 
-    def get_trackers(self, torrent_hash: str) -> list[dict]:
+    def get_trackers(self, torrent_hash: str) -> list[dict[str, Any]]:
         """
         Get tracker information for a torrent
 
@@ -149,7 +158,7 @@ class QBittorrentAPI:
         trackers = self.client.torrents_trackers(torrent_hash=torrent_hash)
         return [dict(t) for t in trackers]
 
-    def get_files(self, torrent_hash: str) -> list[dict]:
+    def get_files(self, torrent_hash: str) -> list[dict[str, Any]]:
         """
         Get file list for a torrent
 
@@ -162,7 +171,7 @@ class QBittorrentAPI:
         files = self.client.torrents_files(torrent_hash=torrent_hash)
         return [dict(f) for f in files]
 
-    def get_webseeds(self, torrent_hash: str) -> list[dict]:
+    def get_webseeds(self, torrent_hash: str) -> list[dict[str, Any]]:
         """
         Get web seeds for a torrent
 
@@ -175,7 +184,7 @@ class QBittorrentAPI:
         webseeds = self.client.torrents_webseeds(torrent_hash=torrent_hash)
         return [dict(w) for w in webseeds]
 
-    def get_peers(self, torrent_hash: str) -> list[dict]:
+    def get_peers(self, torrent_hash: str) -> list[dict[str, Any]]:
         """
         Get peer information for a torrent
 
@@ -188,12 +197,12 @@ class QBittorrentAPI:
         peers_data = self.client.sync_torrent_peers(torrent_hash=torrent_hash)
 
         # Convert peers dict to list of dicts for consistency
-        peers_dict = peers_data.get("peers", {})
+        peers_dict = cast("dict[str, dict[str, Any]]", peers_data.get("peers", {}))
         return [{"id": peer_id, **dict(peer_data)} for peer_id, peer_data in peers_dict.items()]
 
     # Global Information Methods
 
-    def get_transfer_info(self) -> dict:
+    def get_transfer_info(self) -> dict[str, Any]:
         """
         Get global transfer information
 
@@ -203,7 +212,7 @@ class QBittorrentAPI:
         info = self.client.transfer_info()
         return dict(info)
 
-    def get_app_preferences(self) -> dict:
+    def get_app_preferences(self) -> dict[str, Any]:
         """
         Get application preferences
 

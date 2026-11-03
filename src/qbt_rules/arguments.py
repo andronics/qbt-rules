@@ -6,9 +6,13 @@ Provides consistent CLI interface across all triggers
 import argparse
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from qbt_rules.__version__ import __version__
 from qbt_rules.rules_validation import ERROR, format_path, lint_rules
+
+if TYPE_CHECKING:
+    from qbt_rules.config_loader import Config
 
 
 def smart_config_default() -> str:
@@ -311,6 +315,7 @@ def process_args(args: argparse.Namespace) -> Path:
         os.environ["QBT_RULES_DRY_RUN"] = "true"
 
     # Determine config directory
+    config_dir: Path
     if args.config_dir:
         config_dir = args.config_dir
     elif "CONFIG_DIR" in os.environ:
@@ -321,7 +326,7 @@ def process_args(args: argparse.Namespace) -> Path:
     return config_dir
 
 
-def handle_utility_args(args: argparse.Namespace, config) -> int | None:
+def handle_utility_args(args: argparse.Namespace, config: "Config") -> int | None:
     """
     Handle utility arguments (--validate, --list-rules)
 
