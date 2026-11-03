@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -516,7 +517,9 @@ def test_execute_json(server: requests_mock.Mocker, queue: SQLiteQueue) -> None:
 def test_execute_refuses_a_bad_hash_with_exit_2(server: requests_mock.Mocker, value: str) -> None:
     result = runner.invoke(app, ["execute", "--hash", value])
     assert result.exit_code == 2
-    assert "Invalid value for '--hash'" in result.output
+    # Click's usage error, which rich colours under CI (FORCE_COLOR)
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert "Invalid torrent hash" in plain
     assert server.call_count == 0
 
 
