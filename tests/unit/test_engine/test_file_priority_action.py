@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from qbt_rules.qbittorrent import QBittorrentAPI
 from qbt_rules.engine import ActionExecutor, ConditionEvaluator
+from qbt_rules.qbittorrent import QBittorrentAPI
 
 
 def _files():

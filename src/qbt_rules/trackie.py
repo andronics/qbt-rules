@@ -17,8 +17,8 @@ down.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import urlparse
 
 import requests
@@ -101,7 +101,7 @@ class TrackerDataNotReadyError(DataNotReadyError):
         )
 
 
-def _parse_ts(value: Optional[str]) -> Optional[datetime]:
+def _parse_ts(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
@@ -113,23 +113,23 @@ def _parse_ts(value: Optional[str]) -> Optional[datetime]:
 class TrackieSnapshot:
     """One /snapshot response, with the lookups the tracker.* fields need"""
 
-    def __init__(self, data: Dict[str, Any], max_age_s: int, now: Optional[datetime] = None):
+    def __init__(self, data: dict[str, Any], max_age_s: int, now: datetime | None = None):
         self.data = data
         self.max_age_s = max_age_s
-        self.now = now or datetime.now(timezone.utc)
-        self.torrents: Dict[str, Dict[str, Any]] = {
+        self.now = now or datetime.now(UTC)
+        self.torrents: dict[str, dict[str, Any]] = {
             h.lower(): r for h, r in (data.get("torrents") or {}).items()
         }
-        self.accounts: Dict[str, Dict[str, Any]] = data.get("accounts") or {}
-        self.fetched_at: Dict[str, Optional[datetime]] = {
+        self.accounts: dict[str, dict[str, Any]] = data.get("accounts") or {}
+        self.fetched_at: dict[str, datetime | None] = {
             k: _parse_ts(v) for k, v in (data.get("fetched_at") or {}).items()
         }
 
-    def age_s(self, timestamp: Optional[str]) -> Optional[int]:
+    def age_s(self, timestamp: str | None) -> int | None:
         ts = _parse_ts(timestamp)
         return None if ts is None else int((self.now - ts).total_seconds())
 
-    def stale_reason(self, tracker: str) -> Optional[str]:
+    def stale_reason(self, tracker: str) -> str | None:
         """Why this tracker's data can't be used, or None if it can"""
         fetched = self.fetched_at.get(tracker)
         if fetched is None:
@@ -142,10 +142,10 @@ class TrackieSnapshot:
             )
         return None
 
-    def record(self, torrent_hash: str) -> Optional[Dict[str, Any]]:
+    def record(self, torrent_hash: str) -> dict[str, Any] | None:
         return self.torrents.get(torrent_hash.lower())
 
-    def tracker_for_urls(self, urls: List[str]) -> Optional[str]:
+    def tracker_for_urls(self, urls: list[str]) -> str | None:
         """Which tracker a torrent announces to, from its tracker URLs"""
         hosts = {urlparse(u).hostname for u in urls if u}
         for key, account in self.accounts.items():
@@ -162,14 +162,14 @@ class TrackieClient:
         url: str,
         max_age_s: int,
         timeout_s: float = 10,
-        session: Optional[requests.Session] = None,
+        session: requests.Session | None = None,
     ):
         self.url = url.rstrip("/")
         self.max_age_s = max_age_s
         self.timeout_s = timeout_s
         self.session = session or requests.Session()
 
-    def fetch(self) -> Tuple[Optional[TrackieSnapshot], Optional[str]]:
+    def fetch(self) -> tuple[TrackieSnapshot | None, str | None]:
         """(snapshot, None) on success, (None, reason) on any failure"""
         try:
             resp = self.session.get(f"{self.url}/snapshot", timeout=self.timeout_s)

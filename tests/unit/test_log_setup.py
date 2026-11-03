@@ -4,20 +4,17 @@ import logging
 import logging.handlers
 import sys
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-
-import pytest
 
 import qbt_rules.log_setup as qbt_logging
 from qbt_rules.log_setup import (
-    setup_logging,
+    CONSOLE_FORMAT_BARE,
+    DEFAULT_BACKUP_COUNT,
+    DEFAULT_MAX_BYTES,
+    LOG_FORMAT_DETAILED,
+    LOG_FORMAT_SIMPLE,
     get_logger,
     set_file_rotation,
-    LOG_FORMAT_SIMPLE,
-    LOG_FORMAT_DETAILED,
-    CONSOLE_FORMAT_BARE,
-    DEFAULT_MAX_BYTES,
-    DEFAULT_BACKUP_COUNT,
+    setup_logging,
 )
 
 
@@ -201,7 +198,6 @@ class TestSetupLogging:
         root_logger = logging.getLogger()
         dummy_handler = logging.StreamHandler()
         root_logger.addHandler(dummy_handler)
-        initial_count = len(root_logger.handlers)
 
         setup_logging(_logging_config(level="INFO", file=log_file))
 

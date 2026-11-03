@@ -8,7 +8,8 @@ levels) stays fully separate from user-facing tables and detail dumps.
 """
 
 import json
-from typing import Any, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 
 def render_table(headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> str:
@@ -43,7 +44,7 @@ def render_table(headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> str:
 
 
 def print_table(
-    headers: Sequence[str], rows: Sequence[Sequence[Any]], title: Optional[str] = None
+    headers: Sequence[str], rows: Sequence[Sequence[Any]], title: str | None = None
 ) -> None:
     """
     Print a table, optionally preceded by a title line
@@ -54,11 +55,11 @@ def print_table(
         title: Optional title printed on its own line before the table
     """
     if title:
-        print(f"\n{title}\n")
-    print(render_table(headers, rows))
+        print(f"\n{title}\n")  # noqa: T201  CLI output
+    print(render_table(headers, rows))  # noqa: T201  CLI output
 
 
-def render_kv(pairs: Sequence[Tuple[str, Any]], indent: int = 0) -> str:
+def render_kv(pairs: Sequence[tuple[str, Any]], indent: int = 0) -> str:
     """
     Render label/value pairs as aligned "Label: value" lines
 
@@ -74,7 +75,7 @@ def render_kv(pairs: Sequence[Tuple[str, Any]], indent: int = 0) -> str:
     return "\n".join(f"{prefix}{str(label) + ':':<{width + 1}} {value}" for label, value in pairs)
 
 
-def print_kv_section(title: str, pairs: Sequence[Tuple[str, Any]], indent: int = 0) -> None:
+def print_kv_section(title: str, pairs: Sequence[tuple[str, Any]], indent: int = 0) -> None:
     """
     Print a titled section followed by its label/value pairs
 
@@ -84,8 +85,8 @@ def print_kv_section(title: str, pairs: Sequence[Tuple[str, Any]], indent: int =
         indent: Number of spaces to prefix each label/value line with
     """
     prefix = " " * indent
-    print(f"\n{prefix}{title}")
-    print(render_kv(pairs, indent=indent + 2))
+    print(f"\n{prefix}{title}")  # noqa: T201  CLI output
+    print(render_kv(pairs, indent=indent + 2))  # noqa: T201  CLI output
 
 
 def print_json(data: Any) -> None:
@@ -96,9 +97,9 @@ def print_json(data: Any) -> None:
         data: JSON-serializable value (non-serializable values are
               stringified via json.dumps' default=str)
     """
-    print(json.dumps(data, indent=2, default=str))
+    print(json.dumps(data, indent=2, default=str))  # noqa: T201  CLI output
 
 
 def print_message(text: str) -> None:
     """Print a one-off message line (confirmations, empty-state notices)"""
-    print(text)
+    print(text)  # noqa: T201  CLI output

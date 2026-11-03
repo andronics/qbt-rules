@@ -1,9 +1,8 @@
 """Integration tests for complete rule execution scenarios."""
 
-import pytest
 from unittest.mock import Mock, patch
-from qbt_rules.engine import RulesEngine
 
+from qbt_rules.engine import RulesEngine
 
 # ============================================================================
 # Real-World Rule Scenarios (20 tests)

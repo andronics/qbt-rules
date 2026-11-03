@@ -9,32 +9,32 @@ Supports two modes:
 Job management commands: --list-jobs, --job-status, --cancel-job, --stats
 """
 
-import sys
 import os
+import sys
 import time
-import requests
 from pathlib import Path
-from typing import Optional
 
+import requests
+
+from qbt_rules import cli_ui
 from qbt_rules.arguments import create_parser, process_args, validate_torrent_hash
 from qbt_rules.config_loader import (
-    load_config,
-    resolve_config,
-    parse_int,
-    parse_bool,
-    parse_retention,
     ENV_VAR_MAP,
+    load_config,
+    parse_bool,
+    parse_int,
+    parse_retention,
+    resolve_config,
 )
-from qbt_rules.qbittorrent import QBittorrentAPI
 from qbt_rules.errors import handle_errors
-from qbt_rules.log_setup import setup_logging, get_logger, DEFAULT_MAX_BYTES, DEFAULT_BACKUP_COUNT
-from qbt_rules import cli_ui
+from qbt_rules.log_setup import DEFAULT_BACKUP_COUNT, DEFAULT_MAX_BYTES, get_logger, setup_logging
+from qbt_rules.qbittorrent import QBittorrentAPI
 
 logger = None  # Set after logging is configured
 
 
 def resolve_section_config(
-    args, config_obj, section: str, fields: dict, parsers: Optional[dict] = None
+    args, config_obj, section: str, fields: dict, parsers: dict | None = None
 ) -> dict:
     """
     Generic resolver for a config.yml section's scalar fields
@@ -198,7 +198,7 @@ def get_server_config(args, config_obj) -> dict:
         config_obj,
         "server",
         {
-            "host": "0.0.0.0",
+            "host": "0.0.0.0",  # noqa: S104  container default; set server.host to narrow
             "port": 5000,
             "api_key": None,
             "workers": 1,
@@ -353,7 +353,7 @@ def get_metrics_config(args, config_obj) -> dict:
         "metrics",
         {
             "enabled": False,
-            "multiproc_dir": "/tmp/qbt-rules-metrics",
+            "multiproc_dir": "/tmp/qbt-rules-metrics",  # noqa: S108  default, configurable
         },
         parsers={"enabled": parse_bool},
     )
@@ -635,19 +635,19 @@ def wait_for_job(server_url: str, api_key: str, job_id: str):
                 status = job["status"]
 
                 if status == "completed":
-                    logger.info(f"✓ Job completed successfully")
+                    logger.info("✓ Job completed successfully")
                     result = job.get("result", {})
                     logger.info(f"  Torrents processed: {result.get('torrents_processed', 0)}")
                     logger.info(f"  Rules matched: {result.get('rules_matched', 0)}")
                     logger.info(f"  Actions executed: {result.get('actions_executed', 0)}")
                     return
                 elif status == "failed":
-                    logger.error(f"✗ Job failed")
+                    logger.error("✗ Job failed")
                     error = job.get("error", "Unknown error")
                     logger.error(f"  Error: {error}")
                     sys.exit(1)
                 elif status == "cancelled":
-                    logger.warning(f"Job was cancelled")
+                    logger.warning("Job was cancelled")
                     sys.exit(1)
                 else:
                     # Still processing

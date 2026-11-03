@@ -5,13 +5,13 @@ Tests JobStatus class, QueueManager abstract interface, factory function,
 and utility methods.
 """
 
-import pytest
-from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, patch, MagicMock
 import uuid
+from datetime import UTC, datetime, timedelta
+from unittest.mock import Mock, patch
+
+import pytest
 
 from qbt_rules.queue_manager import JobStatus, QueueManager, create_queue
-
 
 # ============================================================================
 # JobStatus Class Tests
@@ -341,7 +341,7 @@ class TestQueueManagerCreateJobDict:
                 pass
 
         queue = ConcreteQueue()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started = now + timedelta(seconds=1)
         completed = now + timedelta(seconds=5)
 
@@ -554,11 +554,11 @@ class TestQueueManagerCreateJobDict:
                 pass
 
         queue = ConcreteQueue()
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         job_dict = queue.create_job_dict(
             job_id="test-id", context="weekly-cleanup", hash_filter=None
         )
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
 
         # created_at should be set and be a recent timestamp
         assert job_dict["created_at"] is not None

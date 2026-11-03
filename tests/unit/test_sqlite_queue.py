@@ -10,18 +10,16 @@ Tests all SQLite queue operations including:
 - Statistics and health checks
 """
 
-import pytest
 import sqlite3
-import json
-import time
 import threading
-from datetime import datetime, timedelta, timezone
+import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import List
+
+import pytest
 
 from qbt_rules.queue_backends.sqlite_queue import SQLiteQueue
 from qbt_rules.queue_manager import JobStatus, QueueManager
-
 
 # ============================================================================
 # Initialization and Database Setup Tests
@@ -223,7 +221,7 @@ class TestSQLiteQueueInitialization:
         queue.close()
 
     def test_v1_database_migrates_to_v2_keeping_jobs(self, tmp_path):
-        """A v1 database (before per-job dry-run) gains jobs.dry_run, existing jobs default to False"""
+        """A v1 database (before per-job dry-run) gains jobs.dry_run; existing jobs default False"""
         db_path = tmp_path / "test.db"
         conn = sqlite3.connect(str(db_path))
         conn.execute(
@@ -336,9 +334,9 @@ class TestSQLiteQueueEnqueue:
     def test_enqueue_sets_created_at(self, tmp_path):
         """enqueue() sets created_at timestamp"""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         job_id = queue.enqueue()
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
 
         job = queue.get_job(job_id)
         created_str = job["created_at"]
@@ -452,7 +450,7 @@ class TestSQLiteQueueDequeue:
     def test_dequeue_marks_as_processing(self, tmp_path):
         """dequeue() marks job as processing"""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
-        job_id = queue.enqueue()
+        queue.enqueue()
 
         job = queue.dequeue()
         assert job["status"] == JobStatus.PROCESSING
@@ -461,11 +459,11 @@ class TestSQLiteQueueDequeue:
     def test_dequeue_sets_started_at(self, tmp_path):
         """dequeue() sets started_at timestamp"""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
-        job_id = queue.enqueue()
+        queue.enqueue()
 
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         job = queue.dequeue()
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
 
         started_str = job["started_at"]
         if isinstance(started_str, str):
@@ -481,7 +479,7 @@ class TestSQLiteQueueDequeue:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
         job_id = queue.enqueue()
 
-        job = queue.dequeue()
+        queue.dequeue()
 
         # Should not be in queue table anymore
         conn = sqlite3.connect(str(tmp_path / "test.db"))
@@ -497,7 +495,7 @@ class TestSQLiteQueueDequeue:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
         job_id = queue.enqueue()
 
-        job = queue.dequeue()
+        queue.dequeue()
 
         # Should still be in jobs table
         stored_job = queue.get_job(job_id)
@@ -513,7 +511,7 @@ class TestSQLiteQueueDequeue:
         failure. Explicitly capturing exceptions here turns any
         regression into a real assertion failure."""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
-        job_id = queue.enqueue()
+        queue.enqueue()
 
         # Simulate concurrent dequeue attempts
         results = []
@@ -542,7 +540,7 @@ class TestSQLiteQueueDequeue:
     def test_dequeue_returns_all_job_fields(self, tmp_path):
         """dequeue() returns complete job dict"""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
-        job_id = queue.enqueue(context="test", hash_filter="abc123")
+        queue.enqueue(context="test", hash_filter="abc123")
 
         job = queue.dequeue()
 
@@ -563,11 +561,11 @@ class TestSQLiteQueueDequeue:
 
         job1_id = queue.enqueue()
         job2_id = queue.enqueue()
-        job3_id = queue.enqueue()
+        queue.enqueue()
 
         # Dequeue and complete first job (removes from queue)
-        job1 = queue.dequeue()
-        queue.update_status(job1_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
+        queue.dequeue()
+        queue.update_status(job1_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
         # Should get second job (first is no longer in queue)
         job = queue.dequeue()
@@ -660,7 +658,7 @@ class TestSQLiteQueueGetJob:
 
         result_data = {"torrents": 10, "matched": 5}
         queue.update_status(
-            job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc), result=result_data
+            job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC), result=result_data
         )
 
         job = queue.get_job(job_id)
@@ -673,7 +671,7 @@ class TestSQLiteQueueGetJob:
         job_id = queue.enqueue()
 
         # Update status
-        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
+        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
         job = queue.get_job(job_id)
         assert job["status"] == JobStatus.COMPLETED
@@ -722,7 +720,7 @@ class TestSQLiteQueueListJobs:
 
         job1 = queue.enqueue()
         job2 = queue.enqueue()
-        queue.update_status(job1, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
+        queue.update_status(job1, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
         pending_jobs = queue.list_jobs(status=JobStatus.PENDING)
         completed_jobs = queue.list_jobs(status=JobStatus.COMPLETED)
@@ -752,7 +750,7 @@ class TestSQLiteQueueListJobs:
         """list_jobs() respects limit parameter"""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
-        for i in range(10):
+        for _i in range(10):
             queue.enqueue()
 
         jobs = queue.list_jobs(limit=5)
@@ -787,7 +785,7 @@ class TestSQLiteQueueListJobs:
         """list_jobs() enforces max limit of 100"""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
-        for i in range(150):
+        for _i in range(150):
             queue.enqueue()
 
         jobs = queue.list_jobs(limit=200)
@@ -817,10 +815,10 @@ class TestSQLiteQueueListJobs:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
         job1 = queue.enqueue(context="weekly-cleanup")
-        job2 = queue.enqueue(context="torrent-imported")
+        queue.enqueue(context="torrent-imported")
         job3 = queue.enqueue(context="weekly-cleanup")
 
-        queue.update_status(job1, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
+        queue.update_status(job1, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
         # Filter: weekly-cleanup AND pending
         jobs = queue.list_jobs(status=JobStatus.PENDING, context="weekly-cleanup")
@@ -842,7 +840,7 @@ class TestSQLiteQueueCountJobs:
         """count_jobs() returns total job count"""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
-        for i in range(10):
+        for _i in range(10):
             queue.enqueue()
 
         count = queue.count_jobs()
@@ -863,11 +861,11 @@ class TestSQLiteQueueCountJobs:
 
         job1 = queue.enqueue()
         job2 = queue.enqueue()
-        job3 = queue.enqueue()
+        queue.enqueue()
 
-        queue.update_status(job1, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
+        queue.update_status(job1, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
         queue.update_status(
-            job2, JobStatus.FAILED, completed_at=datetime.now(timezone.utc), error="Test error"
+            job2, JobStatus.FAILED, completed_at=datetime.now(UTC), error="Test error"
         )
 
         assert queue.count_jobs(JobStatus.PENDING) == 1
@@ -907,9 +905,7 @@ class TestSQLiteQueueUpdateStatus:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
         job_id = queue.enqueue()
 
-        success = queue.update_status(
-            job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc)
-        )
+        success = queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
         job = queue.get_job(job_id)
         assert success is True
@@ -921,7 +917,7 @@ class TestSQLiteQueueUpdateStatus:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
         job_id = queue.enqueue()
 
-        started = datetime.now(timezone.utc)
+        started = datetime.now(UTC)
         queue.update_status(job_id, JobStatus.PROCESSING, started_at=started)
 
         job = queue.get_job(job_id)
@@ -933,7 +929,7 @@ class TestSQLiteQueueUpdateStatus:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
         job_id = queue.enqueue()
 
-        completed = datetime.now(timezone.utc)
+        completed = datetime.now(UTC)
         queue.update_status(job_id, JobStatus.COMPLETED, completed_at=completed)
 
         job = queue.get_job(job_id)
@@ -947,7 +943,7 @@ class TestSQLiteQueueUpdateStatus:
 
         result_data = {"torrents": 10, "actions": 5}
         queue.update_status(
-            job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc), result=result_data
+            job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC), result=result_data
         )
 
         job = queue.get_job(job_id)
@@ -961,7 +957,7 @@ class TestSQLiteQueueUpdateStatus:
 
         error_msg = "Connection failed"
         queue.update_status(
-            job_id, JobStatus.FAILED, completed_at=datetime.now(timezone.utc), error=error_msg
+            job_id, JobStatus.FAILED, completed_at=datetime.now(UTC), error=error_msg
         )
 
         job = queue.get_job(job_id)
@@ -984,7 +980,7 @@ class TestSQLiteQueueUpdateStatus:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
         success = queue.update_status(
-            "nonexistent", JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc)
+            "nonexistent", JobStatus.COMPLETED, completed_at=datetime.now(UTC)
         )
 
         assert success is False
@@ -995,8 +991,8 @@ class TestSQLiteQueueUpdateStatus:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
         job_id = queue.enqueue()
 
-        started = datetime.now(timezone.utc)
-        completed = datetime.now(timezone.utc)
+        started = datetime.now(UTC)
+        completed = datetime.now(UTC)
         result = {"count": 42}
 
         queue.update_status(
@@ -1068,7 +1064,7 @@ class TestSQLiteQueueCancelJob:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
         job_id = queue.enqueue()
 
-        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
+        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
         success = queue.cancel_job(job_id)
         assert success is False
@@ -1111,7 +1107,7 @@ class TestSQLiteQueueCancelJob:
 # ============================================================================
 
 
-class TestSQLiteQueueCleanup:
+class TestSQLiteQueueCleanupByStatus:
     """Test cleanup_old_jobs() method"""
 
     def test_cleanup_old_completed_jobs(self, tmp_path):
@@ -1119,7 +1115,7 @@ class TestSQLiteQueueCleanup:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
         job_id = queue.enqueue()
-        old_time = datetime.now(timezone.utc) - timedelta(days=10)
+        old_time = datetime.now(UTC) - timedelta(days=10)
         queue.update_status(job_id, JobStatus.COMPLETED, completed_at=old_time)
 
         # Cleanup jobs older than 7 days
@@ -1134,7 +1130,7 @@ class TestSQLiteQueueCleanup:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
         job_id = queue.enqueue()
-        old_time = datetime.now(timezone.utc) - timedelta(days=10)
+        old_time = datetime.now(UTC) - timedelta(days=10)
         queue.update_status(job_id, JobStatus.FAILED, completed_at=old_time, error="Test")
 
         deleted = queue.cleanup_old_jobs(retention_period=7 * 86400)
@@ -1149,7 +1145,7 @@ class TestSQLiteQueueCleanup:
         job_id = queue.enqueue()
         # Cancel and manually set old completed_at
         queue.cancel_job(job_id)
-        old_time = datetime.now(timezone.utc) - timedelta(days=10)
+        old_time = datetime.now(UTC) - timedelta(days=10)
         conn = queue._get_connection()
         conn.execute(
             "UPDATE jobs SET completed_at = ? WHERE id = ?", (old_time.isoformat(), job_id)
@@ -1165,7 +1161,7 @@ class TestSQLiteQueueCleanup:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
         job_id = queue.enqueue()
-        recent_time = datetime.now(timezone.utc)
+        recent_time = datetime.now(UTC)
         queue.update_status(job_id, JobStatus.COMPLETED, completed_at=recent_time)
 
         deleted = queue.cleanup_old_jobs(retention_period=7 * 86400)
@@ -1191,7 +1187,7 @@ class TestSQLiteQueueCleanup:
         """cleanup_old_jobs() preserves processing jobs"""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
-        job_id = queue.enqueue()
+        queue.enqueue()
         queue.dequeue()  # Marks as processing
 
         deleted = queue.cleanup_old_jobs(retention_period=0)
@@ -1203,8 +1199,8 @@ class TestSQLiteQueueCleanup:
         """cleanup_old_jobs() returns count of deleted jobs"""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
-        old_time = datetime.now(timezone.utc) - timedelta(days=10)
-        for i in range(5):
+        old_time = datetime.now(UTC) - timedelta(days=10)
+        for _i in range(5):
             job_id = queue.enqueue()
             queue.update_status(job_id, JobStatus.COMPLETED, completed_at=old_time)
 
@@ -1234,7 +1230,7 @@ class TestSQLiteQueueDepth:
         """get_queue_depth() returns count of pending jobs"""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
-        for i in range(5):
+        for _i in range(5):
             queue.enqueue()
 
         depth = queue.get_queue_depth()
@@ -1260,7 +1256,7 @@ class TestSQLiteQueueDepth:
         job_id = queue.enqueue()
         queue.enqueue()
 
-        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
+        queue.update_status(job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
         depth = queue.get_queue_depth()
         assert depth == 1
@@ -1287,7 +1283,7 @@ class TestSQLiteQueueStats:
         """get_stats() includes total job count"""
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
-        for i in range(10):
+        for _i in range(10):
             queue.enqueue()
 
         stats = queue.get_stats()
@@ -1301,12 +1297,10 @@ class TestSQLiteQueueStats:
         job1 = queue.enqueue()
         job2 = queue.enqueue()
         job3 = queue.enqueue()
-        job4 = queue.enqueue()
+        queue.enqueue()
 
-        queue.update_status(job1, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc))
-        queue.update_status(
-            job2, JobStatus.FAILED, completed_at=datetime.now(timezone.utc), error="Test"
-        )
+        queue.update_status(job1, JobStatus.COMPLETED, completed_at=datetime.now(UTC))
+        queue.update_status(job2, JobStatus.FAILED, completed_at=datetime.now(UTC), error="Test")
         queue.cancel_job(job3)
         # job4 stays pending
 
@@ -1323,7 +1317,7 @@ class TestSQLiteQueueStats:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
         job_id = queue.enqueue()
-        started = datetime.now(timezone.utc)
+        started = datetime.now(UTC)
         completed = started + timedelta(seconds=10)
 
         queue.update_status(job_id, JobStatus.COMPLETED, started_at=started, completed_at=completed)
@@ -1411,7 +1405,7 @@ class TestSQLiteQueueThreadSafety:
         job_ids = []
 
         def enqueue_worker():
-            for i in range(10):
+            for _i in range(10):
                 job_id = queue.enqueue(context="concurrent")
                 job_ids.append(job_id)
 
@@ -1504,7 +1498,7 @@ class TestSQLiteQueueTransactions:
             job_id = queue.generate_job_id()
             conn.execute(
                 "INSERT INTO jobs (id, context, hash, status, created_at) VALUES (?, ?, ?, ?, ?)",
-                (job_id, "test", None, JobStatus.PENDING, datetime.now(timezone.utc).isoformat()),
+                (job_id, "test", None, JobStatus.PENDING, datetime.now(UTC).isoformat()),
             )
 
         # Job should exist
@@ -1518,19 +1512,18 @@ class TestSQLiteQueueTransactions:
 
         job_id = queue.generate_job_id()
 
-        with pytest.raises(Exception):
-            with queue._transaction() as conn:
-                conn.execute(
-                    "INSERT INTO jobs (id, context, hash, status, created_at) VALUES (?, ?, ?, ?, ?)",
-                    (
-                        job_id,
-                        "test",
-                        None,
-                        JobStatus.PENDING,
-                        datetime.now(timezone.utc).isoformat(),
-                    ),
-                )
-                raise Exception("Simulated error")
+        with pytest.raises(Exception, match="Simulated error"), queue._transaction() as conn:
+            conn.execute(
+                "INSERT INTO jobs (id, context, hash, status, created_at) VALUES (?, ?, ?, ?, ?)",
+                (
+                    job_id,
+                    "test",
+                    None,
+                    JobStatus.PENDING,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+            raise Exception("Simulated error")
 
         # Job should not exist
         job = queue.get_job(job_id)
@@ -1553,7 +1546,7 @@ class TestSQLiteQueueHelpers:
         result_data = {"key": "value", "count": 42}
         job_id = queue.enqueue(context="test", hash_filter="abc123")
         queue.update_status(
-            job_id, JobStatus.COMPLETED, completed_at=datetime.now(timezone.utc), result=result_data
+            job_id, JobStatus.COMPLETED, completed_at=datetime.now(UTC), result=result_data
         )
 
         job = queue.get_job(job_id)
@@ -1571,7 +1564,7 @@ class TestSQLiteQueueHelpers:
         queue = SQLiteQueue(db_path=str(tmp_path / "test.db"))
 
         # Get connection to create it
-        conn = queue._get_connection()
+        queue._get_connection()
 
         queue.close()
 
@@ -1590,7 +1583,7 @@ class TestSQLiteQueueCleanup:
     @staticmethod
     def _age(queue, job_id, days):
         """Backdate a job's created_at/completed_at (completed_at only if set)"""
-        old = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        old = (datetime.now(UTC) - timedelta(days=days)).isoformat()
         queue._get_connection().execute(
             "UPDATE jobs SET created_at = ?, "
             "completed_at = CASE WHEN completed_at IS NULL THEN NULL ELSE ? END "
@@ -1601,7 +1594,7 @@ class TestSQLiteQueueCleanup:
     def _finished(self, queue, status):
         job_id = queue.enqueue()
         queue.dequeue()
-        queue.update_status(job_id, status, completed_at=datetime.now(timezone.utc))
+        queue.update_status(job_id, status, completed_at=datetime.now(UTC))
         return job_id
 
     def test_removes_old_finished_jobs(self, tmp_path, caplog):

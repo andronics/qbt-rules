@@ -1,21 +1,19 @@
 """Comprehensive tests for errors.py - Error classes and formatting."""
 
-import pytest
-import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
 from qbt_rules.errors import (
-    QBittorrentError,
-    AuthenticationError,
-    ConnectionError,
     APIError,
+    AuthenticationError,
     ConfigurationError,
-    LoggingSetupError,
-    RuleValidationError,
+    ConnectionError,
     FieldError,
+    LoggingSetupError,
     OperatorError,
+    QBittorrentError,
+    RuleValidationError,
     handle_errors,
 )
-
 
 # ============================================================================
 # QBittorrentError - Base Class

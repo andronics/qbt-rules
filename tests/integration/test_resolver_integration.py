@@ -1,8 +1,5 @@
 """Integration tests for resolver with Config and Engine"""
 
-import pytest
-from pathlib import Path
-import tempfile
 import yaml
 
 from qbt_rules.config_loader import Config

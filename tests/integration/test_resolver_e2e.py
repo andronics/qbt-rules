@@ -1,12 +1,9 @@
 """End-to-end tests simulating real-world resolver usage"""
 
 import pytest
-import tempfile
 import yaml
-from pathlib import Path
 
 from qbt_rules.config_loader import Config
-from qbt_rules.engine import RulesEngine
 
 
 class TestResolverRealWorldScenarios:
@@ -333,19 +330,19 @@ class TestResolverRealWorldScenarios:
 
         # Verify types are preserved
         assert resolved["conditions"][0]["value"] == 1.5
-        assert type(resolved["conditions"][0]["value"]) == float
+        assert type(resolved["conditions"][0]["value"]) is float
 
         assert resolved["conditions"][1]["value"] == 2
-        assert type(resolved["conditions"][1]["value"]) == int
+        assert type(resolved["conditions"][1]["value"]) is int
 
         assert resolved["conditions"][2]["value"] == 10737418240
-        assert type(resolved["conditions"][2]["value"]) == int
+        assert type(resolved["conditions"][2]["value"]) is int
 
         assert resolved["conditions"][3]["value"] == "30 days"
-        assert type(resolved["conditions"][3]["value"]) == str
+        assert type(resolved["conditions"][3]["value"]) is str
 
         assert resolved["conditions"][4]["value"] == ["movies", "tv", "music"]
-        assert type(resolved["conditions"][4]["value"]) == list
+        assert type(resolved["conditions"][4]["value"]) is list
 
         assert "(?i)" in resolved["conditions"][5]["value"]
 

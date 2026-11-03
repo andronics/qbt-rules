@@ -1,9 +1,10 @@
 """Comprehensive tests for RulesEngine class in engine.py."""
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-from qbt_rules.engine import RulesEngine, RuleStats
+from unittest.mock import Mock, patch
 
+import pytest
+
+from qbt_rules.engine import RulesEngine
 
 # ============================================================================
 # Initialization
@@ -399,7 +400,7 @@ class TestSingleTorrentMode:
     def test_single_torrent_mode_stats_reflects_all_torrents(
         self, mock_api, mock_config, sample_torrent, downloading_torrent, simple_rule
     ):
-        """stats.* aggregates over ALL torrents, not just the one being evaluated in webhook mode."""
+        """stats.* aggregates over ALL torrents, not just the one evaluated in webhook mode."""
         mock_config.get_rules = Mock(return_value=[simple_rule])
         mock_api.torrents_data = {
             sample_torrent["hash"]: sample_torrent,  # state: uploading
@@ -444,7 +445,7 @@ class TestStatsNamespace:
     def test_stats_snapshot_counts_tags(
         self, mock_api, mock_config, sample_torrent, downloading_torrent
     ):
-        """A torrent's tags are flattened (comma-separated, possibly multiple) into a single Counter."""
+        """A torrent's tags (comma-separated, possibly several) are flattened into one Counter."""
         mock_config.get_rules = Mock(return_value=[])
         mock_api.torrents_data = {
             sample_torrent["hash"]: sample_torrent,  # tags=''
@@ -459,7 +460,7 @@ class TestStatsNamespace:
     def test_stats_snapshot_sums_speeds_and_seeds_peers(
         self, mock_api, mock_config, sample_torrent, downloading_torrent
     ):
-        """dlspeed/upspeed/seeds/leechs are fleet-wide sums of the matching per-torrent info.* fields."""
+        """dlspeed/upspeed/seeds/leechs are fleet-wide sums of the per-torrent info.* fields."""
         mock_config.get_rules = Mock(return_value=[])
         mock_api.torrents_data = {
             # dlspeed=0, upspeed=524288, num_seeds=5, num_leechs=2
@@ -535,7 +536,7 @@ class TestStatsNamespace:
     def test_stats_state_updates_live_within_a_run(
         self, mock_api, mock_config, downloading_torrent, seeding_torrent
     ):
-        """stats.state.* reflects a state-changing action (force_start) taken earlier in the same run."""
+        """stats.state.* reflects a state-changing action (force_start) taken earlier in the run."""
         rule = {
             "id": "admit-until-cap",
             "enabled": True,
@@ -730,7 +731,7 @@ class TestByRuleStats:
     def test_by_rule_only_includes_enabled_rules_that_ran(
         self, mock_api, mock_config, sample_torrent
     ):
-        """A disabled rule never appears in by_rule, same as it never affects the aggregate counters."""
+        """A disabled rule never appears in by_rule, as it never affects the aggregate counters."""
         disabled_rule = {
             "id": "disabled-rule",
             "enabled": False,
@@ -795,13 +796,13 @@ class TestErrorHandling:
 
         engine = RulesEngine(mock_api, mock_config)
 
-        with pytest.raises(Exception):
-            with patch("qbt_rules.engine.logger.info") as mock_log:
+        with patch("qbt_rules.engine.logger.info") as mock_log:
+            with pytest.raises(Exception, match="Fatal error"):
                 engine.run(context="adhoc-run")
 
-                # Summary should still be logged
-                summary_calls = [call for call in mock_log.call_args_list if "Summary" in str(call)]
-                assert len(summary_calls) > 0
+            # Summary should still be logged
+            summary_calls = [call for call in mock_log.call_args_list if "Summary" in str(call)]
+            assert len(summary_calls) > 0
 
 
 # ============================================================================

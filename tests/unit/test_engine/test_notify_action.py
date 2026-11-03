@@ -3,8 +3,6 @@
 import logging
 from unittest.mock import Mock, patch
 
-import pytest
-
 from qbt_rules.engine import ActionExecutor, ConditionEvaluator
 
 
@@ -38,7 +36,7 @@ class TestNotifyPayloadShapes:
                 "message": "Torrent ${info.name} matched",
             },
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_post.assert_called_once_with(
@@ -60,7 +58,7 @@ class TestNotifyPayloadShapes:
                 "message": "Torrent ${info.name} matched",
             },
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_post.assert_called_once_with(
@@ -82,7 +80,7 @@ class TestNotifyPayloadShapes:
                 "message": "Torrent ${info.name} matched",
             },
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_post.assert_called_once_with(
@@ -104,7 +102,7 @@ class TestNotifyPayloadShapes:
                 "message": "Torrent ${info.name} matched",
             },
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_post.assert_called_once_with(
@@ -127,7 +125,7 @@ class TestNotifyPayloadShapes:
                 "body": {"custom_field": "literal {name} not substituted", "priority": 5},
             },
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_post.assert_called_once_with(
@@ -148,7 +146,7 @@ class TestNotifyPayloadShapes:
                 "message": "hi",
             },
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is False
         mock_post.assert_not_called()
@@ -173,7 +171,7 @@ class TestNotifyTemplating:
                 "message": "Tags: ${info.tags}",
             },
         }
-        success, skipped = executor.execute(torrent, action)
+        success, _skipped = executor.execute(torrent, action)
 
         assert success is True
         mock_post.assert_called_once_with(
@@ -195,7 +193,7 @@ class TestNotifyTemplating:
                 "message": "Tags: [${info.tags}]",
             },
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_post.assert_called_once_with(
@@ -225,7 +223,7 @@ class TestNotifyTemplating:
                 "message": "Torrent [${info.nonexistent_field}] matched",
             },
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_post.assert_called_once_with(
@@ -255,7 +253,7 @@ class TestNotifyTemplating:
             },
         }
         with caplog.at_level(logging.WARNING):
-            success, skipped = executor.execute(sample_torrent, action)
+            success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is False
         mock_post.assert_not_called()
@@ -282,7 +280,7 @@ class TestNotifyTemplating:
                 "message": "Queued: ${stats.state.queuedUP} / ${stats.total}",
             },
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_post.assert_called_once_with(
@@ -302,7 +300,7 @@ class TestNotifyTemplating:
                 "url": "https://discord.com/api/webhooks/x/y",
             },
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is False
         mock_post.assert_not_called()
@@ -326,7 +324,7 @@ class TestNotifyConfigDefaults:
         )
 
         action = {"type": "notify", "params": {"message": "Torrent ${info.name} matched"}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_post.assert_called_once_with(
@@ -351,7 +349,7 @@ class TestNotifyConfigDefaults:
             "type": "notify",
             "params": {"url": "https://example.com/override", "message": "hi"},
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         assert mock_post.call_args[0][0] == "https://example.com/override"
@@ -361,7 +359,7 @@ class TestNotifyConfigDefaults:
         executor = ActionExecutor(mock_api, dry_run=False)  # no notifications_config at all
 
         action = {"type": "notify", "params": {"message": "hi"}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is False
         mock_post.assert_not_called()
@@ -407,7 +405,7 @@ class TestNotifyHttpFailure:
                 "message": "hi",
             },
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is False
 
@@ -424,7 +422,7 @@ class TestNotifyHttpFailure:
                 "message": "hi",
             },
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is False
 
@@ -490,7 +488,7 @@ class TestNotifyRuntimeCollectionFields:
                 "message": "Trackers: ${trackers.url}",
             },
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_post.assert_called_once_with(
@@ -516,7 +514,7 @@ class TestNotifyRuntimeCollectionFields:
                 "message": "Files: ${files.name}",
             },
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_post.assert_called_once_with(
@@ -541,7 +539,7 @@ class TestNotifyRuntimeCollectionFields:
                 "message": "Trackers: [${trackers.url}]",
             },
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_post.assert_called_once_with(

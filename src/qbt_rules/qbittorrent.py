@@ -5,8 +5,6 @@ Wraps qbittorrent-api package for multi-version support (v4.1+ through v5.1.4+)
 Maintains backward compatibility with existing qbt-rules interface
 """
 
-from typing import Dict, List, Optional
-
 import qbittorrentapi
 
 from qbt_rules.errors import AuthenticationError, ConnectionError
@@ -84,10 +82,10 @@ class QBittorrentAPI:
 
     def get_torrents(
         self,
-        filter_type: Optional[str] = None,
-        category: Optional[str] = None,
-        tag: Optional[str] = None,
-    ) -> List[Dict]:
+        filter_type: str | None = None,
+        category: str | None = None,
+        tag: str | None = None,
+    ) -> list[dict]:
         """
         Get list of torrents
 
@@ -107,7 +105,7 @@ class QBittorrentAPI:
         # Convert to list of dicts (qbittorrent-api returns TorrentInfoList)
         return [dict(t) for t in torrents]
 
-    def get_torrent(self, torrent_hash: str) -> Optional[Dict]:
+    def get_torrent(self, torrent_hash: str) -> dict | None:
         """
         Get single torrent by hash
 
@@ -125,7 +123,7 @@ class QBittorrentAPI:
         # Return first torrent or None if not found
         return dict(torrents[0]) if torrents else None
 
-    def get_properties(self, torrent_hash: str) -> Dict:
+    def get_properties(self, torrent_hash: str) -> dict:
         """
         Get detailed torrent properties
 
@@ -138,7 +136,7 @@ class QBittorrentAPI:
         props = self.client.torrents_properties(torrent_hash=torrent_hash)
         return dict(props)
 
-    def get_trackers(self, torrent_hash: str) -> List[Dict]:
+    def get_trackers(self, torrent_hash: str) -> list[dict]:
         """
         Get tracker information for a torrent
 
@@ -151,7 +149,7 @@ class QBittorrentAPI:
         trackers = self.client.torrents_trackers(torrent_hash=torrent_hash)
         return [dict(t) for t in trackers]
 
-    def get_files(self, torrent_hash: str) -> List[Dict]:
+    def get_files(self, torrent_hash: str) -> list[dict]:
         """
         Get file list for a torrent
 
@@ -164,7 +162,7 @@ class QBittorrentAPI:
         files = self.client.torrents_files(torrent_hash=torrent_hash)
         return [dict(f) for f in files]
 
-    def get_webseeds(self, torrent_hash: str) -> List[Dict]:
+    def get_webseeds(self, torrent_hash: str) -> list[dict]:
         """
         Get web seeds for a torrent
 
@@ -177,7 +175,7 @@ class QBittorrentAPI:
         webseeds = self.client.torrents_webseeds(torrent_hash=torrent_hash)
         return [dict(w) for w in webseeds]
 
-    def get_peers(self, torrent_hash: str) -> List[Dict]:
+    def get_peers(self, torrent_hash: str) -> list[dict]:
         """
         Get peer information for a torrent
 
@@ -195,7 +193,7 @@ class QBittorrentAPI:
 
     # Global Information Methods
 
-    def get_transfer_info(self) -> Dict:
+    def get_transfer_info(self) -> dict:
         """
         Get global transfer information
 
@@ -205,7 +203,7 @@ class QBittorrentAPI:
         info = self.client.transfer_info()
         return dict(info)
 
-    def get_app_preferences(self) -> Dict:
+    def get_app_preferences(self) -> dict:
         """
         Get application preferences
 
@@ -217,67 +215,67 @@ class QBittorrentAPI:
 
     # Torrent Control Methods
 
-    def stop_torrents(self, hashes: List[str]) -> bool:
+    def stop_torrents(self, hashes: list[str]) -> bool:
         """Stop torrents (pause in qBittorrent v5.0+)"""
         self.client.torrents_pause(torrent_hashes=hashes)
         return True
 
-    def start_torrents(self, hashes: List[str]) -> bool:
+    def start_torrents(self, hashes: list[str]) -> bool:
         """Start torrents (resume in qBittorrent v5.0+)"""
         self.client.torrents_resume(torrent_hashes=hashes)
         return True
 
-    def force_start_torrents(self, hashes: List[str], enable: bool = True) -> bool:
+    def force_start_torrents(self, hashes: list[str], enable: bool = True) -> bool:
         """Force start torrents, or release them back to normal queue management if enable=False"""
         self.client.torrents_set_force_start(enable=enable, torrent_hashes=hashes)
         return True
 
-    def recheck_torrents(self, hashes: List[str]) -> bool:
+    def recheck_torrents(self, hashes: list[str]) -> bool:
         """Recheck torrents"""
         self.client.torrents_recheck(torrent_hashes=hashes)
         return True
 
-    def reannounce_torrents(self, hashes: List[str]) -> bool:
+    def reannounce_torrents(self, hashes: list[str]) -> bool:
         """Reannounce torrents to trackers"""
         self.client.torrents_reannounce(torrent_hashes=hashes)
         return True
 
-    def delete_torrents(self, hashes: List[str], delete_files: bool) -> bool:
+    def delete_torrents(self, hashes: list[str], delete_files: bool) -> bool:
         """Delete torrents"""
         self.client.torrents_delete(delete_files=delete_files, torrent_hashes=hashes)
         return True
 
     # Category and Tag Methods
 
-    def set_category(self, hashes: List[str], category: str) -> bool:
+    def set_category(self, hashes: list[str], category: str) -> bool:
         """Set category"""
         self.client.torrents_set_category(category=category, torrent_hashes=hashes)
         return True
 
-    def add_tags(self, hashes: List[str], tags: List[str]) -> bool:
+    def add_tags(self, hashes: list[str], tags: list[str]) -> bool:
         """Add tags"""
         self.client.torrents_add_tags(tags=tags, torrent_hashes=hashes)
         return True
 
-    def remove_tags(self, hashes: List[str], tags: List[str]) -> bool:
+    def remove_tags(self, hashes: list[str], tags: list[str]) -> bool:
         """Remove tags"""
         self.client.torrents_remove_tags(tags=tags, torrent_hashes=hashes)
         return True
 
     # Limit Methods
 
-    def set_upload_limit(self, hashes: List[str], limit: int) -> bool:
+    def set_upload_limit(self, hashes: list[str], limit: int) -> bool:
         """Set upload limit (bytes/s, -1 for unlimited)"""
         self.client.torrents_set_upload_limit(limit=limit, torrent_hashes=hashes)
         return True
 
-    def set_download_limit(self, hashes: List[str], limit: int) -> bool:
+    def set_download_limit(self, hashes: list[str], limit: int) -> bool:
         """Set download limit (bytes/s, -1 for unlimited)"""
         self.client.torrents_set_download_limit(limit=limit, torrent_hashes=hashes)
         return True
 
     def set_share_limits(
-        self, hashes: List[str], ratio_limit: float = -2, seeding_time_limit: int = -2
+        self, hashes: list[str], ratio_limit: float = -2, seeding_time_limit: int = -2
     ) -> bool:
         """
         Set share limits
@@ -292,7 +290,7 @@ class QBittorrentAPI:
         )
         return True
 
-    def set_file_priority(self, torrent_hash: str, file_ids: List[int], priority: int) -> bool:
+    def set_file_priority(self, torrent_hash: str, file_ids: list[int], priority: int) -> bool:
         """
         Set the download priority of individual files in one torrent
 
@@ -308,22 +306,22 @@ class QBittorrentAPI:
 
     # Priority Methods
 
-    def increase_priority(self, hashes: List[str]) -> bool:
+    def increase_priority(self, hashes: list[str]) -> bool:
         """Increase torrent priority"""
         self.client.torrents_increase_priority(torrent_hashes=hashes)
         return True
 
-    def decrease_priority(self, hashes: List[str]) -> bool:
+    def decrease_priority(self, hashes: list[str]) -> bool:
         """Decrease torrent priority"""
         self.client.torrents_decrease_priority(torrent_hashes=hashes)
         return True
 
-    def set_top_priority(self, hashes: List[str]) -> bool:
+    def set_top_priority(self, hashes: list[str]) -> bool:
         """Set maximum priority"""
         self.client.torrents_top_priority(torrent_hashes=hashes)
         return True
 
-    def set_bottom_priority(self, hashes: List[str]) -> bool:
+    def set_bottom_priority(self, hashes: list[str]) -> bool:
         """Set minimum priority"""
         self.client.torrents_bottom_priority(torrent_hashes=hashes)
         return True

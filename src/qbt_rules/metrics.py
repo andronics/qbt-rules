@@ -25,18 +25,18 @@ requiring every module that records a metric to know or care about it.
 """
 
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 _enabled = False
-_actions_executed: Optional[Any] = None
-_job_duration: Optional[Any] = None
-_scheduler_fires: Optional[Any] = None
-_http_requests: Optional[Any] = None
-_http_duration: Optional[Any] = None
+_actions_executed: Any | None = None
+_job_duration: Any | None = None
+_scheduler_fires: Any | None = None
+_http_requests: Any | None = None
+_http_duration: Any | None = None
 
 
 def is_available() -> bool:
-    """Check whether the prometheus_client package is installed, without importing it at module scope."""
+    """Check whether prometheus_client is installed, without importing it at module scope."""
     try:
         import prometheus_client  # noqa: F401
 
@@ -164,7 +164,7 @@ def record_http_request(method: str, endpoint: str, status: int, duration: float
     _http_duration.labels(method=method, endpoint=endpoint).observe(duration)
 
 
-def _iso_to_unix_timestamp(iso_string: Optional[str]) -> Optional[float]:
+def _iso_to_unix_timestamp(iso_string: str | None) -> float | None:
     """Parse an ISO-8601 timestamp string (as produced by Worker.get_status()) to Unix seconds."""
     if not iso_string:
         return None
@@ -177,9 +177,9 @@ def _iso_to_unix_timestamp(iso_string: Optional[str]) -> Optional[float]:
 def _build_state_collector(
     queue_backend: str,
     queue_depth: int,
-    job_counts: Dict[str, int],
+    job_counts: dict[str, int],
     worker_running: bool,
-    worker_last_job_completed: Optional[str],
+    worker_last_job_completed: str | None,
     schedule_entry_count: int,
 ):
     """
@@ -236,9 +236,9 @@ def _build_state_collector(
 def generate_metrics_output(
     queue_backend: str,
     queue_depth: int,
-    job_counts: Dict[str, int],
+    job_counts: dict[str, int],
     worker_running: bool,
-    worker_last_job_completed: Optional[str],
+    worker_last_job_completed: str | None,
     schedule_entry_count: int,
 ) -> bytes:
     """

@@ -2,16 +2,16 @@
 
 import os
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 import pytest
 
 from qbt_rules.arguments import (
-    smart_config_default,
     create_parser,
-    validate_torrent_hash,
-    process_args,
     handle_utility_args,
+    process_args,
+    smart_config_default,
+    validate_torrent_hash,
 )
 
 
@@ -83,8 +83,8 @@ class TestCreateParser:
     def test_parser_has_config_dir_argument(self):
         """Parser includes --config-dir argument."""
         parser = create_parser()
-        args = parser.parse_args(["--config-dir", "/tmp/config"])
-        assert args.config_dir == Path("/tmp/config")
+        args = parser.parse_args(["--config-dir", "/tmp/config"])  # noqa: S108  test fixture value
+        assert args.config_dir == Path("/tmp/config")  # noqa: S108  test fixture value
 
     def test_parser_has_dry_run_argument(self):
         """Parser includes --dry-run argument."""

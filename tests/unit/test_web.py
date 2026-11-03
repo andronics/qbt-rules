@@ -10,17 +10,19 @@ Test coverage for:
 - Gunicorn integration
 """
 
-import pytest
+import contextlib
 import json
 import os
-from datetime import datetime
-from unittest.mock import MagicMock, patch, PropertyMock
+from datetime import UTC, datetime
+from typing import ClassVar
+from unittest.mock import MagicMock, patch
 
+import pytest
 from flask import Flask
 
-from qbt_rules.web import create_app, require_api_key, run_server, _summarize_error
-from qbt_rules.queue_manager import JobStatus
 from qbt_rules.__version__ import __version__
+from qbt_rules.queue_manager import JobStatus
+from qbt_rules.web import _summarize_error, create_app, run_server
 
 
 @pytest.fixture
@@ -541,13 +543,13 @@ class TestHealthEndpoint:
 
     def test_health_checks_queue_backend(self, client, mock_queue):
         """Should check queue backend health"""
-        response = client.get("/api/health")
+        client.get("/api/health")
 
         mock_queue.health_check.assert_called_once()
 
     def test_health_checks_worker_thread(self, client, mock_worker):
         """Should check worker thread is alive"""
-        response = client.get("/api/health")
+        client.get("/api/health")
 
         mock_worker.is_alive.assert_called()
 
@@ -791,8 +793,9 @@ class TestGunicornIntegration:
 
     def test_run_server_function_exists(self):
         """Should have run_server function"""
-        from qbt_rules.web import run_server
         import inspect
+
+        from qbt_rules.web import run_server
 
         assert callable(run_server)
         # Verify it's a function
@@ -800,8 +803,9 @@ class TestGunicornIntegration:
 
     def test_run_server_has_correct_signature(self):
         """Should have correct parameters"""
-        from qbt_rules.web import run_server
         import inspect
+
+        from qbt_rules.web import run_server
 
         sig = inspect.signature(run_server)
         params = list(sig.parameters.keys())
@@ -813,19 +817,21 @@ class TestGunicornIntegration:
 
     def test_run_server_default_parameters(self):
         """Should have default parameter values"""
-        from qbt_rules.web import run_server
         import inspect
+
+        from qbt_rules.web import run_server
 
         sig = inspect.signature(run_server)
 
-        assert sig.parameters["host"].default == "0.0.0.0"
+        assert sig.parameters["host"].default == "0.0.0.0"  # noqa: S104  test fixture value
         assert sig.parameters["port"].default == 5000
         assert sig.parameters["workers"].default == 1
 
     def test_run_server_source_contains_gunicorn(self):
         """Should use Gunicorn for production serving"""
-        from qbt_rules.web import run_server
         import inspect
+
+        from qbt_rules.web import run_server
 
         source = inspect.getsource(run_server)
 
@@ -836,8 +842,9 @@ class TestGunicornIntegration:
 
     def test_run_server_source_contains_post_fork(self):
         """Should have post_fork hook for worker thread restart"""
-        from qbt_rules.web import run_server
         import inspect
+
+        from qbt_rules.web import run_server
 
         source = inspect.getsource(run_server)
 
@@ -847,8 +854,9 @@ class TestGunicornIntegration:
 
     def test_run_server_source_configures_options(self):
         """Should configure Gunicorn options"""
-        from qbt_rules.web import run_server
         import inspect
+
+        from qbt_rules.web import run_server
 
         source = inspect.getsource(run_server)
 
@@ -861,8 +869,9 @@ class TestGunicornIntegration:
 
     def test_run_server_executes_and_configures_gunicorn(self):
         """Should execute run_server and configure Gunicorn application"""
+        from unittest.mock import Mock, patch
+
         from qbt_rules.web import run_server
-        from unittest.mock import Mock, MagicMock, patch
 
         mock_app = Mock()
 
@@ -881,13 +890,12 @@ class TestGunicornIntegration:
         mock_gunicorn_base = MagicMock()
         mock_gunicorn_base.BaseApplication = mock_base_class
 
-        with patch.dict("sys.modules", {"gunicorn.app.base": mock_gunicorn_base}):
-            # Call run_server - this will execute lines 401-452
-            try:
-                run_server(mock_app, host="127.0.0.1", port=8080, workers=4)
-            except Exception:
-                # May error due to mocking, but lines should be covered
-                pass
+        # Call run_server: may error due to mocking, but the lines are covered
+        with (
+            patch.dict("sys.modules", {"gunicorn.app.base": mock_gunicorn_base}),
+            contextlib.suppress(Exception),
+        ):
+            run_server(mock_app, host="127.0.0.1", port=8080, workers=4)
 
             # Test passes if no exception during import/execution
 
@@ -899,22 +907,8 @@ class TestMissingLineCoverage:
         """Directly test the 500 error handler function (lines 379-380)"""
         mock_logger = mocker.patch("qbt_rules.web.logger")
 
-        # Get the internal_error function from the app
-        # It's registered as an error handler, but we can call it directly
-        from werkzeug.exceptions import InternalServerError
-
         with app.app_context():
-            # Create an error
-            error = InternalServerError("Test error")
-
-            # Import and call the internal_error function directly
-            from qbt_rules.web import register_routes
-
-            # We need to extract the error handler function
-            # Flask stores it in the app's error_handler_spec
-            # Let's just recreate the function here to test it
-
-            # Actually, let's just set TESTING to False and PROPAGATE_EXCEPTIONS to False
+            # Set TESTING to False and PROPAGATE_EXCEPTIONS to False
             # to allow error handlers to work
             app.config["TESTING"] = False
             app.config["PROPAGATE_EXCEPTIONS"] = False
@@ -943,7 +937,7 @@ class TestStandaloneApplicationMethods:
     """Test Gunicorn StandaloneApplication class methods by actually executing run_server"""
 
     def test_run_server_executes_standalone_app_methods(self, mocker):
-        """Should execute StandaloneApplication methods and post_fork hook (lines 410-412, 415, 424-435)"""
+        """Should execute StandaloneApplication methods and the post_fork hook"""
         from qbt_rules.web import run_server
 
         mock_app = mocker.MagicMock()
@@ -959,7 +953,7 @@ class TestStandaloneApplicationMethods:
         load_called_list = []
 
         class MockCfg:
-            settings = {
+            settings: ClassVar[dict[str, None]] = {
                 "bind": None,
                 "workers": None,
                 "worker_class": None,
@@ -997,16 +991,16 @@ class TestStandaloneApplicationMethods:
                     post_fork_func(mock_server, mock_worker_process)
 
         # Patch Gunicorn's BaseApplication and the global worker
-        with patch("gunicorn.app.base.BaseApplication", MockBaseApplication):
-            with patch("qbt_rules.web.worker", mock_worker):
-                try:
-                    # Actually call the real run_server from web.py
-                    # This will create the real StandaloneApplication class inside run_server
-                    # and call app_instance.run() which will trigger load_config, load, and post_fork
-                    run_server(mock_app, host="127.0.0.1", port=8080, workers=2)
-                except (AttributeError, TypeError):
-                    # Expected - our mock doesn't fully implement Gunicorn
-                    pass
+        with (
+            patch("gunicorn.app.base.BaseApplication", MockBaseApplication),
+            patch("qbt_rules.web.worker", mock_worker),
+            # Expected - our mock doesn't fully implement Gunicorn
+            contextlib.suppress(AttributeError, TypeError),
+        ):
+            # Actually call the real run_server from web.py. This creates the real
+            # StandaloneApplication class inside run_server and calls app_instance.run(),
+            # which triggers load_config, load, and post_fork
+            run_server(mock_app, host="127.0.0.1", port=8080, workers=2)
 
         # Verify load_config was executed (lines 410-412)
         assert len(config_set_called) >= 5, (
@@ -1119,19 +1113,19 @@ class TestPostForkHook:
         mock_worker.running = True
         mock_worker.start = mocker.MagicMock()
 
-        mock_logger = mocker.patch("qbt_rules.web.logger")
+        mocker.patch("qbt_rules.web.logger")
 
         with patch("qbt_rules.web.worker", mock_worker):
             # Simulate what post_fork does (lines 424-435 from web.py)
             # This is the actual logic from the post_fork function
 
             # Create mock Gunicorn objects
-            mock_server = mocker.MagicMock()
             mock_worker_process = mocker.MagicMock()
             mock_worker_process.pid = 54321
 
             # Execute the post_fork logic from web.py (lines 424-435)
-            from qbt_rules.web import logger, worker as worker_instance
+            from qbt_rules.web import logger
+            from qbt_rules.web import worker as worker_instance
 
             # Line 424
             logger.info(
@@ -1241,30 +1235,34 @@ class TestTimeago:
         assert _timeago("not a timestamp") == "not a timestamp"
 
     def test_just_now(self):
-        from qbt_rules.web import _timeago
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        assert _timeago(datetime.now(timezone.utc)) == "just now"
+        from qbt_rules.web import _timeago
+
+        assert _timeago(datetime.now(UTC)) == "just now"
 
     def test_minutes_ago(self):
-        from qbt_rules.web import _timeago
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
 
-        dt = datetime.now(timezone.utc) - timedelta(minutes=5)
+        from qbt_rules.web import _timeago
+
+        dt = datetime.now(UTC) - timedelta(minutes=5)
         assert _timeago(dt) == "5 minutes ago"
 
     def test_singular_unit_has_no_trailing_s(self):
-        from qbt_rules.web import _timeago
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
 
-        dt = datetime.now(timezone.utc) - timedelta(hours=1)
+        from qbt_rules.web import _timeago
+
+        dt = datetime.now(UTC) - timedelta(hours=1)
         assert _timeago(dt) == "1 hour ago"
 
     def test_days_ago(self):
-        from qbt_rules.web import _timeago
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
 
-        dt = datetime.now(timezone.utc) - timedelta(days=4)
+        from qbt_rules.web import _timeago
+
+        dt = datetime.now(UTC) - timedelta(days=4)
         assert _timeago(dt) == "4 days ago"
 
     def test_iso_string_is_parsed(self):
@@ -1272,17 +1270,19 @@ class TestTimeago:
         as a plain ISO string rather than a real datetime -- the filter
         must handle both, matching what real job dicts vs. test mocks
         actually carry."""
-        from qbt_rules.web import _timeago
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
 
-        dt = datetime.now(timezone.utc) - timedelta(days=2)
+        from qbt_rules.web import _timeago
+
+        dt = datetime.now(UTC) - timedelta(days=2)
         assert _timeago(dt.isoformat()) == "2 days ago"
 
     def test_naive_datetime_treated_as_utc(self):
-        from qbt_rules.web import _timeago
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
 
-        dt = (datetime.now(timezone.utc) - timedelta(hours=3)).replace(tzinfo=None)
+        from qbt_rules.web import _timeago
+
+        dt = (datetime.now(UTC) - timedelta(hours=3)).replace(tzinfo=None)
         assert _timeago(dt) == "3 hours ago"
 
 
@@ -1338,7 +1338,7 @@ class TestDashboardRoutes:
         """?next= on the login redirect should round-trip the original
         path and non-key query params, so a login lands back where the
         user was headed (e.g. still filtered/paginated)."""
-        from urllib.parse import urlparse, parse_qs
+        from urllib.parse import parse_qs, urlparse
 
         response = client.get("/jobs?status=failed&limit=10")
 
@@ -1777,8 +1777,9 @@ class TestDashboardRoutes:
         convention for run_server()'s Gunicorn-specific internals (see
         TestGunicornIntegration above), since invoking a real Gunicorn
         arbiter isn't practical in a unit test."""
-        from qbt_rules.web import run_server
         import inspect
+
+        from qbt_rules.web import run_server
 
         source = inspect.getsource(run_server)
 
@@ -1892,16 +1893,18 @@ class TestMetricsRoutes:
     # convention for run_server()'s Gunicorn-specific internals) ----------
 
     def test_run_server_source_filters_metrics_path(self):
-        from qbt_rules.web import run_server
         import inspect
+
+        from qbt_rules.web import run_server
 
         source = inspect.getsource(run_server)
 
         assert 'PATH_INFO") == "/metrics"' in source
 
     def test_run_server_source_has_conditional_child_exit_hook(self):
-        from qbt_rules.web import run_server
         import inspect
+
+        from qbt_rules.web import run_server
 
         source = inspect.getsource(run_server)
 

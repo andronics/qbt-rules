@@ -27,8 +27,9 @@ would parse some scalars differently -- YAML 1.2 vs 1.1).
 """
 
 import re
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any
 
 import yaml
 
@@ -40,7 +41,7 @@ ERROR = "error"
 WARNING = "warning"
 INFO = "info"
 
-Path = Tuple[Any, ...]
+Path = tuple[Any, ...]
 
 # Mirrors utils.parse_duration's own pattern -- anything that doesn't match
 # it parses as 0 seconds
@@ -83,12 +84,12 @@ class Issue:
     path: Path = ()
     # Point at the mapping key rather than its value (e.g. an unknown key)
     on_key: bool = False
-    line: Optional[int] = None
-    column: Optional[int] = None
-    end_line: Optional[int] = None
-    end_column: Optional[int] = None
+    line: int | None = None
+    column: int | None = None
+    end_line: int | None = None
+    end_column: int | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d.pop("on_key")
         d["path"] = format_path(self.path)
@@ -123,10 +124,10 @@ class Locator:
     keeps the last one, which is easy to do by accident in a long file.
     """
 
-    def __init__(self, root: Optional[yaml.Node]):
-        self.values: Dict[Path, yaml.Node] = {}
-        self.keys: Dict[Path, yaml.Node] = {}
-        self.duplicates: List[Issue] = []
+    def __init__(self, root: yaml.Node | None):
+        self.values: dict[Path, yaml.Node] = {}
+        self.keys: dict[Path, yaml.Node] = {}
+        self.duplicates: list[Issue] = []
         if root is not None:
             self._walk(root, (), set())
 
@@ -147,20 +148,20 @@ class Locator:
                         Issue(
                             WARNING,
                             f"Duplicate key '{key}' -- only the last one is used",
-                            path + (key,),
+                            (*path, key),
                             on_key=True,
                             **_span(key_node),
                         )
                     )
                 seen.add(key)
-                self.keys[path + (key,)] = key_node
-                self._walk(value_node, path + (key,), stack)
+                self.keys[(*path, key)] = key_node
+                self._walk(value_node, (*path, key), stack)
 
         elif isinstance(node, yaml.SequenceNode):
             for i, item in enumerate(node.value):
-                self._walk(item, path + (i,), stack)
+                self._walk(item, (*path, i), stack)
 
-    def node(self, path: Path, on_key: bool = False) -> Optional[yaml.Node]:
+    def node(self, path: Path, on_key: bool = False) -> yaml.Node | None:
         if on_key and path in self.keys:
             return self.keys[path]
         while True:
@@ -178,11 +179,11 @@ class Locator:
                     setattr(issue, k, v)
         return issue
 
-    def line_of(self, path: Path) -> Optional[int]:
+    def line_of(self, path: Path) -> int | None:
         node = self.values.get(path)
         return node.start_mark.line + 1 if node is not None else None
 
-    def find_scalar(self, path: Path, needle: str) -> Optional[Path]:
+    def find_scalar(self, path: Path, needle: str) -> Path | None:
         """First path at or under `path` whose scalar value contains needle"""
         for p, node in self.values.items():
             if (
@@ -194,7 +195,7 @@ class Locator:
         return None
 
 
-def _span(node: yaml.Node) -> Dict[str, int]:
+def _span(node: yaml.Node) -> dict[str, int]:
     """1-based line/column range of a node. A block mapping/sequence's
     end mark sits at the start of the following line, so only its first
     line is used -- underlining an entire rule would be noise."""
@@ -216,7 +217,7 @@ def _span(node: yaml.Node) -> Dict[str, int]:
 # ---------------------------------------------------------------------------
 
 
-def check_rules_structure(raw: Any) -> List[Issue]:
+def check_rules_structure(raw: Any) -> list[Issue]:
     """
     The checks Config._load_rules() applies to a parsed rules.yml, as a list
     of error Issues (empty means the loader will accept it). Messages are
@@ -227,7 +228,7 @@ def check_rules_structure(raw: Any) -> List[Issue]:
             Issue(ERROR, "rules.yml must be a mapping (expected keys like 'rules:' and 'refs:')")
         ]
 
-    issues: List[Issue] = []
+    issues: list[Issue] = []
 
     # An empty `refs:` (or group) parses as None, which means "none defined"
     refs = raw.get("refs")
@@ -259,7 +260,7 @@ def check_rules_structure(raw: Any) -> List[Issue]:
                 Issue(
                     ERROR,
                     f"Rule #{i + 1} has an invalid 'id': must be a non-empty string",
-                    path + ("id",),
+                    (*path, "id"),
                 )
             )
             continue
@@ -274,7 +275,7 @@ def check_rules_structure(raw: Any) -> List[Issue]:
                 Issue(
                     ERROR,
                     f"Duplicate rule id: '{rule['id']}' -- rule ids must be unique",
-                    path + ("id",),
+                    (*path, "id"),
                 )
             )
         seen_ids.add(rule["id"])
@@ -293,7 +294,7 @@ def check_rules_structure(raw: Any) -> List[Issue]:
 # ---------------------------------------------------------------------------
 
 
-def _resolver_needle(e: ResolverError) -> Optional[str]:
+def _resolver_needle(e: ResolverError) -> str | None:
     """The text in the document an error is about, to find where it is"""
     if e.code in ("REF-002", "REF-004"):
         return str(e.details.get("Reference", "")) or None
@@ -306,7 +307,7 @@ def _resolver_needle(e: ResolverError) -> Optional[str]:
     return None
 
 
-def check_resolution(raw: Dict[str, Any], locator: Locator) -> List[Issue]:
+def check_resolution(raw: dict[str, Any], locator: Locator) -> list[Issue]:
     """Resolve every rule exactly as Config.get_rules() would"""
     refs = raw.get("refs") or {}
     try:
@@ -316,7 +317,7 @@ def check_resolution(raw: Dict[str, Any], locator: Locator) -> List[Issue]:
 
     # The same broken $ref/var can surface once per rule using it -- group
     # those into one issue listing every affected rule
-    grouped: Dict[Tuple[Path, str], List[str]] = {}
+    grouped: dict[tuple[Path, str], list[str]] = {}
     for i, rule in enumerate(raw.get("rules") or []):
         if not isinstance(rule, dict) or not isinstance(rule.get("id"), str):
             continue
@@ -355,17 +356,17 @@ def check_resolution(raw: Dict[str, Any], locator: Locator) -> List[Issue]:
 
 
 class _Linter:
-    def __init__(self, raw: Dict[str, Any], notifications: Optional[Dict[str, Any]] = None):
+    def __init__(self, raw: dict[str, Any], notifications: dict[str, Any] | None = None):
         self.raw = raw
         self.notifications = notifications
         refs = raw.get("refs") if isinstance(raw.get("refs"), dict) else {}
         self.vars = refs.get("vars") if isinstance(refs.get("vars"), dict) else {}
-        self.issues: List[Issue] = []
+        self.issues: list[Issue] = []
 
     def add(self, severity: str, message: str, path: Path, on_key: bool = False):
         self.issues.append(Issue(severity, message, path, on_key=on_key))
 
-    def effective(self, value: Any) -> Tuple[Any, bool]:
+    def effective(self, value: Any) -> tuple[Any, bool]:
         """A whole-string ${vars.x} becomes the var's value (it keeps its
         type at load time); returns (value, known) -- known is False for a
         var that doesn't exist, which resolution already reports"""
@@ -406,7 +407,7 @@ class _Linter:
 
     # -- top level ----------------------------------------------------------
 
-    def run(self) -> List[Issue]:
+    def run(self) -> list[Issue]:
         for key in self.raw:
             if key not in schema.TOP_LEVEL_KEYS:
                 self.add(WARNING, f"Unknown top-level key '{key}' (ignored)", (key,), on_key=True)
@@ -435,7 +436,7 @@ class _Linter:
                     self.rule(rule, ("rules", i))
         return self.issues
 
-    def unused_refs(self, refs: Dict[str, Any]):
+    def unused_refs(self, refs: dict[str, Any]):
         used_vars, used_refs = set(), set()
         for node in _walk_values(
             [self.raw.get("rules"), refs.get("conditions"), refs.get("actions")]
@@ -468,26 +469,26 @@ class _Linter:
 
     # -- rules --------------------------------------------------------------
 
-    def rule(self, rule: Dict[str, Any], path: Path):
+    def rule(self, rule: dict[str, Any], path: Path):
         for key in rule:
             if key not in schema.RULE_KEYS:
                 self.add(
                     INFO,
                     f"Unknown rule key '{key}' (ignored by the engine)",
-                    path + (key,),
+                    (*path, key),
                     on_key=True,
                 )
 
         for flag in ("enabled", "stop_on_match"):
             if flag in rule:
-                self.bool_value(rule[flag], f"'{flag}'", path + (flag,))
+                self.bool_value(rule[flag], f"'{flag}'", (*path, flag))
 
         if "meta" in rule and not isinstance(rule["meta"], dict):
             self.add(
                 ERROR,
                 "'meta' must be a mapping (e.g. meta: {description: ...}) -- "
                 "anything else fails every job",
-                path + ("meta",),
+                (*path, "meta"),
             )
 
         context = rule.get("context")
@@ -497,13 +498,13 @@ class _Linter:
             and not (isinstance(context, list) and all(isinstance(c, str) for c in context))
         ):
             self.add(
-                WARNING, "'context' should be a string or a list of strings", path + ("context",)
+                WARNING, "'context' should be a string or a list of strings", (*path, "context")
             )
 
         if "conditions" in rule:
-            self.top_conditions(rule["conditions"], path + ("conditions",))
+            self.top_conditions(rule["conditions"], (*path, "conditions"))
         if "actions" in rule:
-            self.action_list(rule["actions"], path + ("actions",), in_rule=True)
+            self.action_list(rule["actions"], (*path, "actions"), in_rule=True)
 
     # -- conditions ---------------------------------------------------------
 
@@ -521,7 +522,7 @@ class _Linter:
             if not node:
                 self.add(WARNING, "Empty conditions match every torrent", path)
             for i, child in enumerate(node):
-                self.condition(child, path + (i,))
+                self.condition(child, (*path, i))
         elif isinstance(node, dict):
             if "$ref" in node:
                 return
@@ -531,7 +532,7 @@ class _Linter:
                     self.add(
                         WARNING,
                         f"'{key}' is ignored here -- top-level conditions only read all/any/none",
-                        path + (key,),
+                        (*path, key),
                         on_key=True,
                     )
             if not groups:
@@ -542,7 +543,7 @@ class _Linter:
                     path,
                 )
             for group in groups:
-                self.group(node[group], path + (group,))
+                self.group(node[group], (*path, group))
         else:
             self.add(ERROR, "'conditions' must be a list or a mapping of all/any/none", path)
 
@@ -550,14 +551,14 @@ class _Linter:
         """A refs.conditions.<name> block -- spliced in where it's used"""
         if isinstance(node, list):
             for i, child in enumerate(node):
-                self.condition(child, path + (i,))
+                self.condition(child, (*path, i))
         elif isinstance(node, dict):
             if "$ref" in node:
                 return
             groups = [g for g in schema.CONDITION_GROUPS if g in node]
             if groups:
                 for group in groups:
-                    self.group(node[group], path + (group,))
+                    self.group(node[group], (*path, group))
                 if len(groups) > 1:
                     self.add(
                         INFO,
@@ -580,7 +581,7 @@ class _Linter:
             ]
             self.add(WARNING, f"Empty '{path[-1]}' group {meaning}", path)
         for i, child in enumerate(node):
-            self.condition(child, path + (i,))
+            self.condition(child, (*path, i))
 
     def condition(self, node: Any, path: Path):
         """One item inside a group: a leaf, a nested group, or a $ref"""
@@ -604,7 +605,7 @@ class _Linter:
                     path,
                 )
             for group in groups:
-                self.group(node[group], path + (group,))
+                self.group(node[group], (*path, group))
             return
 
         missing = [k for k in ("field", "operator", "value") if k not in node]
@@ -617,22 +618,20 @@ class _Linter:
             )
         for key in node:
             if key not in ("field", "operator", "value"):
-                self.add(WARNING, f"'{key}' is ignored in a condition", path + (key,), on_key=True)
+                self.add(WARNING, f"'{key}' is ignored in a condition", (*path, key), on_key=True)
 
         if "field" in node:
-            self.field(node["field"], path + ("field",))
+            self.field(node["field"], (*path, "field"))
         operator = node.get("operator")
-        if "operator" in node:
-            if operator not in schema.OPERATORS:
-                self.add(
-                    ERROR,
-                    f"Unknown operator '{operator}' (expected one of: "
-                    f"{', '.join(schema.OPERATORS)})",
-                    path + ("operator",),
-                )
-                operator = None
+        if "operator" in node and operator not in schema.OPERATORS:
+            self.add(
+                ERROR,
+                f"Unknown operator '{operator}' (expected one of: {', '.join(schema.OPERATORS)})",
+                (*path, "operator"),
+            )
+            operator = None
         if operator and "value" in node:
-            self.value(operator, node["value"], path + ("value",))
+            self.value(operator, node["value"], (*path, "value"))
 
     def field(self, field: Any, path: Path):
         if not isinstance(field, str) or "." not in field:
@@ -681,7 +680,8 @@ class _Linter:
             if not m or (m.group(2) and m.group(2) not in _SIZE_UNITS):
                 self.add(
                     ERROR,
-                    f"{value!r} is not a size qbt-rules understands -- write it like '10 GB' or '500 MiB'",
+                    f"{value!r} is not a size qbt-rules understands -- write it like '10 GB' or "
+                    "'500 MiB'",
                     path,
                 )
             elif m.group(2) and m.group(2).endswith("b"):
@@ -696,7 +696,8 @@ class _Linter:
         elif kind == "string" and not isinstance(value, (str, list)):
             self.add(
                 ERROR,
-                f"'{operator}' needs text (or a list of text), so a {type(value).__name__} never matches",
+                f"'{operator}' needs text (or a list of text), so a {type(value).__name__} never "
+                "matches",
                 path,
             )
 
@@ -718,7 +719,7 @@ class _Linter:
         if in_rule and not node:
             self.add(WARNING, "No actions -- this rule matches but does nothing", path)
         for i, action in enumerate(node):
-            self.action(action, path + (i,))
+            self.action(action, (*path, i))
 
     def action(self, node: Any, path: Path):
         if not isinstance(node, dict):
@@ -738,19 +739,19 @@ class _Linter:
                 self.add(
                     WARNING,
                     f"'{key}' is ignored here -- action settings go under params:",
-                    path + (key,),
+                    (*path, key),
                     on_key=True,
                 )
 
         action_type = node["type"]
         spec = schema.ACTION_TYPES.get(action_type) if isinstance(action_type, str) else None
         if spec is None:
-            self.add(ERROR, f"Unknown action type '{action_type}'", path + ("type",))
+            self.add(ERROR, f"Unknown action type '{action_type}'", (*path, "type"))
             return
 
         params = node.get("params", {})
         if "params" in node and not isinstance(params, dict):
-            self.add(ERROR, "'params' must be a mapping", path + ("params",))
+            self.add(ERROR, "'params' must be a mapping", (*path, "params"))
             return
 
         for name in params:
@@ -761,18 +762,18 @@ class _Linter:
                     ERROR,
                     f"delete_torrent has no '{name}' param, so it is ignored and the files ARE "
                     f"deleted (delete_files defaults to true) -- use delete_files: false",
-                    path + ("params", name),
+                    (*path, "params", name),
                     on_key=True,
                 )
             else:
                 self.add(
                     WARNING,
                     f"'{action_type}' has no param '{name}' (ignored)",
-                    path + ("params", name),
+                    (*path, "params", name),
                     on_key=True,
                 )
         for name, pspec in spec["params"].items():
-            ppath = path + ("params", name)
+            ppath = (*path, "params", name)
             if name not in params:
                 if pspec.get("required"):
                     self.add(ERROR, f"'{action_type}' needs params.{name}", path)
@@ -805,7 +806,7 @@ class _Linter:
             ):
                 self.add(ERROR, "notify needs params.url or notifications.webhook_url", path)
 
-    def param(self, action_type: str, name: str, pspec: Dict[str, Any], raw_value: Any, path: Path):
+    def param(self, action_type: str, name: str, pspec: dict[str, Any], raw_value: Any, path: Path):
         value, known = self.effective(raw_value)
         if not known:
             return
@@ -829,7 +830,7 @@ class _Linter:
                 self.add(ERROR, f"params.{name} is not a valid regular expression: {e}", path)
 
 
-def _walk_values(node: Any, _seen: Optional[set] = None) -> Iterator[Any]:
+def _walk_values(node: Any, _seen: set | None = None) -> Iterator[Any]:
     """Every value in a parsed document, depth first (aliases visited once)"""
     seen = _seen if _seen is not None else set()
     yield node
@@ -841,7 +842,7 @@ def _walk_values(node: Any, _seen: Optional[set] = None) -> Iterator[Any]:
             yield from _walk_values(v, seen)
 
 
-def lint_rules(raw: Dict[str, Any], notifications: Optional[Dict[str, Any]] = None) -> List[Issue]:
+def lint_rules(raw: dict[str, Any], notifications: dict[str, Any] | None = None) -> list[Issue]:
     """Lint rules, optionally checking against resolved notification defaults."""
     return _Linter(raw, notifications).run()
 
@@ -851,7 +852,7 @@ def lint_rules(raw: Dict[str, Any], notifications: Optional[Dict[str, Any]] = No
 # ---------------------------------------------------------------------------
 
 
-def _summary(raw: Dict[str, Any], locator: Locator) -> Dict[str, Any]:
+def _summary(raw: dict[str, Any], locator: Locator) -> dict[str, Any]:
     """Outline of the document for the editor's sidebar"""
     rules = []
     for i, rule in enumerate(raw["rules"] if isinstance(raw.get("rules"), list) else []):
@@ -895,7 +896,7 @@ def _summary(raw: Dict[str, Any], locator: Locator) -> Dict[str, Any]:
     return {"rules": rules, "refs": ref_names, "contexts": sorted(str(c) for c in contexts)}
 
 
-def validate_rules_text(text: str) -> Dict[str, Any]:
+def validate_rules_text(text: str) -> dict[str, Any]:
     """
     Validate a candidate rules.yml
 
@@ -903,8 +904,8 @@ def validate_rules_text(text: str) -> Dict[str, Any]:
     valid is True when there are no errors -- i.e. the server would load it,
     every rule resolves, and nothing in it is known to fail or misfire.
     """
-    issues: List[Issue] = []
-    summary: Dict[str, Any] = {
+    issues: list[Issue] = []
+    summary: dict[str, Any] = {
         "rules": [],
         "refs": {"vars": [], "conditions": [], "actions": []},
         "contexts": [],
@@ -944,7 +945,7 @@ def validate_rules_text(text: str) -> Dict[str, Any]:
 _SEVERITY_ORDER = {ERROR: 0, WARNING: 1, INFO: 2}
 
 
-def _result(issues: List[Issue], summary: Dict[str, Any]) -> Dict[str, Any]:
+def _result(issues: list[Issue], summary: dict[str, Any]) -> dict[str, Any]:
     issues = sorted(issues, key=lambda i: (i.line or 0, i.column or 0, _SEVERITY_ORDER[i.severity]))
     counts = {s: sum(1 for i in issues if i.severity == s) for s in (ERROR, WARNING, INFO)}
     return {

@@ -79,10 +79,11 @@ import json
 import os
 import re
 import sys
-from datetime import datetime, timedelta, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 import pytest
 
@@ -96,7 +97,7 @@ UPDATE_GOLDENS = os.environ.get("QBT_RULES_UPDATE_GOLDENS") == "1"
 API_KEY = "golden-api-key"
 KEY = {"X-API-Key": API_KEY}
 FIXED_VERSION = "0.0.0+golden"
-FROZEN_AT = datetime(2026, 11, 3, 12, 30, 0, tzinfo=timezone.utc)
+FROZEN_AT = datetime(2026, 11, 3, 12, 30, 0, tzinfo=UTC)
 BACKENDS = ["sqlite", "redis"]
 
 # Every response field that holds a timestamp. SQLite job timestamps are
@@ -173,7 +174,7 @@ def normalise_timestamps(value: Any) -> Any:
         out = {}
         for k, v in value.items():
             if k in TIMESTAMP_FIELDS and isinstance(v, str) and _RFC822.match(v):
-                out[k] = parsedate_to_datetime(v).astimezone(timezone.utc).isoformat()
+                out[k] = parsedate_to_datetime(v).astimezone(UTC).isoformat()
             else:
                 out[k] = normalise_timestamps(v)
         return out
@@ -182,9 +183,9 @@ def normalise_timestamps(value: Any) -> Any:
     return value
 
 
-def timestamp_paths(value: Any, prefix: str = "") -> List[str]:
+def timestamp_paths(value: Any, prefix: str = "") -> list[str]:
     """JSON paths (e.g. "jobs[0].created_at") of every non-null timestamp"""
-    paths: List[str] = []
+    paths: list[str] = []
     if isinstance(value, dict):
         for k, v in value.items():
             path = f"{prefix}.{k}" if prefix else k
@@ -332,7 +333,7 @@ class Env:
     def seed_jobs(self):
         """Completed, failed and pending jobs a minute apart, moved through the
         queue the way the worker moves them (dequeue, then update_status)"""
-        t0 = datetime(2026, 11, 3, 12, 0, 0, tzinfo=timezone.utc)
+        t0 = datetime(2026, 11, 3, 12, 0, 0, tzinfo=UTC)
         q = self.queue
 
         self.clock.set(t0)
@@ -378,7 +379,7 @@ class Env:
 # Cases -- each returns (request description, response)
 # ---------------------------------------------------------------------------
 
-CASES: Dict[str, Callable[[Env], Any]] = {}
+CASES: dict[str, Callable[[Env], Any]] = {}
 
 
 def case(name: str):
@@ -888,8 +889,8 @@ def _(env):
 # ---------------------------------------------------------------------------
 
 
-def _mask(env: Env, body: str, content_type: str) -> "tuple[str, List[str]]":
-    masked: List[str] = []
+def _mask(env: Env, body: str, content_type: str) -> "tuple[str, list[str]]":
+    masked: list[str] = []
 
     config_dir = str(env.config_dir)
     if config_dir in body:
@@ -913,7 +914,7 @@ def _mask(env: Env, body: str, content_type: str) -> "tuple[str, List[str]]":
     return body, masked
 
 
-def _selected_headers(response) -> Dict[str, str]:
+def _selected_headers(response) -> dict[str, str]:
     headers = {h: response.headers[h] for h in SELECTED_HEADERS if h in response.headers}
     if "Allow" in headers:
         # Werkzeug builds Allow from a set, so its order varies run to run
@@ -921,10 +922,10 @@ def _selected_headers(response) -> Dict[str, str]:
     return headers
 
 
-def _record(env: Env, name: str, request: str, response) -> Dict[str, Any]:
+def _record(env: Env, name: str, request: str, response) -> dict[str, Any]:
     content_type = response.headers.get("Content-Type", "")
     body, masked = _mask(env, response.get_data(as_text=True), content_type)
-    paths: List[str] = []
+    paths: list[str] = []
     if content_type.startswith("application/json"):
         paths = timestamp_paths(json.loads(body))
     return {
@@ -944,7 +945,7 @@ def _golden_path(backend: str, name: str) -> Path:
     return GOLDEN_DIR / backend / f"{name}.json"
 
 
-def _load(path: Path) -> Optional[Dict[str, Any]]:
+def _load(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     return json.loads(path.read_text("utf-8"))

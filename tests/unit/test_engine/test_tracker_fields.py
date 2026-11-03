@@ -1,6 +1,6 @@
 """tracker.* fields from the trackie integration (qbt_rules/trackie.py)."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 
 import pytest
@@ -16,7 +16,7 @@ from qbt_rules.trackie import (
     parse_max_age,
 )
 
-NOW = datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 27, 12, 0, tzinfo=UTC)
 FRESH = (NOW - timedelta(minutes=20)).isoformat().replace("+00:00", "Z")
 STALE = (NOW - timedelta(hours=5)).isoformat().replace("+00:00", "Z")
 
@@ -254,7 +254,7 @@ class TestFailSafe:
 
 class TestConfiguration:
     def test_not_configured_is_a_field_error(self, mock_api):
-        with pytest.raises(FieldError, match="integrations.trackie.url"):
+        with pytest.raises(FieldError, match=r"integrations\.trackie\.url"):
             ConditionEvaluator(mock_api).get_field_value(torrent(HASH_REQUIRED), "tracker.status")
 
     @pytest.mark.parametrize(

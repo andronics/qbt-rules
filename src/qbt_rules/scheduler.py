@@ -10,15 +10,15 @@ queue.enqueue() directly -- no HTTP round-trip, no Flask request context
 needed, since QueueManager.enqueue() has no such coupling.
 """
 
+import logging
 import threading
 import time
-import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from croniter import croniter
 
-from qbt_rules.queue_manager import QueueManager
 from qbt_rules import metrics
+from qbt_rules.queue_manager import QueueManager
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class Scheduler:
     """
 
     def __init__(
-        self, queue: QueueManager, entries: List[Dict[str, str]], poll_interval: float = 30.0
+        self, queue: QueueManager, entries: list[dict[str, str]], poll_interval: float = 30.0
     ):
         """
         Initialize scheduler
@@ -55,8 +55,8 @@ class Scheduler:
         self.poll_interval = poll_interval
 
         self.running = False
-        self.thread: Optional[threading.Thread] = None
-        self.last_fire: Optional[Dict[str, Any]] = None
+        self.thread: threading.Thread | None = None
+        self.last_fire: dict[str, Any] | None = None
 
         now = time.time()
         self._entries = []
@@ -113,7 +113,7 @@ class Scheduler:
         """Check if scheduler thread is alive"""
         return self.thread is not None and self.thread.is_alive()
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """
         Get scheduler status
 
@@ -151,7 +151,7 @@ class Scheduler:
 
         logger.info("Scheduler loop exited")
 
-    def _fire(self, entry: Dict[str, Any]):
+    def _fire(self, entry: dict[str, Any]):
         """
         Enqueue a job for a due schedule entry
 
@@ -162,7 +162,8 @@ class Scheduler:
         try:
             job_id = self.queue.enqueue(context=entry["context"])
             logger.info(
-                f"Scheduled job enqueued: {job_id} (context={entry['context']}, cron={entry['cron']})"
+                f"Scheduled job enqueued: {job_id} (context={entry['context']}, "
+                f"cron={entry['cron']})"
             )
             self.last_fire = {"context": entry["context"], "job_id": job_id, "at": time.time()}
             metrics.record_scheduler_fire(True)

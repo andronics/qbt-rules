@@ -1,9 +1,8 @@
 """Comprehensive tests for ActionExecutor class in engine.py."""
 
-import pytest
-from unittest.mock import Mock, patch, call
-from qbt_rules.engine import ActionExecutor
+from unittest.mock import Mock, patch
 
+from qbt_rules.engine import ActionExecutor
 
 # ============================================================================
 # Initialization
@@ -147,7 +146,7 @@ class TestControlActions:
         mock_api.start_torrents = Mock(return_value=True)
         executor = ActionExecutor(mock_api, dry_run=False)
 
-        success, skipped = executor.execute(paused_torrent, {"type": "start"})
+        success, _skipped = executor.execute(paused_torrent, {"type": "start"})
 
         assert success is True
         mock_api.start_torrents.assert_called_once_with([paused_torrent["hash"]])
@@ -157,7 +156,7 @@ class TestControlActions:
         mock_api.force_start_torrents = Mock(return_value=True)
         executor = ActionExecutor(mock_api, dry_run=False)
 
-        success, skipped = executor.execute(sample_torrent, {"type": "force_start"})
+        success, _skipped = executor.execute(sample_torrent, {"type": "force_start"})
 
         assert success is True
         mock_api.force_start_torrents.assert_called_once_with([sample_torrent["hash"]])
@@ -181,7 +180,7 @@ class TestControlActions:
         mock_api.recheck_torrents = Mock(return_value=True)
         executor = ActionExecutor(mock_api, dry_run=False)
 
-        success, skipped = executor.execute(sample_torrent, {"type": "recheck"})
+        success, _skipped = executor.execute(sample_torrent, {"type": "recheck"})
 
         assert success is True
         mock_api.recheck_torrents.assert_called_once_with([sample_torrent["hash"]])
@@ -191,7 +190,7 @@ class TestControlActions:
         mock_api.reannounce_torrents = Mock(return_value=True)
         executor = ActionExecutor(mock_api, dry_run=False)
 
-        success, skipped = executor.execute(sample_torrent, {"type": "reannounce"})
+        success, _skipped = executor.execute(sample_torrent, {"type": "reannounce"})
 
         assert success is True
         mock_api.reannounce_torrents.assert_called_once_with([sample_torrent["hash"]])
@@ -211,7 +210,7 @@ class TestDeleteAction:
         executor = ActionExecutor(mock_api, dry_run=False)
 
         action = {"type": "delete_torrent", "params": {"delete_files": True}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.delete_torrents.assert_called_once_with(
@@ -224,7 +223,7 @@ class TestDeleteAction:
         executor = ActionExecutor(mock_api, dry_run=False)
 
         action = {"type": "delete_torrent", "params": {"delete_files": False}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.delete_torrents.assert_called_once_with(
@@ -237,7 +236,7 @@ class TestDeleteAction:
         executor = ActionExecutor(mock_api, dry_run=False)
 
         action = {"type": "delete_torrent", "params": {}}
-        success, skipped = executor.execute(sample_torrent, action)
+        _success, _skipped = executor.execute(sample_torrent, action)
 
         # Default (no params at all) deletes files, same as before the rename
         mock_api.delete_torrents.assert_called_once_with(
@@ -255,7 +254,7 @@ class TestDeleteAction:
         # (removed) alias -- confirm it's now fully inert and files are
         # deleted anyway, matching the no-params default.
         action = {"type": "delete_torrent", "params": {"keep_files": True}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.delete_torrents.assert_called_once_with(
@@ -272,7 +271,7 @@ class TestDeleteAction:
             "type": "delete_torrent",
             "params": {"delete_files": False, "keep_files": False},
         }
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.delete_torrents.assert_called_once_with(
@@ -294,7 +293,7 @@ class TestCategoryAndTagActions:
         executor = ActionExecutor(mock_api, dry_run=False)
 
         action = {"type": "set_category", "params": {"category": "movies"}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.set_category.assert_called_once_with([sample_torrent["hash"]], "movies")
@@ -305,7 +304,7 @@ class TestCategoryAndTagActions:
         executor = ActionExecutor(mock_api, dry_run=False)
 
         action = {"type": "add_tag", "params": {"tags": ["hd", "new"]}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.add_tags.assert_called_once_with([sample_torrent["hash"]], ["hd", "new"])
@@ -317,7 +316,7 @@ class TestCategoryAndTagActions:
 
         torrent = {"hash": "test123", "name": "Test", "tags": "hd,new,old"}
         action = {"type": "remove_tag", "params": {"tags": ["old"]}}
-        success, skipped = executor.execute(torrent, action)
+        success, _skipped = executor.execute(torrent, action)
 
         assert success is True
         mock_api.remove_tags.assert_called_once_with(["test123"], ["old"])
@@ -330,7 +329,7 @@ class TestCategoryAndTagActions:
 
         torrent = {"hash": "test123", "name": "Test", "tags": "old1,old2"}
         action = {"type": "set_tags", "params": {"tags": ["new1", "new2"]}}
-        success, skipped = executor.execute(torrent, action)
+        success, _skipped = executor.execute(torrent, action)
 
         assert success is True
         mock_api.remove_tags.assert_called_once_with(["test123"], ["old1", "old2"])
@@ -344,7 +343,7 @@ class TestCategoryAndTagActions:
 
         torrent = {"hash": "test123", "name": "Test", "tags": ""}
         action = {"type": "set_tags", "params": {"tags": ["new"]}}
-        success, skipped = executor.execute(torrent, action)
+        _success, _skipped = executor.execute(torrent, action)
 
         # Should not call remove_tags since no existing tags
         mock_api.remove_tags.assert_not_called()
@@ -364,7 +363,7 @@ class TestCategoryAndTagActions:
             "state": "uploading",
         }
         action = {"type": "set_category", "params": {"category": ""}}
-        success, skipped = executor.execute(torrent, action)
+        _success, _skipped = executor.execute(torrent, action)
 
         mock_api.set_category.assert_called_once_with(["test123"], "")
 
@@ -383,7 +382,7 @@ class TestSpeedLimitActions:
         executor = ActionExecutor(mock_api, dry_run=False)
 
         action = {"type": "set_upload_limit", "params": {"limit": 1048576}}  # 1 MB/s
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.set_upload_limit.assert_called_once_with([sample_torrent["hash"]], 1048576)
@@ -394,7 +393,7 @@ class TestSpeedLimitActions:
         executor = ActionExecutor(mock_api, dry_run=False)
 
         action = {"type": "set_download_limit", "params": {"limit": 2097152}}  # 2 MB/s
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.set_download_limit.assert_called_once_with([sample_torrent["hash"]], 2097152)
@@ -416,7 +415,7 @@ class TestPriorityActions:
         executor = ActionExecutor(mock_api, dry_run=False)
 
         action = {"type": "increase_priority"}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.increase_priority.assert_called_once_with([sample_torrent["hash"]])
@@ -427,7 +426,7 @@ class TestPriorityActions:
         executor = ActionExecutor(mock_api, dry_run=False)
 
         action = {"type": "decrease_priority"}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.decrease_priority.assert_called_once_with([sample_torrent["hash"]])
@@ -438,7 +437,7 @@ class TestPriorityActions:
         executor = ActionExecutor(mock_api, dry_run=False)
 
         action = {"type": "set_top_priority"}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.set_top_priority.assert_called_once_with([sample_torrent["hash"]])
@@ -449,7 +448,7 @@ class TestPriorityActions:
         executor = ActionExecutor(mock_api, dry_run=False)
 
         action = {"type": "set_bottom_priority"}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.set_bottom_priority.assert_called_once_with([sample_torrent["hash"]])
@@ -480,7 +479,7 @@ class TestDryRunMode:
         executor = ActionExecutor(mock_api, dry_run=True)
 
         action = {"type": "delete_torrent", "params": {"delete_files": False}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.delete_torrents.assert_not_called()
@@ -492,7 +491,7 @@ class TestDryRunMode:
         executor = ActionExecutor(mock_api, dry_run=True)
 
         action = {"type": "delete_torrent", "params": {"keep_files": True}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.delete_torrents.assert_not_called()
@@ -503,7 +502,7 @@ class TestDryRunMode:
         executor = ActionExecutor(mock_api, dry_run=True)
 
         action = {"type": "set_category", "params": {"category": "test"}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_api.set_category.assert_not_called()
@@ -613,7 +612,7 @@ class TestErrorHandling:
         executor = ActionExecutor(mock_api, dry_run=False)
 
         # Action without params key
-        success, skipped = executor.execute(sample_torrent, {"type": "set_category"})
+        success, _skipped = executor.execute(sample_torrent, {"type": "set_category"})
 
         # Should use empty params dict, resulting in empty category
         assert success is True
@@ -642,7 +641,7 @@ class TestActionExecutorIntegration:
         ]
 
         for action in actions:
-            success, skipped = executor.execute(sample_torrent, action)
+            success, _skipped = executor.execute(sample_torrent, action)
             assert success is True
 
         mock_api.set_category.assert_called_once()
@@ -655,7 +654,7 @@ class TestActionExecutorIntegration:
         executor = ActionExecutor(mock_api, dry_run=False)
 
         action = {"type": "set_upload_limit", "params": {}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         # Should use default limit=-1
         assert success is True
@@ -667,11 +666,11 @@ class TestActionExecutorIntegration:
 
         # Normal mode
         executor_normal = ActionExecutor(mock_api, dry_run=False)
-        success1, skipped1 = executor_normal.execute(sample_torrent, {"type": "stop"})
+        success1, _skipped1 = executor_normal.execute(sample_torrent, {"type": "stop"})
 
         # Dry run mode
         executor_dry = ActionExecutor(mock_api, dry_run=True)
-        success2, skipped2 = executor_dry.execute(sample_torrent, {"type": "stop"})
+        success2, _skipped2 = executor_dry.execute(sample_torrent, {"type": "stop"})
 
         # Both succeed
         assert success1 is True

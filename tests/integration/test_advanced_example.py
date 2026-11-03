@@ -28,7 +28,7 @@ def advanced_example_doc():
     return yaml.safe_load(EXAMPLE_FILE.read_text())
 
 
-class TestAdvancedExampleRule9(object):
+class TestAdvancedExampleRule9:
     """Rule 9: mixes $ref: actions.process-hd-content, $ref: actions.
     force-seed-private, and two inline actions in a single actions: list."""
 

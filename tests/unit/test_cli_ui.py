@@ -3,12 +3,12 @@
 import json
 
 from qbt_rules.cli_ui import (
-    render_table,
+    print_json,
+    print_kv_section,
+    print_message,
     print_table,
     render_kv,
-    print_kv_section,
-    print_json,
-    print_message,
+    render_table,
 )
 
 

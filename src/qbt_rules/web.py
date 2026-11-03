@@ -8,33 +8,33 @@ Provides REST API for:
 - Authentication via API key
 """
 
+import hashlib
+import logging
 import os
 import re
 import secrets
-import hashlib
 import time
-import logging
-import yaml
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from datetime import UTC, datetime
 from functools import wraps
-from urllib.parse import urlparse, parse_qs, urlencode
+from typing import Any
+from urllib.parse import parse_qs, urlencode, urlparse
 
-from flask import Flask, request, jsonify, Response, render_template, redirect, url_for, session, g
+import yaml
+from flask import Flask, Response, g, jsonify, redirect, render_template, request, session, url_for
 
-from qbt_rules.queue_manager import QueueManager, JobStatus
-from qbt_rules.worker import Worker
+from qbt_rules import metrics, schema
+from qbt_rules.__version__ import __version__
 from qbt_rules.config_loader import Config, parse_bool
-from qbt_rules.log_setup import set_file_rotation
 from qbt_rules.config_store import (
     EditableFile,
     FileConflictError,
     FileNotWritableError,
     redacted_config_view,
 )
+from qbt_rules.log_setup import set_file_rotation
+from qbt_rules.queue_manager import JobStatus, QueueManager
 from qbt_rules.rules_validation import validate_rules_text
-from qbt_rules.__version__ import __version__
-from qbt_rules import metrics, schema
+from qbt_rules.worker import Worker
 
 # Accepted spellings for boolean query parameters (parse_bool's true set
 # plus their opposites)
@@ -46,10 +46,10 @@ logger = logging.getLogger(__name__)
 queue: QueueManager = None
 worker: Worker = None
 api_key_config: str = None
-dashboard_config: Optional[Config] = None
+dashboard_config: Config | None = None
 metrics_enabled: bool = False
 editor_enabled: bool = True
-rules_store: Optional[EditableFile] = None
+rules_store: EditableFile | None = None
 
 # Largest request body accepted -- far beyond any real rules.yml, small
 # enough that a validate/save request can't be used to exhaust memory
@@ -81,9 +81,9 @@ def _timeago(value) -> str:
             return value
 
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
+        value = value.replace(tzinfo=UTC)
 
-    seconds = (datetime.now(timezone.utc) - value).total_seconds()
+    seconds = (datetime.now(UTC) - value).total_seconds()
     if seconds < 60:
         return "just now"
 
@@ -105,8 +105,8 @@ def create_app(
     queue_manager: QueueManager,
     worker_instance: Worker,
     api_key: str,
-    config: Optional[Config] = None,
-    metrics_config: Optional[Dict[str, Any]] = None,
+    config: Config | None = None,
+    metrics_config: dict[str, Any] | None = None,
     editor: bool = True,
 ) -> Flask:
     """
@@ -252,7 +252,9 @@ def require_api_key_or_session(f):
             return jsonify(
                 {
                     "error": "Forbidden",
-                    "message": "Missing or invalid X-CSRF-Token header -- reload the page and try again",
+                    "message": (
+                        "Missing or invalid X-CSRF-Token header -- reload the page and try again"
+                    ),
                 }
             ), 403
 
@@ -273,7 +275,7 @@ def _next_url_without_key() -> str:
     return request.path + (f"?{query}" if query else "")
 
 
-def _sanitize_next(next_url: Optional[str]) -> str:
+def _sanitize_next(next_url: str | None) -> str:
     """
     Reduce an arbitrary ?next= value down to a same-origin path+query,
     discarding any scheme/host component and any embedded ?key=.
@@ -517,7 +519,7 @@ def register_routes(app: Flask):
                 {
                     "status": "unhealthy",
                     "errors": errors,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 }
             ), 503
 
@@ -537,7 +539,7 @@ def register_routes(app: Flask):
                     "status": "running" if worker_status["running"] else "stopped",
                     "last_job_completed": worker_status["last_job_completed"],
                 },
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
         ), 200
 
@@ -581,7 +583,7 @@ def register_routes(app: Flask):
                         "status": "running" if worker_status["running"] else "stopped",
                         "last_job_completed": worker_status["last_job_completed"],
                     },
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 }
             ), 200
 
@@ -629,7 +631,7 @@ def register_routes(app: Flask):
         ), 500
 
 
-def _editor_state() -> Dict[str, Any]:
+def _editor_state() -> dict[str, Any]:
     """Whether rules.yml can be saved from the editor right now, and why not"""
     if rules_store is None:
         return {
@@ -645,7 +647,7 @@ def _editor_state() -> Dict[str, Any]:
     return {"editable": ok, "readonly_reason": reason}
 
 
-def _strip_etag(value: Optional[str]) -> Optional[str]:
+def _strip_etag(value: str | None) -> str | None:
     """'W/"abc"' / '"abc"' / 'abc' -> 'abc'"""
     if not isinstance(value, str):
         return None
@@ -655,7 +657,7 @@ def _strip_etag(value: Optional[str]) -> Optional[str]:
     return value.strip('"') or None
 
 
-def _json_body() -> Dict[str, Any]:
+def _json_body() -> dict[str, Any]:
     data = request.get_json(silent=True)
     return data if isinstance(data, dict) else {}
 
@@ -769,7 +771,9 @@ def register_editor_routes(app: Flask):
             return jsonify(
                 {
                     "error": "Unprocessable Entity",
-                    "message": f"rules.yml has {validation['counts']['error']} error(s) -- not saved",
+                    "message": (
+                        f"rules.yml has {validation['counts']['error']} error(s) -- not saved"
+                    ),
                     "validation": validation,
                 }
             ), 422
@@ -1110,7 +1114,7 @@ def _register_http_metrics_hooks(app: Flask):
 
 def run_server(
     app: Flask,
-    host: str = "0.0.0.0",
+    host: str = "0.0.0.0",  # noqa: S104  container default; callers pass server.host
     port: int = 5000,
     workers: int = 1,
     log_http_access: bool = False,

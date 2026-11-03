@@ -5,18 +5,18 @@ Consumes jobs from queue and executes them using RulesEngine.
 Runs in separate thread with graceful shutdown support.
 """
 
+import logging
 import threading
 import time
-import logging
 import traceback
-from typing import Optional, Dict, Any
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
-from qbt_rules.queue_manager import QueueManager, JobStatus
-from qbt_rules.qbittorrent import QBittorrentAPI
-from qbt_rules.engine import RulesEngine
-from qbt_rules.config_loader import Config
 from qbt_rules import metrics
+from qbt_rules.config_loader import Config
+from qbt_rules.engine import RulesEngine
+from qbt_rules.qbittorrent import QBittorrentAPI
+from qbt_rules.queue_manager import JobStatus, QueueManager
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +35,9 @@ class Worker:
         api: QBittorrentAPI,
         config: Config,
         poll_interval: float = 1.0,
-        notifications_config: Optional[Dict[str, str]] = None,
-        integrations_config: Optional[Dict[str, Dict[str, str]]] = None,
-        cleanup_after: Optional[int] = None,
+        notifications_config: dict[str, str] | None = None,
+        integrations_config: dict[str, dict[str, str]] | None = None,
+        cleanup_after: int | None = None,
         cleanup_interval: float = 3600.0,
     ):
         """
@@ -72,8 +72,8 @@ class Worker:
         self._next_cleanup = float("-inf")  # monotonic time; run on first loop
 
         self.running = False
-        self.thread: Optional[threading.Thread] = None
-        self.last_job_completed: Optional[datetime] = None
+        self.thread: threading.Thread | None = None
+        self.last_job_completed: datetime | None = None
 
         logger.info("Worker initialized")
 
@@ -115,7 +115,7 @@ class Worker:
         """Check if worker thread is alive"""
         return self.thread is not None and self.thread.is_alive()
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """
         Get worker status
 
@@ -177,7 +177,7 @@ class Worker:
         except Exception as e:
             logger.error(f"Job cleanup failed: {e}", exc_info=True)
 
-    def _process_job(self, job: Dict[str, Any]):
+    def _process_job(self, job: dict[str, Any]):
         """
         Process a single job
 
@@ -194,14 +194,14 @@ class Worker:
             f"{', dry_run=True' if job_dry_run else ''})"
         )
 
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
 
         try:
             # Execute job via RulesEngine
             result = self._execute_job(context, hash_filter, job_dry_run)
 
             # Mark job as completed
-            completed_at = datetime.now(timezone.utc)
+            completed_at = datetime.now(UTC)
             self.queue.update_status(
                 job_id=job_id,
                 status=JobStatus.COMPLETED,
@@ -223,10 +223,10 @@ class Worker:
 
         except Exception as e:
             # Mark job as failed
-            error_msg = f"{type(e).__name__}: {str(e)}"
+            error_msg = f"{type(e).__name__}: {e!s}"
             error_trace = traceback.format_exc()
 
-            completed_at = datetime.now(timezone.utc)
+            completed_at = datetime.now(UTC)
             self.queue.update_status(
                 job_id=job_id,
                 status=JobStatus.FAILED,
@@ -240,8 +240,8 @@ class Worker:
             logger.debug(f"Job {job_id} traceback:\n{error_trace}")
 
     def _execute_job(
-        self, context: Optional[str], hash_filter: Optional[str], job_dry_run: bool = False
-    ) -> Dict[str, Any]:
+        self, context: str | None, hash_filter: str | None, job_dry_run: bool = False
+    ) -> dict[str, Any]:
         """
         Execute job using RulesEngine
 

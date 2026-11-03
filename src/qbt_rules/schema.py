@@ -16,7 +16,7 @@ there is never reported as a problem. tracker.* is the exception: its
 names are a closed set, defined in trackie.py.
 """
 
-from typing import Any, Dict
+from typing import Any
 
 from qbt_rules.engine import FILE_PRIORITIES
 from qbt_rules.trackie import (
@@ -28,7 +28,7 @@ from qbt_rules.trackie import (
 
 # namespace -> (description, autocomplete hints). Hints are qBittorrent's
 # own field names, from its WebUI API docs -- not exhaustive.
-FIELD_NAMESPACES: Dict[str, Dict[str, Any]] = {
+FIELD_NAMESPACES: dict[str, dict[str, Any]] = {
     "info": {
         "description": "Torrent info from /torrents/info",
         "hints": [
@@ -81,7 +81,9 @@ FIELD_NAMESPACES: Dict[str, Dict[str, Any]] = {
         ],
     },
     "files": {
-        "description": "File list; a list per torrent. Rules skip torrents whose file list is not loaded yet",
+        "description": (
+            "File list; a list per torrent. Rules skip torrents whose file list is not loaded yet"
+        ),
         "hints": [
             "index",
             "name",
@@ -171,7 +173,7 @@ TRACKER_FIELD_NAMES = frozenset(FIELD_NAMESPACES["tracker"]["hints"])
 
 # operator -> (description, the kind of value it expects). value kinds:
 # 'any', 'string', 'regex', 'list', 'number', 'size', 'duration'
-OPERATORS: Dict[str, Dict[str, str]] = {
+OPERATORS: dict[str, dict[str, str]] = {
     "==": {"value": "any", "description": "Equal (no type coercion)"},
     "!=": {"value": "any", "description": "Not equal"},
     "contains": {
@@ -204,7 +206,7 @@ ARR_SERVICES = ("sonarr", "radarr")
 # action type -> params. Each param: type ('bool', 'string', 'int',
 # 'list', 'regex', 'enum', 'template', 'any'), required, default, and
 # choices for enums.
-ACTION_TYPES: Dict[str, Dict[str, Any]] = {
+ACTION_TYPES: dict[str, dict[str, Any]] = {
     "stop": {"description": "Stop (pause) the torrent", "params": {}},
     "start": {"description": "Start (resume) the torrent", "params": {}},
     "force_start": {"description": "Force-start the torrent", "params": {}},
@@ -326,7 +328,7 @@ ACTION_TYPES: Dict[str, Dict[str, Any]] = {
 }
 
 # Keys a rule may carry. Anything else is accepted but ignored by the engine.
-RULE_KEYS: Dict[str, str] = {
+RULE_KEYS: dict[str, str] = {
     "id": "Unique, stable identifier (required)",
     "enabled": "false to skip this rule (default true)",
     "context": "Only run in this context (string or list); absent means every context",
@@ -336,7 +338,7 @@ RULE_KEYS: Dict[str, str] = {
     "actions": "Actions to run on a match (required)",
 }
 
-TOP_LEVEL_KEYS: Dict[str, str] = {
+TOP_LEVEL_KEYS: dict[str, str] = {
     "version": "Schema marker (default 1)",
     "refs": "Reusable vars, conditions and actions",
     "instances": "Per-instance overrides (not used yet)",
@@ -346,7 +348,7 @@ TOP_LEVEL_KEYS: Dict[str, str] = {
 CONDITION_GROUPS = ("all", "any", "none")
 
 
-def catalog() -> Dict[str, Any]:
+def catalog() -> dict[str, Any]:
     """The whole vocabulary as one JSON-serialisable dict, for the editor"""
     return {
         "top_level_keys": TOP_LEVEL_KEYS,

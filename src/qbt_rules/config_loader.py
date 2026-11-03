@@ -9,21 +9,20 @@ Resolution order (highest to lowest priority):
 5. Default value
 """
 
+import logging
 import os
 import re
-import sys
 import shutil
-import yaml
-import logging
+import sys
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
+from typing import Any
 
+import yaml
 from croniter import croniter
 
 from qbt_rules.errors import ConfigurationError
 from qbt_rules.resolver import RuleResolver
 from qbt_rules.rules_validation import check_rules_structure
-
 
 # Environment variable mapping
 #
@@ -76,15 +75,15 @@ def copy_default_if_missing(target_path: Path, default_filename: str) -> bool:
 
         # Copy default to target location
         shutil.copy2(default_path, target_path)
-        print(f"INFO: Created {target_path} from {default_path}", file=sys.stderr)
+        print(f"INFO: Created {target_path} from {default_path}", file=sys.stderr)  # noqa: T201  logging not set up yet
 
         return True
     except Exception as e:
-        print(f"WARNING: Failed to copy default config to {target_path}: {e}", file=sys.stderr)
+        print(f"WARNING: Failed to copy default config to {target_path}: {e}", file=sys.stderr)  # noqa: T201  logging not set up yet
         return False
 
 
-def get_nested_config(config: Dict[str, Any], key: str, default: Any = None) -> Optional[Any]:
+def get_nested_config(config: dict[str, Any], key: str, default: Any = None) -> Any | None:
     """
     Get nested configuration value using dot notation
 
@@ -182,7 +181,7 @@ def parse_int(value: Any, default: int = 0) -> int:
 _RETENTION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
 
 
-def parse_retention(value: Any) -> Optional[int]:
+def parse_retention(value: Any) -> int | None:
     """
     Parse queue.cleanup_after into seconds
 
@@ -218,7 +217,7 @@ def parse_retention(value: Any) -> Optional[int]:
     return seconds or None
 
 
-def parse_duration(value: Union[str, int]) -> str:
+def parse_duration(value: str | int) -> str:
     """
     Parse duration string to standardized format
 
@@ -256,11 +255,11 @@ def parse_duration(value: Union[str, int]) -> str:
 
 
 def resolve_config(
-    cli_value: Optional[Any],
+    cli_value: Any | None,
     env_var: str,
-    config: Dict[str, Any],
+    config: dict[str, Any],
     config_key: str,
-    default: Optional[Any] = None,
+    default: Any | None = None,
 ) -> Any:
     """
     Universal configuration resolver with _FILE support
@@ -314,7 +313,7 @@ def resolve_config(
     if file_var in os.environ:
         file_path = os.environ[file_var]
         try:
-            with open(file_path, "r") as f:
+            with open(file_path) as f:
                 content = f.read().strip()
             logging.debug(f"Loaded config from file: {file_var}={file_path}")
             return content
@@ -384,7 +383,7 @@ def expand_env_vars(value: Any) -> Any:
         return value
 
 
-def load_yaml_file(file_path: Path) -> Dict[str, Any]:
+def load_yaml_file(file_path: Path) -> dict[str, Any]:
     """
     Load YAML file with error handling
 
@@ -399,9 +398,9 @@ def load_yaml_file(file_path: Path) -> Dict[str, Any]:
     """
     try:
         if not file_path.exists():
-            raise ConfigurationError(str(file_path), f"File does not exist")
+            raise ConfigurationError(str(file_path), "File does not exist")
 
-        with open(file_path, "r") as f:
+        with open(file_path) as f:
             content = yaml.safe_load(f)
 
         if content is None:
@@ -412,17 +411,17 @@ def load_yaml_file(file_path: Path) -> Dict[str, Any]:
     except ConfigurationError:
         raise
     except yaml.YAMLError as e:
-        raise ConfigurationError(str(file_path), f"Invalid YAML syntax: {str(e)}")
-    except PermissionError:
-        raise ConfigurationError(str(file_path), "Permission denied - cannot read file")
+        raise ConfigurationError(str(file_path), f"Invalid YAML syntax: {e!s}") from e
+    except PermissionError as e:
+        raise ConfigurationError(str(file_path), "Permission denied - cannot read file") from e
     except Exception as e:
-        raise ConfigurationError(str(file_path), f"Cannot read file: {str(e)}")
+        raise ConfigurationError(str(file_path), f"Cannot read file: {e!s}") from e
 
 
 class Config:
     """Configuration manager"""
 
-    def __init__(self, config_dir: Optional[Path] = None):
+    def __init__(self, config_dir: Path | None = None):
         """
         Initialize configuration
 
@@ -442,8 +441,8 @@ class Config:
         copy_default_if_missing(self.rules_file, "rules.default.yml")
 
         # Resolver and cache for resolved rules (set by _load_rules)
-        self._resolver: Optional[RuleResolver] = None
-        self._resolved_rules_cache: Optional[list] = None
+        self._resolver: RuleResolver | None = None
+        self._resolved_rules_cache: list | None = None
 
         # Load configurations
         self._load_config()
@@ -452,7 +451,7 @@ class Config:
 
         # rules.yml's identity when last loaded, for hot-reload. None makes
         # the first get_rules() re-read it.
-        self._rules_stamp: Optional[tuple] = None
+        self._rules_stamp: tuple | None = None
 
     def _load_config(self):
         """Load config.yml with environment variable expansion"""
@@ -461,7 +460,7 @@ class Config:
         raw_config = load_yaml_file(self.config_file)
         self.config = expand_env_vars(raw_config)
 
-        logging.debug(f"Configuration loaded successfully")
+        logging.debug("Configuration loaded successfully")
 
     def _load_rules(self):
         """Load rules.yml and initialize resolver
@@ -513,7 +512,7 @@ class Config:
                 f"actions={len(resolver.actions)}"
             )
 
-    def _load_schedule_from_env(self) -> Optional[List[Dict[str, str]]]:
+    def _load_schedule_from_env(self) -> list[dict[str, str]] | None:
         """
         Build a schedule list from indexed QBT_RULES_SCHEDULE_<N>_CRON /
         _<N>_CONTEXT environment variables (each supporting the usual
@@ -539,7 +538,8 @@ class Config:
             if context is None:
                 raise ConfigurationError(
                     str(self.config_file),
-                    f"QBT_RULES_SCHEDULE_{i}_CRON is set but QBT_RULES_SCHEDULE_{i}_CONTEXT is missing",
+                    f"QBT_RULES_SCHEDULE_{i}_CRON is set but QBT_RULES_SCHEDULE_{i}_CONTEXT is "
+                    "missing",
                 )
 
             entries.append({"cron": cron, "context": context})
@@ -706,7 +706,7 @@ class Config:
         return self._resolved_rules_cache
 
 
-def load_config(config_dir: Optional[Path] = None) -> Config:
+def load_config(config_dir: Path | None = None) -> Config:
     """
     Load configuration from directory
 

@@ -4,11 +4,9 @@
 import logging
 from unittest.mock import Mock, patch
 
-import pytest
 import requests
 
 from qbt_rules.engine import ActionExecutor
-
 
 SONARR_CONFIG = {
     "sonarr": {"url": "http://sonarr:8989", "api_key": "sonarr-key"},
@@ -57,7 +55,7 @@ class TestArrBlocklistAndSearchSonarr:
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
         action = {"type": "arr_blocklist", "params": {"service": "sonarr"}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_get.assert_called_once_with(
@@ -99,7 +97,7 @@ class TestArrBlocklistAndSearchSonarr:
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
         action = {"type": "arr_blocklist", "params": {"service": "sonarr"}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         assert mock_delete.call_count == 2
@@ -129,7 +127,7 @@ class TestArrBlocklistAndSearchSonarr:
         ):
             executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
             action = {"type": "arr_blocklist", "params": {"service": "sonarr"}}
-            success, skipped = executor.execute(sample_torrent, action)
+            success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         assert mock_get.call_count == 2
@@ -156,7 +154,7 @@ class TestArrBlocklistAndSearchRadarr:
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
         action = {"type": "arr_blocklist", "params": {"service": "radarr"}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_delete.assert_called_once_with(
@@ -186,7 +184,7 @@ class TestArrBlocklistAndSearchNoMatch:
 
         action = {"type": "arr_blocklist", "params": {"service": "sonarr"}}
         with caplog.at_level(logging.WARNING):
-            success, skipped = executor.execute(sample_torrent, action)
+            success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_delete.assert_not_called()
@@ -199,7 +197,7 @@ class TestArrBlocklistAndSearchNoMatch:
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
         action = {"type": "arr_blocklist", "params": {"service": "sonarr"}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
 
@@ -250,7 +248,7 @@ class TestArrBlocklistSearchParam:
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
         action = {"type": "arr_blocklist", "params": {"service": "sonarr"}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_post.assert_called_once()
@@ -270,7 +268,7 @@ class TestArrBlocklistSearchParam:
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
         action = {"type": "arr_blocklist", "params": {"service": "sonarr", "search": False}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         mock_delete.assert_called_once()
@@ -295,7 +293,7 @@ class TestArrBlocklistSearchParam:
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
         action = {"type": "arr_blocklist", "params": {"service": "sonarr", "search": False}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
         assert mock_delete.call_count == 2
@@ -307,7 +305,7 @@ class TestArrBlocklistSearchParam:
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
         action = {"type": "arr_blocklist", "params": {"service": "sonarr", "search": False}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is True
 
@@ -320,7 +318,7 @@ class TestArrBlocklistAndSearchConfigErrors:
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
         action = {"type": "arr_blocklist", "params": {}}
 
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is False
         mock_get.assert_not_called()
@@ -330,7 +328,7 @@ class TestArrBlocklistAndSearchConfigErrors:
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
         action = {"type": "arr_blocklist", "params": {"service": "overseerr"}}
 
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is False
         mock_get.assert_not_called()
@@ -340,7 +338,7 @@ class TestArrBlocklistAndSearchConfigErrors:
         executor = ActionExecutor(mock_api, dry_run=False)  # no integrations_config
 
         action = {"type": "arr_blocklist", "params": {"service": "sonarr"}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is False
         mock_get.assert_not_called()
@@ -354,7 +352,7 @@ class TestArrBlocklistAndSearchConfigErrors:
         )
 
         action = {"type": "arr_blocklist", "params": {"service": "sonarr"}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is False
         mock_get.assert_not_called()
@@ -369,7 +367,7 @@ class TestArrBlocklistAndSearchHttpFailure:
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
         action = {"type": "arr_blocklist", "params": {"service": "sonarr"}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is False
 
@@ -387,7 +385,7 @@ class TestArrBlocklistAndSearchHttpFailure:
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
         action = {"type": "arr_blocklist", "params": {"service": "sonarr"}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is False
 
@@ -407,7 +405,7 @@ class TestArrBlocklistAndSearchHttpFailure:
         executor = ActionExecutor(mock_api, dry_run=False, integrations_config=SONARR_CONFIG)
 
         action = {"type": "arr_blocklist", "params": {"service": "sonarr"}}
-        success, skipped = executor.execute(sample_torrent, action)
+        success, _skipped = executor.execute(sample_torrent, action)
 
         assert success is False
 
