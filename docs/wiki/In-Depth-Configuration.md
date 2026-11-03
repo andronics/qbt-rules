@@ -88,7 +88,7 @@ Generated from the code: don't edit the table, run `uv run scripts/gen-wiki.py`.
 A few settings need more than a line:
 
 - **`server.editor_enabled`**: `false` keeps the rules editor read-only (it still validates). A `rules.yml` made read-only on disk (`chmod 444`) is never written either way.
-- **`queue.cleanup_after`**: finished jobs older than this are removed once at startup and then hourly.
+- **`queue.cleanup_after`**: finished jobs older than this are removed once at startup and then hourly. With SQLite, a cleanup that deleted rows truncates the `-wal` file, and one that removed more than a quarter of the jobs (and more than 1,000) runs `VACUUM`, which shrinks the database file; writes wait while it runs (well under a second for 100 MB on a local SSD), and the log line `VACUUM after removing … took …` gives its duration. The `-wal` file is also capped at 64 MiB after each checkpoint.
 - **`metrics.enabled`**: serves `/metrics`, which needs the API key. See [Metrics](Metrics) for the metrics and a Prometheus scrape config. 0.10.x's `metrics.multiproc_dir` (and `QBT_RULES_METRICS_MULTIPROC_DIR`, `PROMETHEUS_MULTIPROC_DIR`) is refused: remove it.
 - **`logging.level`**: applies to the console and the log file. `DEBUG` logs every rule evaluation per torrent.
 - **`logging.max_bytes`**: the file is renamed to `qbt-rules.log.1` (older ones shift to `.2`, `.3`, ...) and a new one started. The server is one process, so one handler writes and rotates it.
@@ -138,7 +138,7 @@ Credentials, the qBittorrent host, notifications, the queue backend, `cleanup_af
 
 **Mount `/var/lib/qbt-rules` as a directory**, not single files: SQLite creates `qbt-rules.db-wal` and `-shm` beside the database, the rules editor replaces `rules.yml` atomically and writes `.history/` beside it, and with file-only mounts those land on the container's throwaway layer. A Kubernetes deployment that keeps its old volume can mount it twice with `subPath`s: `/etc/qbt-rules` holding `config.yaml` (read-only), and a directory at `/var/lib/qbt-rules` holding `rules.yml`, `qbt-rules.db` and `.history/`.
 
-**The first start prunes old jobs.** `queue.cleanup_after` (default `7d`) is applied at startup and then hourly; 0.10.1 never applied it, so the first start of 0.11 deletes every finished job older than that (on one production database, about 80% of them). The database file doesn't shrink (no `VACUUM`). The old database on `/config` is untouched, for rollback. Set `queue.cleanup_after` higher, or `0` to keep everything, before the first start if you want the history.
+**The first start prunes old jobs.** `queue.cleanup_after` (default `7d`) is applied at startup and then hourly; 0.10.1 never applied it, so the first start of 0.11 deletes every finished job older than that (on one production database, about 80% of them). 0.11.0 left the database file at full size; from 0.11.1 that cleanup is followed by a `VACUUM`, which shrinks it. The old database on `/config` is untouched, for rollback. Set `queue.cleanup_after` higher, or `0` to keep everything, before the first start if you want the history.
 
 Environment variables:
 
