@@ -102,8 +102,47 @@ def test_secrets_are_masked(
 
     secret = Setting(SETTINGS[0].key, SETTINGS[0].default, SETTINGS[0].help, secret=True)
     monkeypatch.setattr(cli, "SETTINGS", (secret, *SETTINGS[1:]))
+    monkeypatch.setenv(SETTINGS[0].env, "/srv/state")
     result = runner.invoke(app, ["config", "-c", str(write_config(""))])
-    assert f"{SETTINGS[0].key} = ******** (set)" in result.stdout
+    assert f"{SETTINGS[0].key} = ******** (set)  ({SETTINGS[0].env})" in result.stdout
+    assert "/srv/state" not in result.stdout
+
+
+def test_a_secrets_default_is_unset_not_set(write_config: Callable[..., Path]) -> None:
+    """queue.redis_url has a non-empty default; nothing set it, so it is unset (#53)"""
+    result = runner.invoke(app, ["config", "-c", str(write_config(""))])
+    assert "queue.redis_url = (unset)  (default)" in result.stdout
+    assert "redis://" not in result.stdout
+
+
+def test_every_secret_left_at_its_default_shows_unset(write_config: Callable[..., Path]) -> None:
+    from qbt_rules.config import SETTINGS
+
+    result = runner.invoke(app, ["config", "-c", str(write_config(""))])
+    secrets = [s.key for s in SETTINGS if s.secret]
+    assert len(secrets) == 7
+    for key in secrets:
+        assert f"{key} = (unset)  (default)" in result.stdout
+
+
+@pytest.mark.parametrize("how", ["file", "variable", "_FILE"])
+def test_a_secret_the_user_set_shows_set(
+    how: str,
+    monkeypatch: pytest.MonkeyPatch,
+    write_config: Callable[..., Path],
+    tmp_path: Path,
+) -> None:
+    url = "redis://:hunter2@redis.example:6379/1"
+    config = write_config(f"queue: {{redis_url: '{url}'}}\n" if how == "file" else "")
+    if how == "variable":
+        monkeypatch.setenv("QBT_RULES_QUEUE_REDIS_URL", url)
+    elif how == "_FILE":
+        secret_file = tmp_path / "redis_url"
+        secret_file.write_text(url + "\n")
+        monkeypatch.setenv("QBT_RULES_QUEUE_REDIS_URL_FILE", str(secret_file))
+    result = runner.invoke(app, ["config", "-c", str(config)])
+    assert "queue.redis_url = ******** (set)" in result.stdout
+    assert "hunter2" not in result.output
 
 
 def test_config_masks_a_set_key_and_lists_the_schedule(write_config: Callable[..., Path]) -> None:
