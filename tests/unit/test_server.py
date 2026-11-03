@@ -47,29 +47,38 @@ class TestRedactKey:
 class TestAccessLogFilter:
     def test_redacts_the_key(self) -> None:
         record = _record("/api/jobs?key=s3cret&status=pending")
-        assert server.AccessLogFilter(quiet=True).filter(record)
+        assert server.AccessLogFilter(quiet=False).filter(record)
         assert record.getMessage() == (
             '127.0.0.1:5555 - "GET /api/jobs?key=[REDACTED]&status=pending HTTP/1.1" 200'
         )
 
     @pytest.mark.parametrize(
         "target",
-        ["/healthz", "/readyz", "/api/health", "/metrics?key=s3cret", "/static/editor.js"],
+        [
+            "/healthz",
+            "/metrics?key=s3cret",
+            "/static/editor.js",
+            # The CLI's own requests (#52): execute --wait and jobs status poll these
+            "/api/jobs/0123abcd",
+            "/api/jobs?limit=5",
+            "/api/execute?context=adhoc-run",
+            "/",
+            "/rules/edit",
+        ],
     )
-    def test_quiet_drops_polling(self, target: str) -> None:
+    def test_quiet_drops_every_request(self, target: str) -> None:
         assert not server.AccessLogFilter(quiet=True).filter(_record(target))
         assert server.AccessLogFilter(quiet=False).filter(_record(target))
 
-    def test_quiet_keeps_everything_else(self) -> None:
-        for target in ("/api/jobs", "/", "/rules/edit", "/api/healthz"):
-            assert server.AccessLogFilter(quiet=True).filter(_record(target))
+    def test_quiet_drops_any_other_record_too(self) -> None:
+        assert not server.AccessLogFilter(quiet=True).filter(_record("/x", msg="odd line %s"))
 
     def test_any_other_record_is_redacted_whole(self) -> None:
         record = _record("/x?key=s3cret", msg="odd line %s")
-        assert server.AccessLogFilter(quiet=True).filter(record)
+        assert server.AccessLogFilter(quiet=False).filter(record)
         assert record.getMessage() == "odd line /x?key=[REDACTED]"
         untouched = _record("/x", msg="odd line %s")
-        assert server.AccessLogFilter(quiet=True).filter(untouched)
+        assert server.AccessLogFilter(quiet=False).filter(untouched)
         assert untouched.args == ("/x",)
 
     def test_installed_once_on_uvicorns_access_logger(self) -> None:
@@ -163,3 +172,69 @@ def test_sigterm_stops_the_server_and_joins_the_worker(tmp_path: Path) -> None:
     assert code in (0, -signal.SIGTERM), output
     assert "Worker loop exited" in output
     assert "Background thread worker stopped" in output
+
+
+def _serve_and_request(tmp_path: Path, http_access: str) -> str:
+    """Start `qbt-rules serve`, make the CLI's requests against it, stop it; its output"""
+    from qbt_rules.api_client import Client, ClientError
+
+    port = _free_port()
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("QBT_RULES_", "PROMETHEUS_"))}
+    env.update(
+        QBT_RULES_CONFIG=str(tmp_path / "config.yaml"),
+        QBT_RULES_STATE_DIR=str(tmp_path / "state"),
+        QBT_RULES_LISTEN_HOST="127.0.0.1",
+        QBT_RULES_LISTEN_PORT=str(port),
+        QBT_RULES_SERVER_API_KEY="k",
+        QBT_RULES_LOGGING_HTTP_ACCESS=http_access,
+    )
+    log = tmp_path / "serve.log"
+    with log.open("wb") as out:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "qbt_rules", "serve"], env=env, stdout=out, stderr=out
+        )
+        try:
+            deadline = time.monotonic() + 20
+            while True:
+                try:
+                    with urllib.request.urlopen(f"http://127.0.0.1:{port}/readyz", timeout=1) as r:
+                        if r.status == 200:
+                            break
+                except (urllib.error.URLError, ConnectionError):
+                    pass
+                assert proc.poll() is None, log.read_text()
+                assert time.monotonic() < deadline, log.read_text()
+                time.sleep(0.1)
+
+            # What `jobs status`, `execute --wait` and `jobs list` send
+            client = Client(f"http://127.0.0.1:{port}", "k")
+            with pytest.raises(ClientError):
+                client.job("0123abcd")
+            client.jobs(None, None, 5)
+            client.stats()
+            # A key in the URL (the dashboard's old links) must never be logged
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/jobs?key=k&limit=1", timeout=5
+            ) as r:
+                assert r.status == 200
+            proc.send_signal(signal.SIGTERM)
+            proc.wait(timeout=10)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+    return log.read_text()
+
+
+def test_http_access_off_logs_no_request_not_even_the_clis(tmp_path: Path) -> None:
+    output = _serve_and_request(tmp_path, "false")
+    assert "Background thread worker stopped" in output  # the log was captured
+    assert "HTTP/1.1" not in output, output
+
+
+def test_http_access_on_logs_every_request_without_the_key(tmp_path: Path) -> None:
+    output = _serve_and_request(tmp_path, "true")
+    assert '"GET /api/jobs/0123abcd HTTP/1.1" 404' in output, output
+    assert '"GET /readyz HTTP/1.1" 200' in output, output
+    assert "key=[REDACTED]&limit=1" in output, output
+    assert "key=k" not in output, output

@@ -888,3 +888,51 @@ class TestRulesEngineIntegration:
         assert engine.stats.rules_matched == 1
         assert engine.stats.actions_executed == 0  # Dry run doesn't execute
         assert mock_api.calls["stop"] == []  # No API calls made
+
+
+_DESIRED_STATE_RULE = {
+    "id": "tag-it",
+    "conditions": {"all": [{"field": "info.ratio", "operator": ">=", "value": 1.0}]},
+    "actions": [
+        {"type": "add_tag", "params": {"tags": ["hd"]}},
+        {"type": "set_category", "params": {"category": "movies"}},
+    ],
+}
+
+
+class TestDesiredStateSummary:
+    """One INFO summary line per run counts the actions already in the desired state (#51)"""
+
+    def _run(self, mock_api, mock_config, torrents, caplog, dry_run=False):
+        mock_config.get_rules = Mock(return_value=[_DESIRED_STATE_RULE])
+        mock_api.torrents_data = {t["hash"]: t for t in torrents}
+        engine = RulesEngine(mock_api, mock_config, dry_run=dry_run)
+        with caplog.at_level("INFO", logger="qbt_rules.engine"):
+            engine.run(context="adhoc-run")
+        return engine, [r for r in caplog.records if r.levelname == "INFO"]
+
+    def test_one_summary_line_instead_of_one_per_action(
+        self, mock_api, mock_config, sample_torrent, caplog
+    ):
+        torrents = [
+            dict(sample_torrent, hash=f"h{i}", name=f"T{i}", tags="hd", category="movies")
+            for i in range(3)
+        ]
+        engine, info = self._run(mock_api, mock_config, torrents, caplog)
+
+        messages = [r.getMessage() for r in info]
+        assert not any("already in desired state (skipped)" in m for m in messages)
+        assert messages.count("  6 action(s) skipped: already in desired state") == 1
+        assert engine.stats.actions_skipped == 6
+        assert not any("not run: dry run" in m for m in messages)
+
+    def test_dry_run_reports_actions_not_run_separately(
+        self, mock_api, mock_config, sample_torrent, caplog
+    ):
+        torrent = dict(sample_torrent, tags="hd", category="")  # tag applied, category not
+        engine, info = self._run(mock_api, mock_config, [torrent], caplog, dry_run=True)
+
+        messages = [r.getMessage() for r in info]
+        assert "  1 action(s) skipped: already in desired state" in messages
+        assert "  1 action(s) not run: dry run" in messages
+        assert engine.stats.actions_skipped == 2

@@ -38,7 +38,7 @@ Because the server is one process, the scheduler fires once per cron tick and ev
 | `api_client.py` | The client commands' calls to a running server's JSON API, and their error messages |
 | `cli_ui.py` | Table/JSON rendering for the data-display commands; the only place that prints |
 | `api.py`, `api_rules.py`, `api_models.py` | The FastAPI app: the JSON API (jobs, health, stats, version, the rules editor's `/api/rules/*` and `/api/config/source`), `/healthz` and `/readyz`, API-key and session auth (see [HTTP API Reference](HTTP-API-Reference)), the `{"error", "message"}` error bodies, and the lifespan that runs the worker and scheduler threads. `api_models.py` describes the responses for the OpenAPI schema |
-| `server.py` | Runs the app under uvicorn; the access-log filter (hides polling requests, redacts `key=`) |
+| `server.py` | Runs the app under uvicorn; the access-log filter (`logging.http_access`: drops every request when off, redacts `key=` when on) |
 | `sessions.py` | The login session shared by the JSON API and the dashboard (Starlette's `SessionMiddleware`, cookie `qbt_rules_session`), and its CSRF token |
 | `web.py` | The [Dashboard](Dashboard) pages (`/`, `/jobs`, `/rules`, `/rules/edit`, `/login`), `/static` and, when enabled, `/metrics` (see [Metrics](Metrics)): FastAPI routes on the API's app, rendered with Jinja2, sharing its login session (`sessions.py`) |
 | `templates/`, `static/` | Jinja2 templates for the dashboard — server-rendered HTML, no frontend build step — and the rules editor's script |

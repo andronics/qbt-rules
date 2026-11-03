@@ -13,6 +13,7 @@ import json
 import logging
 import sqlite3
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -37,6 +38,15 @@ class SQLiteQueue(QueueManager):
 
     SCHEMA_VERSION = 2
     BUSY_TIMEOUT_MS = 5000
+    # The WAL file only shrinks on a TRUNCATE checkpoint or, with this limit,
+    # back to this size after a checkpoint; without it a burst of writes (a
+    # large cleanup) leaves it at its high-water mark for good.
+    JOURNAL_SIZE_LIMIT = 64 * 1024 * 1024
+    # VACUUM after a cleanup that removed more than this share of the jobs and
+    # more than VACUUM_MIN_ROWS rows: the db file never shrinks otherwise, and
+    # small cleanups aren't worth rewriting the file (and blocking writers) for.
+    VACUUM_MIN_SHARE = 0.25
+    VACUUM_MIN_ROWS = 1000
 
     def __init__(self, db_path: str = "/var/lib/qbt-rules/qbt-rules.db"):
         """
@@ -81,6 +91,7 @@ class SQLiteQueue(QueueManager):
             # without it, a connection blocked at BEGIN IMMEDIATE raises
             # 'database is locked' right away instead of waiting its turn.
             conn.execute(f"PRAGMA busy_timeout = {self.BUSY_TIMEOUT_MS}")
+            conn.execute(f"PRAGMA journal_size_limit = {self.JOURNAL_SIZE_LIMIT}")
 
             # Track this connection
             with self._conn_lock:
@@ -404,11 +415,19 @@ class SQLiteQueue(QueueManager):
         return True
 
     def cleanup_old_jobs(self, retention_period: int) -> int:
-        """Remove old completed/failed/cancelled jobs"""
+        """
+        Remove old completed/failed/cancelled jobs, then give the space back
+
+        After a cleanup that deleted rows, a TRUNCATE checkpoint empties the WAL
+        file; after one that removed a large share of the jobs (VACUUM_MIN_SHARE
+        and VACUUM_MIN_ROWS), VACUUM shrinks the db file first. The worker calls
+        this from its own thread, so neither is on a request's path.
+        """
         cutoff_date = datetime.now(UTC) - timedelta(seconds=retention_period)
 
         # Cancelled jobs never get a completed_at, so fall back to created_at
         conn = self._get_connection()
+        total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
         cursor = conn.execute(
             """
             DELETE FROM jobs
@@ -418,11 +437,57 @@ class SQLiteQueue(QueueManager):
             (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED, cutoff_date.isoformat()),
         )
 
-        deleted = cursor.rowcount
+        deleted: int = cursor.rowcount
         if deleted > 0:
             logger.info(f"Cleaned up {deleted} old jobs older than {cutoff_date}")
+            vacuum = deleted > self.VACUUM_MIN_ROWS and deleted > total * self.VACUUM_MIN_SHARE
+            size_before = self._db_size()
+            elapsed = self._vacuum(conn) if vacuum else None
+            self._checkpoint_truncate(conn)
+            if elapsed is not None:
+                # In WAL mode VACUUM writes the new file into the WAL; the db
+                # file only shrinks at the checkpoint, so measure after it
+                logger.info(
+                    f"VACUUM after removing {deleted} of {total} jobs took {elapsed:.2f}s "
+                    f"({size_before / 1e6:.1f} MB -> {self._db_size() / 1e6:.1f} MB)"
+                )
 
         return deleted
+
+    def _vacuum(self, conn: sqlite3.Connection) -> float | None:
+        """
+        Rebuild the db without the deleted jobs' pages; returns the seconds taken
+
+        VACUUM must run outside a transaction (this connection is in autocommit
+        mode and cleanup holds none) and holds the write lock while it runs:
+        other threads' writes wait up to busy_timeout. Readers carry on in WAL
+        mode. A failure only costs the space, so it is logged, not raised.
+        """
+        started = time.monotonic()
+        try:
+            conn.execute("VACUUM")
+        except sqlite3.Error as e:
+            logger.warning(f"VACUUM after cleanup failed: {e}")
+            return None
+        return time.monotonic() - started
+
+    def _checkpoint_truncate(self, conn: sqlite3.Connection) -> None:
+        """Copy the WAL into the db and truncate the WAL file to zero bytes"""
+        try:
+            busy, _, _ = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        except sqlite3.Error as e:
+            logger.warning(f"WAL checkpoint after cleanup failed: {e}")
+            return
+        if busy:
+            # A reader kept it from finishing; the next checkpoint catches up
+            logger.debug("WAL checkpoint after cleanup was blocked by a reader")
+
+    def _db_size(self) -> int:
+        """The db file's size in bytes (0 if it can't be read)"""
+        try:
+            return self.db_path.stat().st_size
+        except OSError:
+            return 0
 
     def get_queue_depth(self) -> int:
         """Get number of pending jobs"""

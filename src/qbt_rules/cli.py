@@ -101,9 +101,17 @@ def show_config(config: ConfigOption = None) -> None:
     for setting in SETTINGS:
         shown = cfg.values.get(setting.key)
         if setting.secret:
-            # Whether it is set, never its value (template-python v2.4.3). The 0.10.x
-            # placeholder key counts as unset, as the server treats it.
-            unset = not shown or PLACEHOLDER_SOURCE in cfg.sources[setting.key]
+            # Whether it is set, never its value (template-python v2.4.3). Set means set by
+            # the user (the file, the variable or its _FILE): a default, even a non-empty one
+            # like queue.redis_url's, is unset. The 0.10.x placeholder key counts as unset,
+            # as the server treats it.
+            source = cfg.sources[setting.key]
+            unset = (
+                not shown
+                or source == "default"
+                or source.startswith("default:")
+                or PLACEHOLDER_SOURCE in source
+            )
             shown = "(unset)" if unset else f"{MASK} (set)"
         typer.echo(f"{setting.key} = {shown}  ({cfg.sources[setting.key]})")
     for i, entry in enumerate(cfg.schedule):

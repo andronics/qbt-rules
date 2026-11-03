@@ -31,7 +31,7 @@ If the same action sequence shows up in multiple rules, see [Reusable References
 
 **Idempotent Actions:**
 
-- **Yes**: Skipped if already in desired state (logged as "skipped")
+- **Yes**: Skipped if already in desired state. Each run logs one INFO line with the count (`N action(s) skipped: already in desired state`); at `DEBUG`, each skip is logged with the torrent, the action and its key parameter (`Example.Torrent - add_tag (tags: hd) already in desired state (skipped)`)
 - **No**: Always execute
 
 ### stop
