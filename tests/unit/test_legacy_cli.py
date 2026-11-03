@@ -1,5 +1,5 @@
 """
-Tests for qbt_rules.cli module (v0.4.0 client-server architecture)
+Tests for qbt_rules.legacy_cli module (v0.4.0 client-server architecture)
 """
 
 import pytest
@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch, MagicMock, call
 from argparse import Namespace
 import json
 
-from qbt_rules.cli import (
+from qbt_rules.legacy_cli import (
     resolve_section_config,
     get_logging_config,
     get_qbittorrent_config,
@@ -632,13 +632,13 @@ class TestGetQueueConfig:
 class TestRunServerMode:
     """Test run_server_mode() function"""
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.server.run_server')
-    @patch('qbt_rules.server.create_app')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.web.run_server')
+    @patch('qbt_rules.web.create_app')
     @patch('qbt_rules.scheduler.Scheduler')
     @patch('qbt_rules.worker.Worker')
     @patch('qbt_rules.queue_manager.create_queue')
-    @patch('qbt_rules.cli.QBittorrentAPI')
+    @patch('qbt_rules.legacy_cli.QBittorrentAPI')
     def test_creates_and_runs_server(self, mock_api_class, mock_create_queue,
                                      mock_worker_class, mock_scheduler_class,
                                      mock_create_app, mock_run_server, mock_logger):
@@ -737,8 +737,8 @@ class TestRunServerMode:
             metrics_enabled=False
         )
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
     def test_exits_without_api_key(self, mock_exit, mock_logger):
         """Should exit if server API key not provided"""
         # Make sys.exit raise SystemExit to stop execution
@@ -759,13 +759,13 @@ class TestRunServerMode:
         # Verify error was logged
         assert mock_logger.error.called
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.server.run_server')
-    @patch('qbt_rules.server.create_app')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.web.run_server')
+    @patch('qbt_rules.web.create_app')
     @patch('qbt_rules.scheduler.Scheduler')
     @patch('qbt_rules.worker.Worker')
     @patch('qbt_rules.queue_manager.create_queue')
-    @patch('qbt_rules.cli.QBittorrentAPI')
+    @patch('qbt_rules.legacy_cli.QBittorrentAPI')
     def test_stops_worker_on_keyboard_interrupt(self, mock_api_class, mock_create_queue,
                                                  mock_worker_class, mock_scheduler_class,
                                                  mock_create_app, mock_run_server, mock_logger):
@@ -825,8 +825,8 @@ class TestRunClientMode:
                                       'created_at': '2024-01-01T00:00:00Z', **job}
         return response
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.requests.post')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.requests.post')
     def test_dry_run_flag_is_sent_to_server(self, mock_post, mock_logger):
         """--dry-run used to be dropped, so the job ran for real"""
         mock_post.return_value = self._accepted({'dry_run': True})
@@ -835,8 +835,8 @@ class TestRunClientMode:
 
         assert mock_post.call_args[1]['params']['dry_run'] == 'true'
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.requests.post')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.requests.post')
     def test_no_dry_run_param_without_flag(self, mock_post, mock_logger):
         mock_post.return_value = self._accepted({'dry_run': False})
 
@@ -844,9 +844,9 @@ class TestRunClientMode:
 
         assert 'dry_run' not in mock_post.call_args[1]['params']
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.requests.delete')
-    @patch('qbt_rules.cli.requests.post')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.requests.delete')
+    @patch('qbt_rules.legacy_cli.requests.post')
     def test_cancels_job_when_server_ignores_dry_run(self, mock_post, mock_delete, mock_logger):
         """An older server drops the parameter and would run for real: cancel and fail"""
         mock_post.return_value = self._accepted({})  # no dry_run field at all
@@ -858,9 +858,9 @@ class TestRunClientMode:
         assert exc.value.code == 1
         assert mock_delete.call_args[0][0] == 'http://localhost:5000/api/jobs/job-123'
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.validate_torrent_hash')
-    @patch('qbt_rules.cli.requests.post')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.validate_torrent_hash')
+    @patch('qbt_rules.legacy_cli.requests.post')
     def test_submits_job_successfully(self, mock_post, mock_validate, mock_logger):
         """Should submit job to server successfully"""
         # Mock hash validation
@@ -898,10 +898,10 @@ class TestRunClientMode:
         assert call_args[1]['params']['hash'] == 'abc123'
         assert call_args[1]['params']['key'] == 'test-key'
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
-    @patch('qbt_rules.cli.validate_torrent_hash')
-    @patch('qbt_rules.cli.requests.post')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.validate_torrent_hash')
+    @patch('qbt_rules.legacy_cli.requests.post')
     def test_handles_connection_error(self, mock_post, mock_validate, mock_exit, mock_logger):
         """Should handle connection errors gracefully"""
         import requests
@@ -925,8 +925,8 @@ class TestRunClientMode:
         # Verify error was logged
         assert mock_logger.error.called
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
     def test_exits_without_api_key(self, mock_exit, mock_logger):
         """Should exit if client API key not provided"""
         mock_exit.side_effect = SystemExit(1)
@@ -947,10 +947,10 @@ class TestRunClientMode:
         # Verify error was logged
         assert mock_logger.error.called
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
-    @patch('qbt_rules.cli.validate_torrent_hash')
-    @patch('qbt_rules.cli.requests.post')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.validate_torrent_hash')
+    @patch('qbt_rules.legacy_cli.requests.post')
     def test_handles_auth_error(self, mock_post, mock_validate, mock_exit, mock_logger):
         """Should handle authentication errors"""
         mock_response = Mock()
@@ -973,10 +973,10 @@ class TestRunClientMode:
 
         mock_exit.assert_called_once_with(1)
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.validate_torrent_hash')
-    @patch('qbt_rules.cli.wait_for_job')
-    @patch('qbt_rules.cli.requests.post')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.validate_torrent_hash')
+    @patch('qbt_rules.legacy_cli.wait_for_job')
+    @patch('qbt_rules.legacy_cli.requests.post')
     def test_waits_for_job_when_requested(self, mock_post, mock_wait, mock_validate, mock_logger):
         """Should wait for job completion when --wait flag is set"""
         mock_response = Mock()
@@ -1007,10 +1007,10 @@ class TestRunClientMode:
             'job-123'
         )
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
-    @patch('qbt_rules.cli.validate_torrent_hash')
-    @patch('qbt_rules.cli.requests.post')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.validate_torrent_hash')
+    @patch('qbt_rules.legacy_cli.requests.post')
     def test_handles_timeout_error(self, mock_post, mock_validate, mock_exit, mock_logger):
         """Should handle timeout errors"""
         import requests
@@ -1032,10 +1032,10 @@ class TestRunClientMode:
 
         mock_exit.assert_called_once_with(1)
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
-    @patch('qbt_rules.cli.validate_torrent_hash')
-    @patch('qbt_rules.cli.requests.post')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.validate_torrent_hash')
+    @patch('qbt_rules.legacy_cli.requests.post')
     def test_handles_server_error(self, mock_post, mock_validate, mock_exit, mock_logger):
         """Should handle server errors"""
         mock_response = Mock()
@@ -1059,8 +1059,8 @@ class TestRunClientMode:
 
         mock_exit.assert_called_once_with(1)
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.requests.post')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.requests.post')
     def test_handles_no_context_or_hash(self, mock_post, mock_logger):
         """Should handle missing context and hash"""
         mock_response = Mock()
@@ -1086,10 +1086,10 @@ class TestRunClientMode:
         assert call_args[1]['params']['context'] is None
         assert call_args[1]['params']['hash'] is None
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
-    @patch('qbt_rules.cli.validate_torrent_hash')
-    @patch('qbt_rules.cli.requests.post')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.validate_torrent_hash')
+    @patch('qbt_rules.legacy_cli.requests.post')
     def test_validates_torrent_hash_when_provided(self, mock_post, mock_validate, mock_exit, mock_logger):
         """Should validate torrent hash when provided"""
         # Simulate validation error
@@ -1117,9 +1117,9 @@ class TestRunClientMode:
 class TestWaitForJob:
     """Test wait_for_job() function"""
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.time.sleep')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.time.sleep')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_waits_for_job_completion(self, mock_get, mock_sleep, mock_logger):
         """Should poll until job completes"""
         # First call: processing, second call: completed
@@ -1145,10 +1145,10 @@ class TestWaitForJob:
         assert mock_get.call_count == 2
         mock_sleep.assert_called_once()
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
-    @patch('qbt_rules.cli.time.sleep')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.time.sleep')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_shows_error_on_failure(self, mock_get, mock_sleep, mock_exit, mock_logger):
         """Should show error when job fails"""
         mock_response = Mock()
@@ -1167,10 +1167,10 @@ class TestWaitForJob:
         assert mock_get.call_count == 1
         mock_exit.assert_called_once_with(1)
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
-    @patch('qbt_rules.cli.time.sleep')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.time.sleep')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_handles_cancelled_job(self, mock_get, mock_sleep, mock_exit, mock_logger):
         """Should handle cancelled jobs"""
         mock_response = Mock()
@@ -1184,10 +1184,10 @@ class TestWaitForJob:
 
         mock_exit.assert_called_once_with(1)
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
-    @patch('qbt_rules.cli.time.sleep')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.time.sleep')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_handles_polling_error(self, mock_get, mock_sleep, mock_exit, mock_logger):
         """Should handle errors during polling"""
         mock_get.side_effect = Exception("Network error")
@@ -1202,8 +1202,8 @@ class TestWaitForJob:
 class TestListJobsCommand:
     """Test list_jobs_command() function"""
 
-    @patch('qbt_rules.cli.cli_ui')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.cli_ui')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_lists_jobs_successfully(self, mock_get, mock_cli_ui):
         """Should list jobs from server"""
         mock_response = Mock()
@@ -1252,8 +1252,8 @@ class TestListJobsCommand:
             ['job-2', 'pending', 'automatic', '2024-01-01T01:00:00Z'],
         ]
 
-    @patch('qbt_rules.cli.cli_ui')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.cli_ui')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_lists_jobs_as_json(self, mock_get, mock_cli_ui):
         """Should print the raw API response as JSON when --output json is set"""
         mock_response = Mock()
@@ -1279,8 +1279,8 @@ class TestListJobsCommand:
         mock_cli_ui.print_json.assert_called_once_with(response_data)
         mock_cli_ui.print_table.assert_not_called()
 
-    @patch('qbt_rules.cli.cli_ui')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.cli_ui')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_handles_no_jobs(self, mock_get, mock_cli_ui):
         """Should handle empty job list"""
         mock_response = Mock()
@@ -1303,9 +1303,9 @@ class TestListJobsCommand:
         mock_cli_ui.print_message.assert_called_once_with("No jobs found")
         mock_cli_ui.print_table.assert_not_called()
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_handles_error(self, mock_get, mock_exit, mock_logger):
         """Should handle errors"""
         mock_get.side_effect = Exception("Network error")
@@ -1324,8 +1324,8 @@ class TestListJobsCommand:
 class TestJobStatusCommand:
     """Test job_status_command() function"""
 
-    @patch('qbt_rules.cli.cli_ui')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.cli_ui')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_gets_job_status(self, mock_get, mock_cli_ui):
         """Should get job status from server"""
         mock_response = Mock()
@@ -1366,8 +1366,8 @@ class TestJobStatusCommand:
         assert result_call.args[0] == "Result:"
         assert result_call.args[1] == [("torrents_processed", 10)]
 
-    @patch('qbt_rules.cli.cli_ui')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.cli_ui')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_gets_job_status_as_json(self, mock_get, mock_cli_ui):
         """Should print the raw API response as JSON when --output json is set"""
         mock_response = Mock()
@@ -1389,8 +1389,8 @@ class TestJobStatusCommand:
         mock_cli_ui.print_json.assert_called_once_with(job_data)
         mock_cli_ui.print_kv_section.assert_not_called()
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_handles_job_not_found(self, mock_get, mock_logger):
         """Should handle job not found"""
         mock_response = Mock()
@@ -1409,9 +1409,9 @@ class TestJobStatusCommand:
         # Verify error was logged
         assert any('Job not found' in str(call) for call in mock_logger.error.call_args_list)
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_handles_error(self, mock_get, mock_exit, mock_logger):
         """Should handle errors"""
         mock_get.side_effect = Exception("Network error")
@@ -1427,8 +1427,8 @@ class TestJobStatusCommand:
 
         mock_exit.assert_called_once_with(1)
 
-    @patch('qbt_rules.cli.cli_ui')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.cli_ui')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_displays_job_with_error(self, mock_get, mock_cli_ui):
         """Should display job with error"""
         mock_response = Mock()
@@ -1462,8 +1462,8 @@ class TestJobStatusCommand:
 class TestCancelJobCommand:
     """Test cancel_job_command() function"""
 
-    @patch('qbt_rules.cli.cli_ui')
-    @patch('qbt_rules.cli.requests.delete')
+    @patch('qbt_rules.legacy_cli.cli_ui')
+    @patch('qbt_rules.legacy_cli.requests.delete')
     def test_cancels_job(self, mock_delete, mock_cli_ui):
         """Should cancel job on server"""
         mock_response = Mock()
@@ -1485,8 +1485,8 @@ class TestCancelJobCommand:
         # Verify success was announced
         mock_cli_ui.print_message.assert_called_once_with("✓ Job cancelled: job-123")
 
-    @patch('qbt_rules.cli.cli_ui')
-    @patch('qbt_rules.cli.requests.delete')
+    @patch('qbt_rules.legacy_cli.cli_ui')
+    @patch('qbt_rules.legacy_cli.requests.delete')
     def test_cancels_job_as_json(self, mock_delete, mock_cli_ui):
         """Should print the raw API response as JSON when --output json is set"""
         mock_response = Mock()
@@ -1508,8 +1508,8 @@ class TestCancelJobCommand:
         mock_cli_ui.print_json.assert_called_once_with(response_data)
         mock_cli_ui.print_message.assert_not_called()
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.requests.delete')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.requests.delete')
     def test_handles_cannot_cancel(self, mock_delete, mock_logger):
         """Should handle cannot cancel error"""
         mock_response = Mock()
@@ -1531,8 +1531,8 @@ class TestCancelJobCommand:
         # Verify error was logged
         assert any('Cannot cancel job' in str(call) for call in mock_logger.error.call_args_list)
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.requests.delete')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.requests.delete')
     def test_handles_job_not_found(self, mock_delete, mock_logger):
         """Should handle job not found"""
         mock_response = Mock()
@@ -1551,9 +1551,9 @@ class TestCancelJobCommand:
         # Verify error was logged
         assert any('Job not found' in str(call) for call in mock_logger.error.call_args_list)
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
-    @patch('qbt_rules.cli.requests.delete')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.requests.delete')
     def test_handles_error(self, mock_delete, mock_exit, mock_logger):
         """Should handle errors"""
         mock_delete.side_effect = Exception("Network error")
@@ -1573,8 +1573,8 @@ class TestCancelJobCommand:
 class TestStatsCommand:
     """Test stats_command() function"""
 
-    @patch('qbt_rules.cli.cli_ui')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.cli_ui')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_gets_stats(self, mock_get, mock_cli_ui):
         """Should get server stats"""
         mock_response = Mock()
@@ -1622,8 +1622,8 @@ class TestStatsCommand:
         jobs_call = mock_cli_ui.print_kv_section.call_args_list[0]
         assert ("Total", 100) in jobs_call.args[1]
 
-    @patch('qbt_rules.cli.cli_ui')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.cli_ui')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_gets_stats_as_json(self, mock_get, mock_cli_ui):
         """Should print the raw API response as JSON when --output json is set"""
         mock_response = Mock()
@@ -1649,8 +1649,8 @@ class TestStatsCommand:
         mock_cli_ui.print_json.assert_called_once_with(stats_data)
         mock_cli_ui.print_kv_section.assert_not_called()
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_handles_server_error(self, mock_get, mock_logger):
         """Should handle server errors"""
         mock_response = Mock()
@@ -1668,9 +1668,9 @@ class TestStatsCommand:
         # Verify error was logged
         assert any('Server error' in str(call) for call in mock_logger.error.call_args_list)
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_handles_error(self, mock_get, mock_exit, mock_logger):
         """Should handle errors"""
         mock_get.side_effect = Exception("Network error")
@@ -1689,10 +1689,10 @@ class TestStatsCommand:
 class TestRunClientModeEdgeCases:
     """Test edge cases in run_client_mode() function"""
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
-    @patch('qbt_rules.cli.validate_torrent_hash')
-    @patch('qbt_rules.cli.requests.post')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.validate_torrent_hash')
+    @patch('qbt_rules.legacy_cli.requests.post')
     def test_handles_generic_exception(self, mock_post, mock_validate, mock_exit, mock_logger):
         """Should handle generic exceptions"""
         mock_validate.return_value = 'abc123'
@@ -1719,10 +1719,10 @@ class TestRunClientModeEdgeCases:
 class TestWaitForJobEdgeCases:
     """Test edge cases in wait_for_job() function"""
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.sys.exit')
-    @patch('qbt_rules.cli.time.sleep')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.time.sleep')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_handles_timeout(self, mock_get, mock_sleep, mock_exit, mock_logger):
         """Should timeout if job doesn't complete within max_wait"""
         # Always return processing status
@@ -1745,8 +1745,8 @@ class TestWaitForJobEdgeCases:
 class TestCommandEdgeCases:
     """Test edge cases in command functions"""
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_list_jobs_server_error(self, mock_get, mock_logger):
         """Should handle server errors in list_jobs_command"""
         mock_response = Mock()
@@ -1764,8 +1764,8 @@ class TestCommandEdgeCases:
         # Verify server error was logged
         assert any('Server error' in str(call) for call in mock_logger.error.call_args_list)
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.requests.get')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.requests.get')
     def test_job_status_server_error(self, mock_get, mock_logger):
         """Should handle server errors in job_status_command"""
         mock_response = Mock()
@@ -1784,8 +1784,8 @@ class TestCommandEdgeCases:
         # Verify server error was logged
         assert any('Server error' in str(call) for call in mock_logger.error.call_args_list)
 
-    @patch('qbt_rules.cli.logger')
-    @patch('qbt_rules.cli.requests.delete')
+    @patch('qbt_rules.legacy_cli.logger')
+    @patch('qbt_rules.legacy_cli.requests.delete')
     def test_cancel_job_server_error(self, mock_delete, mock_logger):
         """Should handle server errors in cancel_job_command"""
         mock_response = Mock()
@@ -1808,14 +1808,14 @@ class TestCommandEdgeCases:
 class TestMain:
     """Test main() entry point function"""
 
-    @patch('qbt_rules.cli.sys.argv', ['qbt-rules', '--serve'])
-    @patch('qbt_rules.cli.run_server_mode')
+    @patch('qbt_rules.legacy_cli.sys.argv', ['qbt-rules', '--serve'])
+    @patch('qbt_rules.legacy_cli.run_server_mode')
     @patch('qbt_rules.arguments.handle_utility_args')
-    @patch('qbt_rules.cli.get_logger')
-    @patch('qbt_rules.cli.setup_logging')
-    @patch('qbt_rules.cli.load_config')
+    @patch('qbt_rules.legacy_cli.get_logger')
+    @patch('qbt_rules.legacy_cli.setup_logging')
+    @patch('qbt_rules.legacy_cli.load_config')
     @patch('qbt_rules.arguments.process_args')
-    @patch('qbt_rules.cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.sys.exit')
     def test_main_server_mode(self, mock_exit, mock_process_args,
                                mock_load_config, mock_setup_logging, mock_get_logger,
                                mock_handle_utility, mock_run_server):
@@ -1830,20 +1830,20 @@ class TestMain:
 
         mock_handle_utility.return_value = None
 
-        from qbt_rules.cli import main
+        from qbt_rules.legacy_cli import main
         main()
 
         assert mock_run_server.called
         mock_exit.assert_called_with(0)
 
-    @patch('qbt_rules.cli.sys.argv', ['qbt-rules', '--list-jobs'])
-    @patch('qbt_rules.cli.list_jobs_command')
+    @patch('qbt_rules.legacy_cli.sys.argv', ['qbt-rules', '--list-jobs'])
+    @patch('qbt_rules.legacy_cli.list_jobs_command')
     @patch('qbt_rules.arguments.handle_utility_args')
-    @patch('qbt_rules.cli.get_logger')
-    @patch('qbt_rules.cli.setup_logging')
-    @patch('qbt_rules.cli.load_config')
+    @patch('qbt_rules.legacy_cli.get_logger')
+    @patch('qbt_rules.legacy_cli.setup_logging')
+    @patch('qbt_rules.legacy_cli.load_config')
     @patch('qbt_rules.arguments.process_args')
-    @patch('qbt_rules.cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.sys.exit')
     def test_main_list_jobs_mode(self, mock_exit, mock_process_args,
                                   mock_load_config, mock_setup_logging, mock_get_logger,
                                   mock_handle_utility, mock_list_jobs):
@@ -1858,20 +1858,20 @@ class TestMain:
 
         mock_handle_utility.return_value = None
 
-        from qbt_rules.cli import main
+        from qbt_rules.legacy_cli import main
         main()
 
         assert mock_list_jobs.called
         mock_exit.assert_called_with(0)
 
-    @patch('qbt_rules.cli.sys.argv', ['qbt-rules', '--job-status', 'job-123'])
-    @patch('qbt_rules.cli.job_status_command')
+    @patch('qbt_rules.legacy_cli.sys.argv', ['qbt-rules', '--job-status', 'job-123'])
+    @patch('qbt_rules.legacy_cli.job_status_command')
     @patch('qbt_rules.arguments.handle_utility_args')
-    @patch('qbt_rules.cli.get_logger')
-    @patch('qbt_rules.cli.setup_logging')
-    @patch('qbt_rules.cli.load_config')
+    @patch('qbt_rules.legacy_cli.get_logger')
+    @patch('qbt_rules.legacy_cli.setup_logging')
+    @patch('qbt_rules.legacy_cli.load_config')
     @patch('qbt_rules.arguments.process_args')
-    @patch('qbt_rules.cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.sys.exit')
     def test_main_job_status_mode(self, mock_exit, mock_process_args,
                                    mock_load_config, mock_setup_logging, mock_get_logger,
                                    mock_handle_utility, mock_job_status):
@@ -1886,20 +1886,20 @@ class TestMain:
 
         mock_handle_utility.return_value = None
 
-        from qbt_rules.cli import main
+        from qbt_rules.legacy_cli import main
         main()
 
         assert mock_job_status.called
         mock_exit.assert_called_with(0)
 
-    @patch('qbt_rules.cli.sys.argv', ['qbt-rules', '--cancel-job', 'job-123'])
-    @patch('qbt_rules.cli.cancel_job_command')
+    @patch('qbt_rules.legacy_cli.sys.argv', ['qbt-rules', '--cancel-job', 'job-123'])
+    @patch('qbt_rules.legacy_cli.cancel_job_command')
     @patch('qbt_rules.arguments.handle_utility_args')
-    @patch('qbt_rules.cli.get_logger')
-    @patch('qbt_rules.cli.setup_logging')
-    @patch('qbt_rules.cli.load_config')
+    @patch('qbt_rules.legacy_cli.get_logger')
+    @patch('qbt_rules.legacy_cli.setup_logging')
+    @patch('qbt_rules.legacy_cli.load_config')
     @patch('qbt_rules.arguments.process_args')
-    @patch('qbt_rules.cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.sys.exit')
     def test_main_cancel_job_mode(self, mock_exit, mock_process_args,
                                    mock_load_config, mock_setup_logging, mock_get_logger,
                                    mock_handle_utility, mock_cancel_job):
@@ -1914,20 +1914,20 @@ class TestMain:
 
         mock_handle_utility.return_value = None
 
-        from qbt_rules.cli import main
+        from qbt_rules.legacy_cli import main
         main()
 
         assert mock_cancel_job.called
         mock_exit.assert_called_with(0)
 
-    @patch('qbt_rules.cli.sys.argv', ['qbt-rules', '--stats'])
-    @patch('qbt_rules.cli.stats_command')
+    @patch('qbt_rules.legacy_cli.sys.argv', ['qbt-rules', '--stats'])
+    @patch('qbt_rules.legacy_cli.stats_command')
     @patch('qbt_rules.arguments.handle_utility_args')
-    @patch('qbt_rules.cli.get_logger')
-    @patch('qbt_rules.cli.setup_logging')
-    @patch('qbt_rules.cli.load_config')
+    @patch('qbt_rules.legacy_cli.get_logger')
+    @patch('qbt_rules.legacy_cli.setup_logging')
+    @patch('qbt_rules.legacy_cli.load_config')
     @patch('qbt_rules.arguments.process_args')
-    @patch('qbt_rules.cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.sys.exit')
     def test_main_stats_mode(self, mock_exit, mock_process_args,
                               mock_load_config, mock_setup_logging, mock_get_logger,
                               mock_handle_utility, mock_stats):
@@ -1942,20 +1942,20 @@ class TestMain:
 
         mock_handle_utility.return_value = None
 
-        from qbt_rules.cli import main
+        from qbt_rules.legacy_cli import main
         main()
 
         assert mock_stats.called
         mock_exit.assert_called_with(0)
 
-    @patch('qbt_rules.cli.sys.argv', ['qbt-rules', '--context', 'adhoc-run'])
-    @patch('qbt_rules.cli.run_client_mode')
+    @patch('qbt_rules.legacy_cli.sys.argv', ['qbt-rules', '--context', 'adhoc-run'])
+    @patch('qbt_rules.legacy_cli.run_client_mode')
     @patch('qbt_rules.arguments.handle_utility_args')
-    @patch('qbt_rules.cli.get_logger')
-    @patch('qbt_rules.cli.setup_logging')
-    @patch('qbt_rules.cli.load_config')
+    @patch('qbt_rules.legacy_cli.get_logger')
+    @patch('qbt_rules.legacy_cli.setup_logging')
+    @patch('qbt_rules.legacy_cli.load_config')
     @patch('qbt_rules.arguments.process_args')
-    @patch('qbt_rules.cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.sys.exit')
     def test_main_client_mode(self, mock_exit, mock_process_args,
                                mock_load_config, mock_setup_logging, mock_get_logger,
                                mock_handle_utility, mock_run_client):
@@ -1970,20 +1970,20 @@ class TestMain:
 
         mock_handle_utility.return_value = None
 
-        from qbt_rules.cli import main
+        from qbt_rules.legacy_cli import main
         main()
 
         assert mock_run_client.called
         mock_exit.assert_called_with(0)
 
     @pytest.mark.parametrize('exit_code', [0, 1])
-    @patch('qbt_rules.cli.sys.argv', ['qbt-rules', '--validate'])
+    @patch('qbt_rules.legacy_cli.sys.argv', ['qbt-rules', '--validate'])
     @patch('qbt_rules.arguments.handle_utility_args')
-    @patch('qbt_rules.cli.get_logger')
-    @patch('qbt_rules.cli.setup_logging')
-    @patch('qbt_rules.cli.load_config')
+    @patch('qbt_rules.legacy_cli.get_logger')
+    @patch('qbt_rules.legacy_cli.setup_logging')
+    @patch('qbt_rules.legacy_cli.load_config')
     @patch('qbt_rules.arguments.process_args')
-    @patch('qbt_rules.cli.sys.exit')
+    @patch('qbt_rules.legacy_cli.sys.exit')
     def test_main_utility_mode_propagates_exit_status(self, mock_exit, mock_process_args,
                                 mock_load_config, mock_setup_logging, mock_get_logger,
                                 mock_handle_utility, exit_code):
@@ -2003,7 +2003,7 @@ class TestMain:
 
         mock_exit.side_effect = terminate
 
-        from qbt_rules.cli import main
+        from qbt_rules.legacy_cli import main
         with pytest.raises(SystemExit) as error:
             main()
 

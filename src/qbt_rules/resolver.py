@@ -32,7 +32,7 @@ from qbt_rules.errors import (
     UnknownRuleFieldError,
     UnknownVariableError,
 )
-from qbt_rules.logging import get_logger
+from qbt_rules.log_setup import get_logger
 
 logger = get_logger(__name__)
 
@@ -102,7 +102,7 @@ class RuleResolver:
 
         # Apply instance-scoped variable overrides
         # Fully implemented - awaiting Config class integration to pass instance_id
-        # Currently Config always passes instance_id=None (see config.py:496)
+        # Currently Config always passes instance_id=None (see config_loader.py:496)
         if instance_id and instances:
             instance = instances.get(instance_id, {})
             instance_refs = instance.get('refs', {})

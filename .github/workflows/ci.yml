@@ -33,14 +33,14 @@ jobs:
 
       - name: Test module imports
         run: |
-          python -c "from qbt_rules.api import QBittorrentAPI; print('✓ qbt_rules.api')"
-          python -c "from qbt_rules.config import load_config; print('✓ qbt_rules.config')"
+          python -c "from qbt_rules.qbittorrent import QBittorrentAPI; print('✓ qbt_rules.qbittorrent')"
+          python -c "from qbt_rules.config_loader import load_config; print('✓ qbt_rules.config_loader')"
           python -c "from qbt_rules.engine import RulesEngine; print('✓ qbt_rules.engine')"
           python -c "from qbt_rules.errors import *; print('✓ qbt_rules.errors')"
           python -c "from qbt_rules.utils import *; print('✓ qbt_rules.utils')"
-          python -c "from qbt_rules.logging import setup_logging; print('✓ qbt_rules.logging')"
+          python -c "from qbt_rules.log_setup import setup_logging; print('✓ qbt_rules.log_setup')"
           python -c "from qbt_rules.arguments import create_parser; print('✓ qbt_rules.arguments')"
-          python -c "from qbt_rules.cli import main; print('✓ qbt_rules.cli')"
+          python -c "from qbt_rules.legacy_cli import main; print('✓ qbt_rules.legacy_cli')"
           echo "✓ All modules import successfully"
 
       - name: Run tests

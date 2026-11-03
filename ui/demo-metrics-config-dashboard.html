@@ -15,7 +15,7 @@
   the shipped dashboard doesn't expose visually at all today (only as raw Prometheus
   text exposition for scrapers). All field/metric names below are the real ones:
 
-    /api/stats shape        -> src/qbt_rules/server.py, `stats()` handler (~line 335)
+    /api/stats shape        -> src/qbt_rules/web.py, `stats()` handler (~line 335)
     Prometheus metric names -> src/qbt_rules/metrics.py (`_actions_executed`,
                                 `_job_duration`, `_scheduler_fires`, `_http_requests`,
                                 `_http_duration`, plus the on-demand state gauges
@@ -324,7 +324,7 @@
    Mock data — shapes match the REAL /api/stats and /metrics output
    ====================================================================== */
 
-// Matches server.py's stats() handler response body exactly
+// Matches web.py's stats() handler response body exactly
 const STATS = {
   jobs: { total: 1842, pending: 2, processing: 1, completed: 1791, failed: 39, cancelled: 9 },
   performance: { average_execution_time: '0.87s' },

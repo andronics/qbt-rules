@@ -31,7 +31,7 @@ def setup_logging(logging_config: Dict[str, Any]):
     Falls back gracefully to console-only logging if file logging fails.
 
     Args:
-        logging_config: Pre-resolved dict from cli.py's get_logging_config()
+        logging_config: Pre-resolved dict from legacy_cli.py's get_logging_config()
             -- {'level': str, 'file': Path, 'trace_mode': bool,
                 'http_access': bool, 'client_mode': bool,
                 'max_bytes': int, 'backup_count': int}

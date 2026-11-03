@@ -32,7 +32,7 @@ class Scheduler:
 
     Gunicorn multi-worker note: this must be started once, before the
     Gunicorn arbiter forks worker processes (the same place Worker.start()
-    is called in cli.py's run_server_mode()), and must NOT be restarted in
+    is called in legacy_cli.py's run_server_mode()), and must NOT be restarted in
     Gunicorn's post_fork hook the way Worker's thread is. A thread started
     before fork() continues running in the master/arbiter process after
     forking, so starting it there (and only there) means it fires exactly

@@ -13,9 +13,9 @@ from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 
 from qbt_rules.queue_manager import QueueManager, JobStatus
-from qbt_rules.api import QBittorrentAPI
+from qbt_rules.qbittorrent import QBittorrentAPI
 from qbt_rules.engine import RulesEngine
-from qbt_rules.config import Config
+from qbt_rules.config_loader import Config
 from qbt_rules import metrics
 
 logger = logging.getLogger(__name__)

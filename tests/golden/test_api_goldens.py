@@ -1,7 +1,7 @@
 """
 Golden responses for the JSON API -- the safety net for the Flask -> FastAPI port
 
-Every JSON route in server.py (plus /metrics and the 404/405/413/500
+Every JSON route in web.py (plus /metrics and the 404/405/413/500
 handlers) is driven through the Flask test client against a real queue --
 SQLite and fakeredis -- and its status, Content-Type, selected headers
 (SELECTED_HEADERS) and exact body are compared with a stored golden file:
@@ -23,7 +23,7 @@ nothing is written.
 
 Determinism
 -----------
-- Time is frozen: every ``datetime.now()`` in server.py, queue_manager.py,
+- Time is frozen: every ``datetime.now()`` in web.py, queue_manager.py,
   both queue backends and config_store.py reads a settable Clock (seeded
   jobs get distinct, whole-second timestamps; requests run at FROZEN_AT).
   rules.yml's mtime -- the editor's ``modified_at`` -- is pinned to the
@@ -86,7 +86,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import pytest
 
-from qbt_rules import config_store, metrics, queue_manager, server
+from qbt_rules import config_store, metrics, queue_manager, web
 from qbt_rules.queue_backends import sqlite_queue
 from qbt_rules.queue_manager import JobStatus, QueueManager
 
@@ -260,7 +260,7 @@ class Env:
         self.monkeypatch = monkeypatch
 
         frozen = _frozen_datetime(self.clock)
-        for module in (server, queue_manager, config_store, sqlite_queue):
+        for module in (web, queue_manager, config_store, sqlite_queue):
             monkeypatch.setattr(module, "datetime", frozen)
         if backend == "redis":
             from qbt_rules.queue_backends import redis_queue
@@ -273,7 +273,7 @@ class Env:
             "generate_job_id",
             staticmethod(lambda: f"00000000-0000-4000-8000-{next(ids):012d}"),
         )
-        monkeypatch.setattr(server, "__version__", FIXED_VERSION)
+        monkeypatch.setattr(web, "__version__", FIXED_VERSION)
 
         # config.yml redaction and Config() both read QBT_RULES_* overrides
         for name in list(os.environ):
@@ -307,7 +307,7 @@ class Env:
         os.utime(path, (ts, ts))
 
     def client(self, with_config: bool = True, metrics_on: bool = False, **kwargs):
-        from qbt_rules.config import Config
+        from qbt_rules.config_loader import Config
 
         config = Config(self.config_dir) if with_config else None
         metrics_config = None
@@ -317,7 +317,7 @@ class Env:
                 "enabled": True,
                 "multiproc_dir": os.environ["PROMETHEUS_MULTIPROC_DIR"],
             }
-        app = server.create_app(
+        app = web.create_app(
             self.queue,
             self.worker,
             API_KEY,

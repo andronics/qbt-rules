@@ -81,8 +81,8 @@ jobs:
 
       - name: Test imports
         run: |
-          python -c "from qbt_rules.api import QBittorrentAPI; print('✓ qbt_rules.api imports successfully')"
-          python -c "from qbt_rules.config import load_config; print('✓ qbt_rules.config imports successfully')"
+          python -c "from qbt_rules.qbittorrent import QBittorrentAPI; print('✓ qbt_rules.qbittorrent imports successfully')"
+          python -c "from qbt_rules.config_loader import load_config; print('✓ qbt_rules.config_loader imports successfully')"
           python -c "from qbt_rules.engine import RulesEngine; print('✓ qbt_rules.engine imports successfully')"
           echo "✓ All critical imports successful"
 

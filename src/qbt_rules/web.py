@@ -24,8 +24,8 @@ from flask import Flask, request, jsonify, Response, render_template, redirect, 
 
 from qbt_rules.queue_manager import QueueManager, JobStatus
 from qbt_rules.worker import Worker
-from qbt_rules.config import Config, parse_bool
-from qbt_rules.logging import set_file_rotation
+from qbt_rules.config_loader import Config, parse_bool
+from qbt_rules.log_setup import set_file_rotation
 from qbt_rules.config_store import (
     EditableFile, FileConflictError, FileNotWritableError, redacted_config_view,
 )
@@ -115,7 +115,7 @@ def create_app(
             need the dashboard's rules view are unaffected; that one route
             reports itself unavailable if config wasn't provided
         metrics_config: Resolved {'enabled': bool, 'multiproc_dir': str}
-            from cli.py's get_metrics_config(). Optional (defaults to None,
+            from legacy_cli.py's get_metrics_config(). Optional (defaults to None,
             treated as disabled) -- metrics.init() must already have been
             called by the caller before this, since that's what actually
             makes prometheus_client importable/configured; this just
@@ -1033,7 +1033,7 @@ def register_metrics_routes(app: Flask):
     Register the Prometheus /metrics endpoint
 
     Only called from create_app() when metrics are enabled -- by that
-    point metrics.init(enabled=True) has already run (in cli.py, before
+    point metrics.init(enabled=True) has already run (in legacy_cli.py, before
     Gunicorn forks), so prometheus_client is guaranteed importable here.
     """
 
@@ -1173,7 +1173,7 @@ def run_server(
         logger.info(f"Gunicorn worker {worker_process.pid} forked - restarting worker thread")
 
         # Import here to access the global worker instance
-        from qbt_rules.server import worker as worker_instance
+        from qbt_rules.web import worker as worker_instance
 
         # Stop any existing thread (should be dead anyway after fork)
         if worker_instance.running:

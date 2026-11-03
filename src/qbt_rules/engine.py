@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Optional, Tuple
 
 import requests
 
-from qbt_rules.api import QBittorrentAPI
+from qbt_rules.qbittorrent import QBittorrentAPI
 from qbt_rules.utils import parse_tags, is_older_than, is_newer_than, is_larger_than, is_smaller_than
 from qbt_rules.errors import DataNotReadyError, FieldError, OperatorError
 from qbt_rules.trackie import (
@@ -23,7 +23,7 @@ from qbt_rules.trackie import (
     TrackieSnapshot,
     parse_max_age,
 )
-from qbt_rules.logging import get_logger
+from qbt_rules.log_setup import get_logger
 from qbt_rules import metrics
 
 logger = get_logger(__name__)

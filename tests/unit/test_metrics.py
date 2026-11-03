@@ -21,7 +21,7 @@ from qbt_rules import metrics
 # The metrics module's enabled/disabled state is reset before and after
 # every test in the whole suite by tests/conftest.py's autouse
 # reset_metrics_module_state fixture (needed there rather than only here
-# since test_server.py's /metrics tests also call metrics.init()).
+# since test_web.py's /metrics tests also call metrics.init()).
 
 # PROMETHEUS_MULTIPROC_DIR is set once, session-wide, at the very top of
 # tests/conftest.py -- prometheus_client resolves its multiprocess-vs-

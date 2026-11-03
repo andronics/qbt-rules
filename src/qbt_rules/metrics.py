@@ -5,7 +5,7 @@ Importing this module is always safe, even when prometheus_client isn't
 installed and even before PROMETHEUS_MULTIPROC_DIR is set -- prometheus_client
 itself is only ever imported lazily, inside init() and generate_metrics_output(),
 never at this module's top level. Every other module (engine.py, worker.py,
-scheduler.py, server.py) can therefore do `from qbt_rules import metrics` at
+scheduler.py, web.py) can therefore do `from qbt_rules import metrics` at
 its own top level unconditionally and call the record_*() functions, which
 silently no-op until init(enabled=True) has actually run.
 
@@ -19,7 +19,7 @@ prometheus_client is first imported anywhere in the process; every process
 (master and every forked child) then writes its own per-PID metric file into
 that directory, and /metrics is served by aggregating across every file via
 multiprocess.MultiProcessCollector. Because init() defers the actual import
-until it's explicitly called (from cli.py's run_server_mode(), immediately
+until it's explicitly called (from legacy_cli.py's run_server_mode(), immediately
 after setting the env var), this ordering constraint is satisfied without
 requiring every module that records a metric to know or care about it.
 """
@@ -237,7 +237,7 @@ def generate_metrics_output(
     counters/histograms plus the on-demand state gauges, in Prometheus
     text exposition format.
 
-    Only called from server.py's /metrics route handler, and only reached
+    Only called from web.py's /metrics route handler, and only reached
     when metrics are enabled (init(enabled=True) already succeeded), so
     prometheus_client is guaranteed importable here.
     """

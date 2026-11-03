@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from qbt_rules.api import QBittorrentAPI
+from qbt_rules.qbittorrent import QBittorrentAPI
 from qbt_rules.engine import ActionExecutor, ConditionEvaluator
 
 
@@ -149,7 +149,7 @@ class TestSetFilePriorityDryRun:
 
 class TestSetFilePriorityApi:
 
-    @patch('qbt_rules.api.qbittorrentapi.Client')
+    @patch('qbt_rules.qbittorrent.qbittorrentapi.Client')
     def test_calls_torrents_file_priority(self, mock_client_class):
         mock_client = Mock()
         mock_client.app_version = Mock(return_value='v4.5.0')
