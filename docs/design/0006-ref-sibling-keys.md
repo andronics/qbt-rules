@@ -2,8 +2,10 @@
 
 <!-- Add a line for this record to the index in docs/design/README.md (CI checks). -->
 
-Status: Proposed
+Status: Approved
 Date: 2026-11-04
+Approved: with changes, by ⚖️ Arbiter under Stephen's delegation, 2026-11-04 (logged as "❓ 2026-11-04
+Approve qbt-rules Record 0006 On Ref Sibling Keys")
 Authors: the media coordinator
 
 ## Context
@@ -48,15 +50,19 @@ works.
 
 ## Decision
 
-**Recommended: option (a), a `$ref` mapping holds only `$ref`; anything beside it is an error**, reached in
-two steps so no working installation stops loading without notice.
+**Option (a): a `$ref` mapping holds only `$ref`; anything beside it is an error**, for condition and
+action references alike, reached in two steps so no working installation stops loading without notice.
 
-1. **Next 0.11.x patch.** The validator reports an **error** on a condition mapping that has a `$ref` and
-   any other key, naming the keys that are dropped and the fix: "`any` beside `$ref` is ignored: the
+1. **Next 0.11.x patch.** The validator reports an **error** on a condition or action mapping that has a
+   `$ref` and any other key, naming the keys that are dropped and the fix: "`any` beside `$ref` is ignored: the
    reference replaces this whole mapping. Put the reference and the `any:` as separate items of an
    `all:` list." `qbt-rules validate` then exits 1, and the dashboard editor refuses to save such a file
    (it already refuses any file with errors). Loading is unchanged: the resolver still drops the keys, but
    logs a warning per rule naming the rule, the path and the dropped keys, once per load.
+
+   **Condition of approval:** before this patch is released, its validator is run on every rules file
+   deployed in production, any file that uses the shape is rewritten, and the number of places found is
+   reported. So nothing live keeps a wider match than it says while it waits for 0.12.
 2. **0.12.0.** The resolver raises `InvalidRefError` on such a mapping, as it does today for an unknown
    reference, so the rules file does not load and the job fails with the rule and path named. The
    changelog's breaking-change note gives the rewrite.
@@ -72,9 +78,14 @@ conditions:
         - {field: info.seeding_time, operator: '>=', value: 604800}
 ```
 
-Scope: condition references everywhere they can appear (a rule's `conditions`, any group inside it, and a
-`refs.conditions` block). Action references (`$ref: actions.<name>` with `params:` or `type:` beside it)
-drop their siblings the same way; whether this record covers them too is open question 1.
+Scope: every `$ref`.
+
+- Condition references, everywhere they can appear: a rule's `conditions`, any group inside it, and a
+  `refs.conditions` block.
+- Action references, `$ref: actions.<name>` with `params:`, `type:` or any other key beside it: in a rule's
+  `actions` list and in a `refs.actions` block. They drop their siblings the same way today (verified on
+  0.11.3: a `params: {delete_files: true}` beside a reference to a block with `delete_files: false` is
+  dropped, and the validator reports nothing), and a dropped `params` can change what an action does.
 
 ## Alternatives considered
 
@@ -97,36 +108,36 @@ drop their siblings the same way; whether this record covers them too is open qu
 - **(d) Do nothing; document it.** The wiki would say the siblings are ignored. Rejected: documentation
   does not stop a file that loads cleanly from deleting the wrong torrents.
 
-A rejected option goes into TODO.md's "Decided against" list when this record is approved.
+Options (b), (c) and (d) are in TODO.md's "Decided against" list.
 
 ## Consequences
 
-- Easier: a rules file that loads is a rules file whose every key is read. Together with #65, there is no
+- Easier: a rules file that loads is a rules file whose every key is read, in conditions and actions. Together with #65, there is no
   known condition shape left that is partly ignored.
 - Harder: a file using the shape needs a one-line rewrite before 0.12. Step 1's validator error and load
   warning name each place.
 - Rollout: step 1 is a `fix` (patch release): the validator and a log warning, no change to which files
   load. Step 2 is a `feat!` in 0.12.0. Rollback of step 2 is reverting it; step 1's error then still guards
   the editor and `validate`.
-- Tests: a validator case and a resolver case per position (top-level `conditions`, group item,
-  `refs.conditions` block) and per sibling kind (group key, field condition).
+- Tests: a validator case and a resolver case per position and per sibling kind. Conditions: top-level
+  `conditions`, group item, `refs.conditions` block; siblings a group key or a field condition. Actions: an
+  item of a rule's `actions`, a `refs.actions` block; siblings `params:` or `type:`.
 - Wiki pages that change: Reusable References (a `$ref` stands alone; the rewrite), Conditions (the same,
   where references are shown in groups), Troubleshooting (the new error message), and the 0.12 upgrade
   notes.
 
-## Open questions
+## Resolved
 
-1. **Do action references get the same rule?** A `$ref: actions.<name>` with `params:` beside it drops
-   them the same way. Recommendation: yes, in the same two steps. One rule for every `$ref` is easier to
-   explain, and a dropped `params` can change what an action does (for example whether a delete removes
-   files).
-2. **Error straight away in loading, rather than at 0.12?** Recommendation: no. The validator error in
-   0.11.x already stops the editor saving and `validate` passing; making a patch release refuse a file
-   that loaded yesterday would stop every rule in it with no warning release. If the arbiter rates the
-   risk of the wider match above the risk of all rules stopping, step 2 can ship in the patch instead.
-3. **Is any key allowed beside `$ref`?** For example a `description:` for people reading the file.
-   Recommendation: no. The resolver would have to know which keys are notes, and `refs.meta` already holds
-   descriptions for reusable blocks.
-4. **Option (c) as a later opt-in?** Recommendation: no, not without a request. If wanted, it would be a
-   new explicit form (for example `all: [$ref, ...]`, which already works), not a new meaning for an
-   existing one.
+Answered by the arbiter on approval, 2026-11-04.
+
+1. **Do action references get the same rule?** Yes, in the same two steps (folded into Decision and
+   Consequences above). One rule for every `$ref` is easier to explain, and a dropped `params` can change
+   what an action does (for example whether a delete removes files).
+2. **Error straight away in loading, rather than at 0.12?** No. The validator error in 0.11.x already stops
+   the editor saving and `validate` passing, and the production check before the patch closes the gap for
+   deployed files; making a patch release refuse a file that loaded yesterday would stop every rule in it
+   with no warning release.
+3. **Is any key allowed beside `$ref`?** No, not even a `description:`. The resolver would have to know
+   which keys are notes, and `refs.meta` already holds descriptions for reusable blocks.
+4. **Option (c) as a later opt-in?** No. Where both are wanted, the explicit form already works: the
+   reference and the other condition as separate items of an `all:` list.
