@@ -7,6 +7,18 @@ or PR title instead. See the wiki's Release-Process page.
 Releases up to 0.10.2 were written by the old tag-push release workflow, in the
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
 
+## [0.11.2](https://github.com/andronics/qbt-rules/compare/v0.11.1...v0.11.2) (2026-11-04)
+
+
+### ✨ Features
+
+* **config:** adopt interpose 0.4.1 schedule sections and warnings ([#62](https://github.com/andronics/qbt-rules/issues/62)) ([c869960](https://github.com/andronics/qbt-rules/commit/c869960e33c6135b211c1fc2670567151d022a2e)), closes [#61](https://github.com/andronics/qbt-rules/issues/61)
+
+
+### 📚 Documentation
+
+* **design:** record 0005, the schedule on interpose 0.4.1 ([#63](https://github.com/andronics/qbt-rules/issues/63)) ([7b679b2](https://github.com/andronics/qbt-rules/commit/7b679b21ec193e81b9ab148b5da97ea4580bb99c))
+
 ## [0.11.1](https://github.com/andronics/qbt-rules/compare/v0.11.0...v0.11.1) (2026-11-03)
 
 
