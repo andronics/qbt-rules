@@ -17,6 +17,7 @@ If you find yourself writing the same condition block into multiple rules, see [
 - All three groups can be used together
 - **All groups must pass** for the rule to match
 - Empty/missing groups are ignored (treated as pass)
+- The same holds for a nested group, or a `$ref` to a named condition, that has more than one of `all`/`any`/`none`: all of them must pass (before 0.11.3 only the first was checked below the top level)
 
 ### ALL Conditions (AND Logic)
 
@@ -524,6 +525,8 @@ see that increment — it'll see next run's fetch instead.
 - Days: `"7 days"`, `"30 days"`, `"1 day"`
 - Hours: `"12 hours"`, `"48 hours"`, `"1 hour"`
 - Minutes: `"30 minutes"`, `"90 minutes"`, `"1 minute"`
+
+A time qBittorrent hasn't recorded (`completion_on` of a torrent that has never finished, `seen_complete` that was never seen) is sent as `-1`, or `0`/`4294967295` by older releases. Such a time is neither `older_than` nor `newer_than` anything. Inside `none`, that `false` becomes `true`, so use `info.progress` or `info.state` there to tell unfinished torrents apart.
 
 **Operator Behavior with None/Missing Values:**
 
