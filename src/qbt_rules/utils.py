@@ -221,6 +221,16 @@ def is_smaller_than(size_bytes: int, human_size: str) -> bool:
     return size_bytes < target_bytes
 
 
+# qBittorrent's "never" for a time it hasn't recorded (completion_on,
+# seen_complete...): -1 in 5.x, 0 or the unsigned -1 in older releases.
+UNSET_TIMESTAMP_SENTINEL = 2**32 - 1
+
+
+def is_unset_timestamp(timestamp: int) -> bool:
+    """Whether a timestamp is qBittorrent's "never", not a real time"""
+    return timestamp <= 0 or timestamp >= UNSET_TIMESTAMP_SENTINEL
+
+
 def is_older_than(timestamp: int, duration: str) -> bool:
     """
     Check if timestamp is older than duration
@@ -232,7 +242,7 @@ def is_older_than(timestamp: int, duration: str) -> bool:
     Returns:
         True if timestamp is older than duration
     """
-    if timestamp <= 0:
+    if is_unset_timestamp(timestamp):
         return False
 
     age_seconds = time.time() - timestamp
@@ -251,7 +261,7 @@ def is_newer_than(timestamp: int, duration: str) -> bool:
     Returns:
         True if timestamp is newer than duration
     """
-    if timestamp <= 0:
+    if is_unset_timestamp(timestamp):
         return False
 
     age_seconds = time.time() - timestamp

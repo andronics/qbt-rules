@@ -191,16 +191,7 @@ class ConditionEvaluator:
             if isinstance(conditions, list):
                 return self._evaluate_all(torrent, conditions, trace)
 
-            # Evaluate logical groups
-            if "all" in conditions and not self._evaluate_all(torrent, conditions["all"], trace):
-                return False
-
-            if "any" in conditions and not self._evaluate_any(torrent, conditions["any"], trace):
-                return False
-
-            return "none" not in conditions or self._evaluate_none(
-                torrent, conditions["none"], trace
-            )
+            return self._evaluate_groups(torrent, conditions, trace)
 
         except DataNotReadyError as e:
             # Expected/benign -- e.g. the files list right after an OnTorrentAdded
@@ -245,6 +236,27 @@ class ConditionEvaluator:
             return current_context in required_context
         else:
             return bool(current_context == required_context)
+
+    def _evaluate_groups(
+        self,
+        torrent: dict[str, Any],
+        conditions: dict[str, Any],
+        trace: list[dict[str, Any]] | None = None,
+    ) -> bool:
+        """Every logical group present (all/any/none) must pass
+
+        The same at the top level and nested: a group that holds both `all`
+        and `any` (inline, or a $ref to a named condition written that way)
+        needs both. Evaluating only the first one present silently dropped
+        the rest, so "public AND (aged OR ratio)" matched every public torrent.
+        """
+        if "all" in conditions and not self._evaluate_all(torrent, conditions["all"], trace):
+            return False
+
+        if "any" in conditions and not self._evaluate_any(torrent, conditions["any"], trace):
+            return False
+
+        return "none" not in conditions or self._evaluate_none(torrent, conditions["none"], trace)
 
     def _evaluate_all(
         self,
@@ -291,12 +303,8 @@ class ConditionEvaluator:
             True if condition matches
         """
         # Handle nested logical operators
-        if "all" in condition:
-            return self._evaluate_all(torrent, condition["all"], trace)
-        if "any" in condition:
-            return self._evaluate_any(torrent, condition["any"], trace)
-        if "none" in condition:
-            return self._evaluate_none(torrent, condition["none"], trace)
+        if any(group in condition for group in ("all", "any", "none")):
+            return self._evaluate_groups(torrent, condition, trace)
 
         # Handle regular field conditions
         field = condition["field"]

@@ -365,6 +365,10 @@ class TestIsOlderThan:
         """Negative timestamp returns False."""
         assert is_older_than(-100, "30 days") is False
 
+    def test_unsigned_minus_one_sentinel(self):
+        """qBittorrent 4.x's "never" (the unsigned -1) returns False."""
+        assert is_older_than(4294967295, "30 days") is False
+
     def test_very_old(self):
         """Very old timestamp returns True."""
         old_timestamp = 946684800  # Year 2000
@@ -418,6 +422,10 @@ class TestIsNewerThan:
     def test_negative_timestamp(self):
         """Negative timestamp returns False."""
         assert is_newer_than(-100, "30 days") is False
+
+    def test_unsigned_minus_one_sentinel(self):
+        """qBittorrent 4.x's "never" (the unsigned -1) is not a time in the future"""
+        assert is_newer_than(4294967295, "30 days") is False
 
     def test_very_recent(self):
         """Very recent timestamp returns True."""
