@@ -23,9 +23,9 @@ Each entry needs:
 | `cron` | A standard 5-field cron expression (minute, hour, day-of-month, month, day-of-week) |
 | `context` | The context string to submit — matched against rules' `context:` field exactly like any other job, see [Contexts](Contexts) |
 
-Invalid entries (missing fields, an unparseable cron expression) fail server startup with a clear error rather than silently being skipped.
+Invalid entries (missing fields, an unparseable cron expression) fail server startup with a clear error rather than silently being skipped. The error names the entry, counting from 0, and where it came from: `schedule[1].cron: expected a cron expression such as '*/30 * * * *', got 'nope' (from /etc/qbt-rules/config.yaml)`. A misspelt field (`contxt:`) is reported as a warning, with the field it probably meant.
 
-**Environment variable override** — since this is a list rather than a single value, it doesn't use a single `QBT_RULES_SCHEDULE_*` variable the way scalar config does. Instead, each entry is set via a pair of **indexed** variables, `QBT_RULES_SCHEDULE_<N>_CRON` and `QBT_RULES_SCHEDULE_<N>_CONTEXT` (each with the usual `_FILE` variant), starting at `N=0` and counting up contiguously — enumeration stops at the first missing index:
+**Environment variable override** — since this is a list rather than a single value, it can't come from one plain variable the way scalar config does (`QBT_RULES_SCHEDULE` itself is an error). Either `QBT_RULES_SCHEDULE_FILE` names a YAML file holding the list, or each entry is set via a pair of **indexed** variables, `QBT_RULES_SCHEDULE_<N>_CRON` and `QBT_RULES_SCHEDULE_<N>_CONTEXT` (each with the usual `_FILE` variant), starting at `N=0` and counting up contiguously. Entry `N` exists when either of its variables is set; the first `N` with neither ends the list:
 
 ```bash
 QBT_RULES_SCHEDULE_0_CRON="*/30 * * * *"
@@ -34,7 +34,7 @@ QBT_RULES_SCHEDULE_1_CRON="0 3 * * *"
 QBT_RULES_SCHEDULE_1_CONTEXT=nightly
 ```
 
-If **any** `QBT_RULES_SCHEDULE_0_CRON` is set, the environment-defined schedule **entirely replaces** `config.yaml`'s `schedule:` list — the two aren't merged, consistent with how every other field's environment variable overrides its `config.yaml` value outright. Setting `_0_CRON` without a matching `_0_CONTEXT` (or vice versa) fails server startup with a clear error, same as a malformed `config.yaml` entry.
+If `QBT_RULES_SCHEDULE_FILE` or any of entry 0's variables is set, the environment-defined schedule **entirely replaces** `config.yaml`'s `schedule:` list — the two aren't merged, consistent with how every other field's environment variable overrides its `config.yaml` value outright. Setting `_N_CRON` without a matching `_N_CONTEXT` (or vice versa) fails server startup with an error naming both variables, same as a malformed `config.yaml` entry. A variable past the end of the list (`_3_CRON` with no `_2_*`) is ignored, and the server logs a warning naming it.
 
 It's also **not hot-reloaded**: unlike `rules.yml`, changes require a server restart to take effect (matching the rest of `config.yaml`, which is only read once at startup).
 

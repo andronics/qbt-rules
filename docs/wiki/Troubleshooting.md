@@ -144,6 +144,10 @@ The server started without `server.api_key` (or with the 0.10.x placeholder key,
 
 The entrypoint refuses non-numeric `PUID`/`PGID`. Give numbers (`1000`, Unraid's `99`/`100`), not user names.
 
+### A setting in `config.yaml` has no effect
+
+Check the startup log (or `qbt-rules config`) for `unknown key '…' in /etc/qbt-rules/config.yaml: did you mean '…'?`: a misspelt or misplaced key is ignored, and the setting keeps its default. The same goes for `unknown variable 'QBT_RULES_…'` and for a schedule variable logged as `ignored variable`, which is past the end of the list: entries are numbered from 0 with no gaps.
+
 ### A `_FILE` variable's value isn't picked up
 
 The file named by a `QBT_RULES_..._FILE` variable doesn't exist, or the process can't read it. Check the path inside the container, and the file's owner and mode: the server runs as `PUID:PGID` (default `1000:1000`).

@@ -52,7 +52,7 @@ Because the server is one process, the scheduler fires once per cron tick and ev
 | `queue_backends/` | Concrete implementations of that interface — SQLite (default) and Redis |
 | `engine.py` | `RulesEngine` (orchestrator), `ConditionEvaluator`, and `ActionExecutor` — the actual rule evaluation and action dispatch logic |
 | `resolver.py` | `RuleResolver` — expands `$ref:` and substitutes `${vars.x}` before a rule reaches the engine |
-| `config.py` | The settings, on [interpose](https://github.com/metalayerlab/interpose): every key, its variable, default and check; plus `${VAR}` expansion, the `server.*` aliases, the schedule, and refusing what 0.11 removed |
+| `config.py` | The settings, on [interpose](https://github.com/metalayerlab/interpose): every key, its variable, default and check, the schedule (an interpose list section, with its indexed variables) and interpose's warnings; plus `${VAR}` expansion, the `server.*` aliases, and refusing what 0.11 removed |
 | `config_loader.py` | The running configuration: the settings plus `rules.yml`, loaded, validated and hot-reloaded (a missing `rules.yml` is no rules) |
 | `qbittorrent.py` | Thin wrapper around the `qbittorrent-api` package — multi-version qBittorrent support |
 | `trackie.py` | Client for [trackie](https://github.com/andronics/trackie)'s snapshot, behind the `tracker.*` fields |
