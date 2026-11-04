@@ -739,6 +739,7 @@ def test_the_example_file_is_every_default() -> None:
     example = Path(__file__).resolve().parents[2] / "contrib" / "qbt-rules.example.yaml"
     cfg = load_config(example, environ={})
     defaults = load_config(example.with_name("missing.yaml"), environ={})
+    assert cfg.warnings == ()  # every key in it is a setting: no unknown-key warning
     for setting in SETTINGS:
         assert cfg.sources[setting.key] == "file" or cfg.sources[setting.key].startswith("default")
         assert cfg.values[setting.key] == defaults.values[setting.key], setting.key
