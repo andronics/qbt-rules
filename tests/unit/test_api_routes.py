@@ -660,6 +660,24 @@ class TestEditor:
         assert _json(response)["validation"]["counts"]["error"] == 1
         assert (config_dir / "state" / "rules.yml").read_text() == self.RULES
 
+    def test_keys_beside_a_ref_are_422_and_not_written(
+        self, client: TestClient, config_dir: Path
+    ) -> None:
+        # Record 0006: the `any:` beside the $ref would be dropped, so the editor refuses it
+        bad = (
+            "refs:\n  conditions:\n    seeded: {all: [{field: info.ratio, operator: '>=', "
+            "value: 1}]}\nrules:\n  - id: a\n    conditions:\n      all:\n"
+            "        - $ref: conditions.seeded\n"
+            "          any: [{field: info.ratio, operator: '>=', value: 2}]\n"
+            "    actions: [{type: stop}]\n"
+        )
+        response = self.put(client, bad, self.etag(client), **KEY)
+        assert response.status_code == 422
+        [issue] = _json(response)["validation"]["issues"]
+        assert issue["severity"] == "error"
+        assert issue["message"].startswith("`any` beside `$ref` is ignored")
+        assert (config_dir / "state" / "rules.yml").read_text() == self.RULES
+
     def test_editor_disabled_is_read_only(
         self, rules: RulesConfig, queue: MagicMock, worker: StubWorker, config_dir: Path
     ) -> None:

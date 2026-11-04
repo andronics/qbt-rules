@@ -185,11 +185,39 @@ describing reusable `conditions`/`actions` blocks instead.
 
 `$ref:` is type-checked by where it's used: a `conditions.*` ref can only be used inside a rule's `conditions:` (or nested inside another conditions ref), and an `actions.*` ref can only be used inside a rule's `actions:`. Using the wrong type in the wrong place — e.g. `$ref: actions.foo` inside a `conditions:` block — raises an error at resolution time rather than silently doing nothing.
 
+### A `$ref` Stands Alone
+
+A mapping with a `$ref:` holds only the `$ref:`. The reference replaces the **whole mapping**, so anything written beside it is ignored: a group (`any:`, `all:`, `none:`), a field condition (`field`/`operator`/`value`), an action's `params:` or `type:`, even a `description:`. This rule:
+
+```yaml
+conditions:
+  all:
+    - $ref: conditions.public
+      any:                       # ignored: the rule matches every public torrent
+        - {field: info.ratio, operator: '>=', value: 2.0}
+        - {field: info.seeding_time, operator: '>=', value: 604800}
+```
+
+runs as "public", not "public, and old or well seeded". Put the reference and the other condition in separate items of an `all:` list instead:
+
+```yaml
+conditions:
+  all:
+    - $ref: conditions.public
+    - any:
+        - {field: info.ratio, operator: '>=', value: 2.0}
+        - {field: info.seeding_time, operator: '>=', value: 604800}
+```
+
+The same goes for actions: `params: {delete_files: true}` beside `$ref: actions.remove` is dropped, and the referenced block's own params are used. Write the action out in full, or give that version its own block under `refs.actions`.
+
+From 0.11.4, `qbt-rules validate` and the rules editor report keys beside a `$ref` as an error (the editor won't save the file), and loading such a file logs a warning naming the rule, the place and the ignored keys. The file still loads in 0.11.x; from 0.12 it will not. Descriptions for reusable blocks go in [`refs.meta`](#metadata-refsmeta).
+
 ### How Resolution Works
 
 Every rule goes through two phases before it's evaluated against a torrent:
 
-1. **Reference expansion** — every `$ref:` node in `conditions:`/`actions:` is recursively replaced with the structure it points to (nested refs are expanded too, with circular-reference detection).
+1. **Reference expansion** — every `$ref:` node in `conditions:`/`actions:` is recursively replaced with the structure it points to (nested refs are expanded too, with circular-reference detection). The whole mapping holding the `$ref:` is replaced, so keys beside it are dropped ([above](#a-ref-stands-alone)).
 2. **Variable substitution** — every `${vars.x}` in the now-fully-expanded rule is replaced with its value from `refs.vars`, preserving type for whole-value substitutions.
 
 This happens once per rule, per job — you always write and reason about `$ref`/`${vars.x}` in the raw YAML; the expanded form is what the engine actually evaluates, and it's what shows up in `--trace` output.

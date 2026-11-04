@@ -316,6 +316,18 @@ conditions:
 - Nesting can be multiple levels deep
 - Useful for expressing complex boolean logic
 
+A `$ref` item stands alone: a group or a field condition written beside it is ignored, because the reference replaces the whole item. Make them separate items of the list:
+
+```yaml
+all:
+  - $ref: conditions.public          # one item
+  - any:                             # another item, not under the $ref
+      - {field: info.ratio, operator: '>=', value: 2.0}
+      - {field: info.seeding_time, operator: '>=', value: 604800}
+```
+
+`qbt-rules validate` and the rules editor report the other shape as an error; see [Reusable References](Reusable-References#a-ref-stands-alone).
+
 #### Pattern 1: Nested ANY inside ALL
 
 ```yaml

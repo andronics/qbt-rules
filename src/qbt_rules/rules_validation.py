@@ -316,7 +316,13 @@ def check_resolution(raw: dict[str, Any], locator: Locator) -> list[Issue]:
     """Resolve every rule exactly as Config.get_rules() would"""
     refs = raw.get("refs") or {}
     try:
-        resolver = RuleResolver(refs=refs, instance_id=None, instances=raw.get("instances") or {})
+        # Keys beside a $ref are reported as errors by the linter, not logged
+        resolver = RuleResolver(
+            refs=refs,
+            instance_id=None,
+            instances=raw.get("instances") or {},
+            warn_ref_siblings=False,
+        )
     except Exception as e:  # malformed refs already reported by layer 1
         return [Issue(ERROR, f"Cannot build resolver: {e}", ("refs",))]
 
@@ -409,6 +415,31 @@ class _Linter:
             )
         else:
             self.add(WARNING, f"{label} should be true or false", path)
+
+    def ref_siblings(self, node: dict[str, Any], path: Path, kind: str) -> None:
+        """A $ref stands alone: the resolver replaces the whole mapping with the
+        referenced block, so any key beside it is dropped (record 0006)"""
+        keys = [str(key) for key in node if key != "$ref"]
+        if not keys:
+            return
+        named = ", ".join(f"`{k}`" for k in keys[:-1])
+        named = f"{named} and `{keys[-1]}`" if named else f"`{keys[-1]}`"
+        verb = "is" if len(keys) == 1 else "are"
+        if kind == "action":
+            fix = (
+                "Write the action out in full in place of the reference, or give this "
+                "version its own block in refs.actions."
+            )
+        elif len(keys) == 1 and keys[0] in schema.CONDITION_GROUPS:
+            fix = f"Put the reference and the `{keys[0]}:` as separate items of an `all:` list."
+        else:
+            fix = "Put the reference and the other condition as separate items of an `all:` list."
+        self.add(
+            ERROR,
+            f"{named} beside `$ref` {verb} ignored: the reference replaces this whole "
+            f"mapping. {fix}",
+            path,
+        )
 
     # -- top level ----------------------------------------------------------
 
@@ -530,6 +561,7 @@ class _Linter:
                 self.condition(child, (*path, i))
         elif isinstance(node, dict):
             if "$ref" in node:
+                self.ref_siblings(node, path, "condition")
                 return
             groups = [g for g in schema.CONDITION_GROUPS if g in node]
             for key in node:
@@ -559,6 +591,7 @@ class _Linter:
                 self.condition(child, (*path, i))
         elif isinstance(node, dict):
             if "$ref" in node:
+                self.ref_siblings(node, path, "condition")
                 return
             groups = [g for g in schema.CONDITION_GROUPS if g in node]
             if groups:
@@ -598,6 +631,7 @@ class _Linter:
             )
             return
         if "$ref" in node:
+            self.ref_siblings(node, path, "condition")
             return
 
         groups = [g for g in schema.CONDITION_GROUPS if g in node]
@@ -710,6 +744,7 @@ class _Linter:
 
     def action_list(self, node: Any, path: Path, in_rule: bool = False) -> None:
         if isinstance(node, dict) and "$ref" in node:
+            self.ref_siblings(node, path, "action")
             return
         if isinstance(node, dict) and "type" in node and not in_rule:
             self.action(node, path)  # a refs.actions block may be a single action
@@ -731,6 +766,7 @@ class _Linter:
             self.add(ERROR, "An action must be a mapping with a 'type'", path)
             return
         if "$ref" in node:
+            self.ref_siblings(node, path, "action")
             return
         if "type" not in node:
             self.add(

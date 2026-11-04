@@ -75,6 +75,7 @@ class RuleResolver:
         refs: dict[str, Any],
         instance_id: str | None = None,
         instances: dict[str, Any] | None = None,
+        warn_ref_siblings: bool = True,
     ):
         """
         Initialize resolver with refs block and optional instance override
@@ -83,7 +84,12 @@ class RuleResolver:
             refs: The refs block from config (vars, conditions, actions)
             instance_id: Optional instance ID for scoped variable overrides
             instances: Optional instances dict containing instance-scoped refs
+            warn_ref_siblings: Log a warning for each rule with keys beside a $ref
+                (record 0006). The validator turns it off: it reports them as errors.
         """
+        self.warn_ref_siblings = warn_ref_siblings
+        # (path, $ref, keys beside it) for the rule being resolved -- reset per rule
+        self._ref_siblings: list[tuple[str, str, list[str]]] = []
         # Extract typed groups from refs
         # `or {}`: a group present but left empty (`vars:` with everything
         # under it commented out) parses as None, and means "none defined"
@@ -153,6 +159,7 @@ class RuleResolver:
         rule_id = rule.get("id", "unknown")
 
         # Phase 2: Expand $ref references with context validation
+        self._ref_siblings = []
         # Process conditions separately (only allow conditions.* refs)
         if "conditions" in resolved:
             resolved["conditions"] = self._expand_refs(
@@ -189,6 +196,19 @@ class RuleResolver:
         # rule's own id field somehow itself contained a ${vars.*} token.
         resolved = self._substitute_tokens(resolved, rule)
 
+        if self._ref_siblings and self.warn_ref_siblings:
+            # Keys beside a $ref are dropped (record 0006). Still loads in 0.11.x; one
+            # warning per rule per load (get_rules caches until the file changes).
+            places = "; ".join(
+                f"{where}: {', '.join(keys)} beside $ref {ref}"
+                for where, ref, keys in self._ref_siblings
+            )
+            logger.warning(
+                f"Rule '{rule_id}': keys beside a $ref are ignored, the reference replaces "
+                f"the whole mapping -- {places}. Put the reference and the other keys in "
+                f"separate items (run `qbt-rules validate`); from 0.12 this file will not load"
+            )
+
         return resolved
 
     def _expand_refs(
@@ -197,6 +217,7 @@ class RuleResolver:
         ref_stack: set[str],
         allowed_groups: list[str] | None = None,
         path: str = "",
+        via: tuple[str, ...] = (),
     ) -> Any:
         """
         Recursively expand $ref references in a data structure
@@ -207,6 +228,8 @@ class RuleResolver:
             allowed_groups: List of allowed ref groups (e.g., ['conditions', 'actions'])
                           None = no restrictions (used for vars and other contexts)
             path: Current path in the rule for error messages (e.g., "rules['test'].conditions[0]")
+            via: The $refs expanded on the way here, outermost first (for the
+                ref-siblings warning: a path inside a refs block names the block)
 
         Returns:
             Node with all $ref references expanded
@@ -218,6 +241,13 @@ class RuleResolver:
             # Check if this dict is a $ref node
             if "$ref" in node:
                 ref_path = node["$ref"]
+
+                # Keys beside the $ref are dropped below: the reference replaces the
+                # whole mapping. Recorded for a warning (record 0006, step 1).
+                siblings = [str(key) for key in node if key != "$ref"]
+                if siblings:
+                    where = path + "".join(f" (in {ref})" for ref in via)
+                    self._ref_siblings.append((where, str(ref_path), siblings))
 
                 # Validate path format
                 if not isinstance(ref_path, str) or "." not in ref_path:
@@ -262,12 +292,14 @@ class RuleResolver:
 
                 # Recursively expand the referenced content
                 new_stack = ref_stack | {ref_path}
-                return self._expand_refs(expanded, new_stack, allowed_groups, path)
+                return self._expand_refs(
+                    expanded, new_stack, allowed_groups, path, (*via, ref_path)
+                )
             else:
                 # Regular dict - recursively process each value
                 return {
                     key: self._expand_refs(
-                        value, ref_stack, allowed_groups, f"{path}.{key}" if path else key
+                        value, ref_stack, allowed_groups, f"{path}.{key}" if path else key, via
                     )
                     for key, value in node.items()
                 }
@@ -285,7 +317,7 @@ class RuleResolver:
             result = []
             for i, item in enumerate(node):
                 was_ref = isinstance(item, dict) and "$ref" in item
-                expanded = self._expand_refs(item, ref_stack, allowed_groups, f"{path}[{i}]")
+                expanded = self._expand_refs(item, ref_stack, allowed_groups, f"{path}[{i}]", via)
                 if was_ref and isinstance(expanded, list):
                     result.extend(expanded)
                 else:
