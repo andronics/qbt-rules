@@ -199,6 +199,18 @@ or an action is logged as failed with the same message.
 
 Every request to qBittorrent has a timeout (from 0.11.1): 10 s to connect and 30 s for the answer. qbittorrent-api retries a failed request, so a qBittorrent that accepts connections but never answers fails the job after about 4 minutes, rather than holding the worker for good. Check that its Web UI loads and that it isn't overloaded (a very large library, a slow disk, a recheck of many torrents). The timeout isn't configurable.
 
+### Issue: "`any` beside `$ref` is ignored"
+
+`qbt-rules validate` or the rules editor reports, for example:
+
+```text
+rules.yml:12:11: error: `any` beside `$ref` is ignored: the reference replaces this whole mapping. Put the reference and the `any:` as separate items of an `all:` list. (rules[0].conditions.all[0])
+```
+
+and loading the file logs a warning like `Rule 'tidy-public': keys beside a $ref are ignored, the reference replaces the whole mapping -- rules['tidy-public'].conditions.all[0]: any beside $ref conditions.public. ...`.
+
+A mapping with a `$ref:` holds only the `$ref:`; everything beside it is dropped, so the rule matches (or acts) more widely than it reads. For a condition, move the other keys into their own item of an `all:` list; for an action, write it out in full or give that version its own `refs.actions` block. See [Reusable References](Reusable-References#a-ref-stands-alone). The file still loads in 0.11.x, with the keys ignored; from 0.12 it will not load.
+
 ### Issue: Rules not matching expected torrents
 
 **Symptoms:**
