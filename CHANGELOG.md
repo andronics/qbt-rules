@@ -7,6 +7,13 @@ or PR title instead. See the wiki's Release-Process page.
 Releases up to 0.10.2 were written by the old tag-push release workflow, in the
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
 
+## [0.11.3](https://github.com/andronics/qbt-rules/compare/v0.11.2...v0.11.3) (2026-11-04)
+
+
+### 🐛 Bug Fixes
+
+* a nested condition group checks all of its all/any/none ([#65](https://github.com/andronics/qbt-rules/issues/65)) ([8aabfa8](https://github.com/andronics/qbt-rules/commit/8aabfa8821ad2ea82ecb0fc23e2de78e6df767dc))
+
 ## [0.11.2](https://github.com/andronics/qbt-rules/compare/v0.11.1...v0.11.2) (2026-11-04)
 
 
