@@ -153,7 +153,9 @@ def test_config_masks_a_set_key_and_lists_the_schedule(write_config: Callable[..
     assert result.exit_code == 0
     assert "hunter2" not in result.output
     assert "server.api_key = ******** (set)  (file)" in result.stdout
-    assert "schedule[0] = 0 * * * * -> hourly" in result.stdout
+    assert "schedule[0] = 0 * * * * -> hourly  (file)" in result.stdout
+    # One line per item: the list itself isn't printed as a setting
+    assert "schedule =" not in result.stdout
     assert "warning:" not in result.stderr
 
 
@@ -265,6 +267,26 @@ def test_serve_warns_about_the_aliased_file_keys(
     )
     assert any(
         "server.port is deprecated" in w and "Rename it to listen.port" in w for w in warnings
+    )
+
+
+def test_serve_logs_interposes_warnings(
+    served: list[Any],
+    write_config: Callable[..., Path],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Resolved.warnings reach the startup log as the alias warnings do: "Configuration: ..."
+    monkeypatch.setenv("QBT_RULES_SCHEDULE_0_CRON", "0 * * * *")
+    monkeypatch.setenv("QBT_RULES_SCHEDULE_0_CONTEXT", "hourly")
+    monkeypatch.setenv("QBT_RULES_SCHEDULE_2_CRON", "0 4 * * *")
+    result = runner.invoke(app, ["serve", "-c", str(write_config("listne: {port: 1}\n"))])
+    assert result.exit_code == 0
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert "Configuration: unknown key 'listne' in " in "\n".join(warnings)
+    assert any(
+        w.startswith("Configuration: ignored variable 'QBT_RULES_SCHEDULE_2_CRON'")
+        for w in warnings
     )
 
 

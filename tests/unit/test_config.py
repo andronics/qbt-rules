@@ -64,6 +64,9 @@ VARIABLES = [
     ("logging.backup_count", "QBT_RULES_LOGGING_BACKUP_COUNT"),
     ("logging.trace_mode", "QBT_RULES_LOGGING_TRACE_MODE"),
     ("logging.http_access", "QBT_RULES_LOGGING_HTTP_ACCESS"),
+    # A list section: read from QBT_RULES_SCHEDULE_FILE (a YAML file) or the indexed
+    # QBT_RULES_SCHEDULE_<N>_CRON / _CONTEXT, never the plain variable
+    ("schedule", "QBT_RULES_SCHEDULE"),
 ]
 
 SECRETS = {
@@ -145,10 +148,19 @@ REFUSED = [
         {"QBT_RULES_SERVER_PORT": "8080", "QBT_RULES_LISTEN_PORT": "9090"},
         r"QBT_RULES_SERVER_PORT and QBT_RULES_LISTEN_PORT are both set, to different values",
     ),
-    ({"QBT_RULES_SCHEDULE_0_CRON": "* * * * *"}, r"QBT_RULES_SCHEDULE_0_CONTEXT is missing"),
+    (
+        {"QBT_RULES_SCHEDULE_0_CRON": "* * * * *"},
+        r"^schedule\[0\]\.context: QBT_RULES_SCHEDULE_0_CONTEXT is not set, but "
+        r"QBT_RULES_SCHEDULE_0_CRON is$",
+    ),
     (
         {"QBT_RULES_SCHEDULE_0_CRON": "nope", "QBT_RULES_SCHEDULE_0_CONTEXT": "c"},
-        r"QBT_RULES_SCHEDULE_<N>: schedule entry #1 has an invalid cron expression 'nope'",
+        r"^schedule\[0\]\.cron: expected a cron expression such as '\*/30 \* \* \* \*', got "
+        r"'nope' \(from QBT_RULES_SCHEDULE_0_CRON\)$",
+    ),
+    (
+        {"QBT_RULES_SCHEDULE": "0 * * * *"},
+        r"^schedule: QBT_RULES_SCHEDULE is set, but .* set QBT_RULES_SCHEDULE_FILE",
     ),
     ({"QBT_RULES_QUEUE_BACKEND": "postgres"}, r"queue\.backend: expected one of sqlite, redis"),
     ({"QBT_RULES_QUEUE_CLEANUP_AFTER": "soon"}, r"queue\.cleanup_after: expected seconds"),
@@ -173,11 +185,15 @@ REFUSED_FILES = [
         "server:\n  port: 8080\nlisten:\n  port: 9090\n",
         r"server\.port and listen\.port are both set, to different values",
     ),
-    ("schedule: hourly\n", r"schedule must be a list"),
-    ("schedule:\n  - just a string\n", r"schedule entry #1 must be a mapping"),
-    ("schedule:\n  - {context: c}\n", r"schedule entry #1 has no 'cron'"),
-    ("schedule:\n  - {cron: '* * * * *'}\n", r"schedule entry #1 has no 'context'"),
-    ("schedule:\n  - {cron: nope, context: c}\n", r"schedule entry #1 has an invalid cron"),
+    # Errors name the item from 0, as the indexed variables do, and the file
+    ("schedule: hourly\n", r"^schedule: expected a list of sections \(mappings\), got str \(from "),
+    ("schedule:\n  - just a string\n", r"^schedule\[0\]: expected a section \(a mapping\)"),
+    ("schedule:\n  - {context: c}\n", r"^schedule\[0\]\.cron: a required field, not set \(from "),
+    ("schedule:\n  - {cron: '* * * * *'}\n", r"^schedule\[0\]\.context: a required field"),
+    (
+        "schedule:\n  - {cron: '* * * * *', context: a}\n  - {cron: nope, context: c}\n",
+        r"^schedule\[1\]\.cron: expected a cron expression .*got 'nope' \(from .*config\.yaml\)$",
+    ),
 ]
 
 
@@ -519,14 +535,110 @@ def test_schedule_variables_replace_the_file(tmp_path: Path, config_path: Path) 
         "QBT_RULES_SCHEDULE_0_CONTEXT": "first",
         "QBT_RULES_SCHEDULE_1_CRON": "0 3 * * *",
         "QBT_RULES_SCHEDULE_1_CONTEXT": "second",
-        # Index 2 is missing, so index 3 is never read
-        "QBT_RULES_SCHEDULE_3_CRON": "0 4 * * *",
-        "QBT_RULES_SCHEDULE_3_CONTEXT": "unreached",
     }
-    assert load_config(config_path, environ=env).schedule == (
+    cfg = load_config(config_path, environ=env)
+    assert cfg.schedule == (
         ScheduleEntry("*/15 * * * *", "first"),
         ScheduleEntry("0 3 * * *", "second"),
     )
+    assert cfg.sources["schedule"] == "QBT_RULES_SCHEDULE_<N>_*"
+    assert cfg.warnings == ()
+
+
+def test_schedule_from_a_yaml_file_variable(tmp_path: Path, config_path: Path) -> None:
+    # New with interpose: QBT_RULES_SCHEDULE_FILE names a YAML list (a ConfigMap mount)
+    config_path.write_text("schedule:\n  - {cron: '0 0 * * *', context: file}\n", encoding="utf-8")
+    listed = tmp_path / "schedule.yaml"
+    listed.write_text("- {cron: '0 5 * * *', context: mounted}\n", encoding="utf-8")
+    cfg = load_config(config_path, environ={"QBT_RULES_SCHEDULE_FILE": str(listed)})
+    assert cfg.schedule == (ScheduleEntry("0 5 * * *", "mounted"),)
+    assert cfg.sources["schedule"] == "QBT_RULES_SCHEDULE_FILE"
+
+
+# -- issue 61: each difference between interpose and qbt-rules' own loader, pinned ----------------
+# The schedule is interpose's now. ${VAR} expansion stays qbt-rules': interpose's would silently
+# change two working configurations (a variable set to "" with a :- default, and $${), and has
+# no option to keep them, so these pin qbt-rules' behaviour.
+
+
+def test_issue61_lone_context_variable_is_an_error(config_path: Path) -> None:
+    # 0.11.1 ended the list at the first missing _CRON and ignored a lone _CONTEXT. interpose
+    # ends it only when none of an item's variables is set, so it is an error naming both.
+    env = {"QBT_RULES_SCHEDULE_0_CRON": "0 * * * *", "QBT_RULES_SCHEDULE_0_CONTEXT": "a"}
+    env["QBT_RULES_SCHEDULE_1_CONTEXT"] = "b"
+    with pytest.raises(
+        ConfigError,
+        match=r"^schedule\[1\]\.cron: QBT_RULES_SCHEDULE_1_CRON is not set, but "
+        r"QBT_RULES_SCHEDULE_1_CONTEXT is$",
+    ):
+        load_config(config_path, environ=env)
+
+
+def test_issue61_variable_past_the_end_of_the_list_warns(config_path: Path) -> None:
+    # 0.11.1 ignored it silently; now it is still ignored, with a warning the server logs
+    env = {
+        "QBT_RULES_SCHEDULE_0_CRON": "0 * * * *",
+        "QBT_RULES_SCHEDULE_0_CONTEXT": "first",
+        "QBT_RULES_SCHEDULE_2_CRON": "0 4 * * *",
+        "QBT_RULES_SCHEDULE_2_CONTEXT": "unreached",
+    }
+    cfg = load_config(config_path, environ=env)
+    assert cfg.schedule == (ScheduleEntry("0 * * * *", "first"),)
+    # One per variable, by name; values are never in a warning
+    assert cfg.warnings == tuple(
+        f"ignored variable 'QBT_RULES_SCHEDULE_2_{field}' in the environment: the list "
+        "'schedule' ends before it, as no QBT_RULES_SCHEDULE_1_* is set"
+        for field in ("CONTEXT", "CRON")
+    )
+
+
+def test_issue61_empty_variable_with_a_default_stays_empty(config_path: Path) -> None:
+    # Kept: a variable set to "" wins over the :- default (interpose would give the default)
+    config_path.write_text("qbittorrent:\n  username: ${QB_USER:-admin2}\n", encoding="utf-8")
+    assert load_config(config_path, environ={"QB_USER": ""}).qbt_username == ""
+    assert load_config(config_path, environ={}).qbt_username == "admin2"
+
+
+def test_issue61_unset_variable_without_a_default_is_empty(config_path: Path) -> None:
+    # Kept: no error (interpose's default; its expand_unset="empty" would match this)
+    config_path.write_text("qbittorrent:\n  username: ${QB_USER}x\n", encoding="utf-8")
+    assert load_config(config_path, environ={}).qbt_username == "x"
+
+
+def test_issue61_dollar_dollar_brace_is_not_an_escape(config_path: Path) -> None:
+    # Kept: $${X} is "$" then ${X} expanded (interpose would give a literal ${X})
+    config_path.write_text("qbittorrent:\n  username: a$${QB_USER}\n", encoding="utf-8")
+    assert load_config(config_path, environ={"QB_USER": "me"}).qbt_username == "a$me"
+
+
+def test_issue61_a_name_that_is_not_a_variable_name_expands(config_path: Path) -> None:
+    # Kept: ${vars.x} is looked up as written, so unset it is empty (interpose: an error)
+    config_path.write_text("qbittorrent:\n  username: u${vars.x}\n", encoding="utf-8")
+    assert load_config(config_path, environ={}).qbt_username == "u"
+    assert load_config(config_path, environ={"vars.x": "1"}).qbt_username == "u1"
+
+
+def test_unknown_keys_and_variables_warn(config_path: Path) -> None:
+    # interpose's warnings join Config.warnings, which the server logs at startup
+    config_path.write_text(
+        "listne: {port: 1}\nschedule:\n  - {cron: '0 * * * *', contxt: c, context: c}\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(config_path, environ={"QBT_RULES_DRYRUN": "true"})
+    assert cfg.warnings == (
+        f"unknown key 'listne' in {config_path}: did you mean 'listen'?",
+        f"unknown field 'schedule[0].contxt' in {config_path}: did you mean 'schedule[0].context'?",
+        "unknown variable 'QBT_RULES_DRYRUN' in the environment: did you mean 'QBT_RULES_DRY_RUN'?",
+    )
+
+
+def test_aliases_warn_once(config_path: Path) -> None:
+    # The server.* aliases are this module's: interpose doesn't also call them unknown
+    config_path.write_text("server:\n  port: 8080\n  api_key: k\n", encoding="utf-8")
+    env = {"QBT_RULES_SERVER_HOST": "127.0.0.1"}
+    (variable, key) = load_config(config_path, environ=env).warnings
+    assert variable.startswith("QBT_RULES_SERVER_HOST is deprecated")
+    assert "server.port is deprecated" in key
 
 
 def test_unreadable_schedule_file_variable(tmp_path: Path, config_path: Path) -> None:

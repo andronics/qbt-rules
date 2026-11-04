@@ -52,7 +52,7 @@ try:
 except ImportError:  # pragma: no cover - not POSIX
     fcntl = None  # type: ignore[assignment]  # checked before use; POSIX-only module
 
-from qbt_rules.config import ALIASES, ENV_PREFIX
+from qbt_rules.config import ALIASES, ENV_PREFIX, SETTINGS
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +316,18 @@ def _env_vars_for(config_key: str) -> list[str]:
     return [ENV_PREFIX + key.upper().replace(".", "_") for key in keys]
 
 
+def _schedule_override(environ: Mapping[str, str]) -> str | None:
+    """What replaces the file's schedule list, as interpose reads it: QBT_RULES_SCHEDULE_FILE,
+    or the indexed variables, which hold a list when any variable of item 0 is set."""
+    schedule = next(s for s in SETTINGS if s.key == "schedule")
+    if f"{schedule.env}_FILE" in environ:
+        return f"{schedule.env}_FILE environment variable's file"
+    first = (f"{schedule.env}_0_{f.key.upper()}" for f in schedule.fields)
+    if any(name in environ or f"{name}_FILE" in environ for name in first):
+        return f"{schedule.env}_<N>_* environment variables"
+    return None
+
+
 def redacted_config_view(text: str, environ: Mapping[str, str] | None = None) -> dict[str, Any]:
     """
     The config file (config.yaml) for display: credentials masked, env overrides pointed out
@@ -390,12 +402,12 @@ def redacted_config_view(text: str, environ: Mapping[str, str] | None = None) ->
                                 }
                             )
                             break
-                elif dotted == "schedule" and "QBT_RULES_SCHEDULE_0_CRON" in environ:
+                elif dotted == "schedule" and (replaced_by := _schedule_override(environ)):
                     issues.append(
                         {
                             "severity": "info",
                             "message": (
-                                "Replaced by the QBT_RULES_SCHEDULE_<N>_CRON environment variables"
+                                f"Replaced by the {replaced_by} -- the list here is not used"
                             ),
                             "path": dotted,
                             "line": key_node.start_mark.line + 1,
