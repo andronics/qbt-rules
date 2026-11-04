@@ -2,8 +2,9 @@
 
 <!-- Add a line for this record to the index in docs/design/README.md (CI checks). -->
 
-Status: Proposed
+Status: Approved
 Date: 2026-11-04
+Approved: the brain coordinator, 2026-11-04 (for Stephen)
 Authors: the brain coordinator (decision e, and that this change is recorded as an amendment of 0001),
 the media coordinator and Claude (the rest)
 Amends: 0001
