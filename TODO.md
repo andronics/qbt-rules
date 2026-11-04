@@ -76,3 +76,13 @@ v0.4.0 architecture notes that were in `PLAN.md` are in the git history.
   an `&instance=` dimension through jobs/webhooks/CLI, with no way to test
   it without an actual second qBittorrent instance. Pure speculative
   infrastructure until a second instance actually exists.
+- **Keys beside a `$ref`: a warning only, an implicit merge, or only
+  documenting it** — rejected by design record 0006 (keys beside a `$ref`
+  are an error). A warning alone leaves the rule running with the wider
+  match, which is what was missed when a deletion rule removed every new
+  public torrent. Merging the keys with the referenced block as an implicit
+  `all` silently changes what existing rules match and adds a meaning
+  invisible in the file (and not shared by action refs or vars); the
+  explicit form, separate items of an `all:` list, already works.
+  Documenting it alone doesn't stop a file that loads cleanly from
+  deleting the wrong torrents.
