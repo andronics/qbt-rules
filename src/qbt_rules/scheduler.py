@@ -44,7 +44,7 @@ class Scheduler:
         Args:
             queue: Queue manager instance
             entries: List of {'cron': str, 'context': str} dicts, already
-                     validated (see Config._load_schedule)
+                     validated (config.SETTINGS' schedule, on interpose)
             poll_interval: Seconds between checks for due entries (default: 30.0)
         """
         self.queue = queue

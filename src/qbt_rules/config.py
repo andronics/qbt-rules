@@ -18,11 +18,20 @@ SETTINGS (each item has key, env, default, help, secret, is_list), CONFIG_ENV, C
 
 The keys are chosen so that every variable keeps the name it had before interpose
 (``QBT_RULES_<SECTION>_<FIELD>``, ``QBT_RULES_DRY_RUN``, ``QBT_RULES_RULES_FILE``): Unraid
-templates and other deployments set those. What interpose doesn't do, load_config adds:
+templates and other deployments set those.
 
-- ``${VAR}`` and ``${VAR:-default}`` in the YAML file are expanded from the environment.
-- ``schedule`` (a list of ``{cron, context}``) comes from the file, or from the indexed
-  ``QBT_RULES_SCHEDULE_<N>_CRON`` / ``_CONTEXT`` variables, which replace it.
+``schedule`` is interpose's typed list section (its design 0009): a list of ``{cron, context}``
+from the file, from a YAML file named by ``QBT_RULES_SCHEDULE_FILE``, or from the indexed
+``QBT_RULES_SCHEDULE_<N>_CRON`` / ``_CONTEXT`` variables (and their ``_FILE`` forms), numbered
+from 0, which replace the file's list whole. interpose's warnings (an unknown key or variable, a
+schedule variable past the end of the list) join ``Config.warnings``.
+
+What interpose doesn't do, load_config adds:
+
+- ``${VAR}`` and ``${VAR:-default}`` in the YAML file are expanded from the environment, before
+  interpose reads the file (as a Layer, so values keep their "file" source). This is qbt-rules'
+  own expansion, not interpose's: interpose's gives a variable set to "" the ``:-`` default and
+  reads ``$${`` as an escape, either of which would silently change a working config (issue 61).
 - ``server.host`` and ``server.port`` (key and variable) are deprecated aliases of
   ``listen.host`` and ``listen.port``, the names the image's HEALTHCHECK reads. Using one adds
   a warning to ``Config.warnings``, which the server logs at startup.
@@ -45,7 +54,7 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -162,6 +171,12 @@ def duration_seconds(value: str) -> int | None:
 def _duration(value: Value) -> None:
     if duration_seconds(str(value)) is None:
         raise ValueError(f"expected seconds or a duration such as 7d or 3 hours, got {value!r}")
+
+
+def _cron(value: Value) -> None:
+    """A schedule item's cron: what croniter, which runs it, accepts."""
+    if not croniter.is_valid(str(value)):
+        raise ValueError(f"expected a cron expression such as '*/30 * * * *', got {value!r}")
 
 
 def _decimal(value: Value) -> None:
@@ -349,8 +364,35 @@ SETTINGS = Settings(
             False,
             "Log every HTTP request (uvicorn's access log); off, none is logged.",
         ),
+        Setting(
+            "schedule",
+            "",
+            "Jobs the built-in scheduler queues: a list of `{cron, context}` entries, from the "
+            "file or a YAML file named by `QBT_RULES_SCHEDULE_FILE` (`QBT_RULES_SCHEDULE` itself "
+            "is refused), or from `QBT_RULES_SCHEDULE_<N>_CRON` and "
+            "`QBT_RULES_SCHEDULE_<N>_CONTEXT` (N from 0, each with a `_FILE` form), which replace "
+            "the file's list.",
+            is_section=True,
+            is_list=True,
+            fields=(
+                Setting(
+                    "cron",
+                    "",
+                    "When to queue the job: a cron expression, such as `*/30 * * * *`.",
+                    required=True,
+                    check=_cron,
+                ),
+                Setting("context", "", "The context the job runs rules for.", required=True),
+            ),
+        ),
     ),
     default_path=DEFAULT_CONFIG_PATH,
+    # The deprecated server.* aliases' variables, which load_config reads itself
+    extra_env=tuple(
+        f"{ENV_PREFIX}{old.upper().replace('.', '_')}{suffix}"
+        for old in ("server.host", "server.port")
+        for suffix in ("", "_FILE")
+    ),
 )
 CONFIG_ENV = SETTINGS.config_env
 _BY_KEY = {s.key: s for s in SETTINGS}
@@ -450,20 +492,12 @@ def load_config(path: Path | None = None, environ: Mapping[str, str] | None = No
             f"{listed}"
         )
 
-    # interpose reads the file itself, so a value this module changed (an expanded ${VAR}, or an
-    # aliased key) reaches it as its variable, unless a real variable already overrides it.
-    overlay: dict[str, str] = {}
-    for setting in SETTINGS:
-        if setting.env in env or f"{setting.env}_FILE" in env:
-            continue
-        value, before = _lookup(data, setting.key), _lookup(raw, setting.key)
-        if value is not None and value != before:
-            overlay[setting.env] = _as_text(value)
-    r = SETTINGS.resolve(path, {**env, **overlay})
+    # interpose reads the file (its errors name the path), and resolves from this module's copy
+    # of it: ${VAR} expanded and the aliased keys moved to their canonical names.
+    file_layer = SETTINGS.read_file(path, env)
+    r = SETTINGS.resolve(environ=env, layers=[replace(file_layer, data=_without_aliases(data))])
+    warnings += [str(warning) for warning in r.warnings]
     sources = dict(r.sources)
-    for setting in SETTINGS:
-        if setting.env in overlay:
-            sources[setting.key] = "file"
     sources.update(alias_sources)
     values: dict[str, object] = dict(r.values)
 
@@ -530,7 +564,10 @@ def load_config(path: Path | None = None, environ: Mapping[str, str] | None = No
         log_backup_count=r.int("logging.backup_count"),
         trace_mode=r.bool("logging.trace_mode"),
         http_access=r.bool("logging.http_access"),
-        schedule=_load_schedule(data, env, path),
+        schedule=tuple(
+            ScheduleEntry(cron=str(item["cron"]), context=str(item["context"]))
+            for item in r.sections("schedule")
+        ),
         warnings=tuple(warnings),
         sources=sources,
         values=values,
@@ -691,6 +728,19 @@ def _apply_variable_aliases(
     return sources
 
 
+def _without_aliases(data: Mapping[str, Any]) -> dict[str, Any]:
+    """The file's tree without the alias keys, which _apply_key_aliases has moved to their
+    canonical keys and warned about: interpose would warn about them again, as unknown."""
+    out = dict(data)
+    for old in ALIASES:
+        section, name = old.split(".")
+        if isinstance(out.get(section), dict) and name in out[section]:
+            out[section] = {k: v for k, v in out[section].items() if k != name}
+            if not out[section]:
+                del out[section]
+    return out
+
+
 def _apply_key_aliases(
     data: dict[str, Any], path: Path, refused: list[str], warnings: list[str]
 ) -> None:
@@ -712,59 +762,6 @@ def _apply_key_aliases(
             data[section].setdefault(name, value)
         else:
             data[section] = {name: value}
-
-
-def _load_schedule(
-    data: Mapping[str, Any], env: Mapping[str, str], path: Path
-) -> tuple[ScheduleEntry, ...]:
-    """schedule: the indexed variables if any are set (they replace the file's list), else the file.
-
-    Indices start at 0 and must be contiguous: the first missing _CRON ends the list.
-    """
-    entries: list[Any] = []
-    where = str(path)
-    i = 0
-    while (cron := _variable(env, f"{ENV_PREFIX}SCHEDULE_{i}_CRON")) is not None:
-        context = _variable(env, f"{ENV_PREFIX}SCHEDULE_{i}_CONTEXT")
-        if context is None:
-            raise ConfigError(
-                f"{ENV_PREFIX}SCHEDULE_{i}_CRON is set but {ENV_PREFIX}SCHEDULE_{i}_CONTEXT is "
-                "missing"
-            )
-        entries.append({"cron": cron, "context": context})
-        where = f"{ENV_PREFIX}SCHEDULE_<N>"
-        i += 1
-    if not entries:
-        listed = data.get("schedule") or []
-        if not isinstance(listed, list):
-            raise ConfigError(f"{path}: schedule must be a list")
-        entries = listed
-
-    out: list[ScheduleEntry] = []
-    for n, entry in enumerate(entries, 1):
-        if not isinstance(entry, dict):
-            raise ConfigError(f"{where}: schedule entry #{n} must be a mapping")
-        for required in ("cron", "context"):
-            if required not in entry:
-                raise ConfigError(f"{where}: schedule entry #{n} has no {required!r}")
-        cron, context = str(entry["cron"]), str(entry["context"])
-        if not croniter.is_valid(cron):
-            raise ConfigError(
-                f"{where}: schedule entry #{n} has an invalid cron expression {cron!r}"
-            )
-        out.append(ScheduleEntry(cron=cron, context=context))
-    return tuple(out)
-
-
-def _variable(env: Mapping[str, str], name: str) -> str | None:
-    """A variable's value, its _FILE variant first (the same order as every setting)."""
-    file_var = f"{name}_FILE"
-    if file_var in env:
-        try:
-            return Path(env[file_var]).read_text(encoding="utf-8").rstrip()
-        except OSError as e:
-            raise ConfigError(f"cannot read {file_var} ({env[file_var]}): {e.strerror}") from None
-    return env.get(name)
 
 
 def _env_name(key: str) -> str:

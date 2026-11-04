@@ -37,9 +37,11 @@ The image's volume is `/var/lib/qbt-rules`; mount your config directory at `/etc
 
 **Listen port and the healthcheck.** The image's `HEALTHCHECK` polls `/healthz` (liveness, which depends on nothing) on `QBT_RULES_LISTEN_PORT` (default `5000`); `/readyz` and `/api/health` are described in [Deployment](Deployment#probes). `listen.port` is the setting's name; `server.port` and `QBT_RULES_SERVER_PORT` (the 0.10.x names) still work as deprecated aliases, but the healthcheck doesn't read them, so use `QBT_RULES_LISTEN_PORT`. The server logs a deprecation warning at startup for each alias in use, in the file or as a variable, naming the key or variable to use instead (`qbt-rules config` and `qbt-rules validate` print it too), and refuses to start if an alias and its key are set to different values. `server.host` / `QBT_RULES_SERVER_HOST` are aliases of `listen.host` the same way.
 
-**`${VAR}` in the file.** `${VAR}` and `${VAR:-default}` inside `config.yaml` are replaced with that environment variable (or the default, or nothing). A `QBT_RULES_*` variable for the setting still wins over the expanded value.
+**`${VAR}` in the file.** `${VAR}` and `${VAR:-default}` inside `config.yaml` are replaced with that environment variable, or the default when it is unset, or nothing. A variable set to the empty string gives the empty string, not the default. `$` is never an escape: `$${VAR}` is a `$` followed by the variable's value. A `QBT_RULES_*` variable for the setting still wins over the expanded value.
 
-**The schedule.** `schedule:` is a list of `{cron, context}` entries, so it has no single variable. Set it in the file, or with indexed variables, `QBT_RULES_SCHEDULE_<N>_CRON` and `QBT_RULES_SCHEDULE_<N>_CONTEXT` (each with a `_FILE` form), from `N=0` up; the first missing index ends the list. If any are set they replace the file's list entirely. See [Scheduling](Scheduling).
+**The schedule.** `schedule:` is a list of `{cron, context}` entries, so it has no single variable. Set it in the file, in a YAML file named by `QBT_RULES_SCHEDULE_FILE` (a list, for a ConfigMap mount), or with indexed variables, `QBT_RULES_SCHEDULE_<N>_CRON` and `QBT_RULES_SCHEDULE_<N>_CONTEXT` (each with a `_FILE` form), from `N=0` up. Entry `N` exists when either of its variables is set, and the first `N` with neither ends the list; one without the other is an error naming both. A variable past the end (`_2_CRON` with no `_1_*`) is ignored, with a warning. If any are set they replace the file's list entirely. See [Scheduling](Scheduling).
+
+**Unknown keys and variables warn.** A key in `config.yaml` that isn't a setting (`listne:`, a misspelt field in a schedule entry), and a `QBT_RULES_*` variable no setting reads, are ignored as before, and the server logs a warning at startup naming each, with the closest setting's name when there is one. `qbt-rules config` and `qbt-rules validate` print the same warnings.
 
 ## Settings
 
@@ -81,6 +83,7 @@ Generated from the code: don't edit the table, run `uv run scripts/gen-wiki.py`.
 | `logging.backup_count` | `QBT_RULES_LOGGING_BACKUP_COUNT` | `5` | Rotated log files to keep. |
 | `logging.trace_mode` | `QBT_RULES_LOGGING_TRACE_MODE` | `False` | Add module, function and line to each log line. |
 | `logging.http_access` | `QBT_RULES_LOGGING_HTTP_ACCESS` | `False` | Log every HTTP request (uvicorn's access log); off, none is logged. |
+| `schedule` | `QBT_RULES_SCHEDULE` | *(empty list)* | Jobs the built-in scheduler queues: a list of `{cron, context}` entries, from the file or a YAML file named by `QBT_RULES_SCHEDULE_FILE` (`QBT_RULES_SCHEDULE` itself is refused), or from `QBT_RULES_SCHEDULE_<N>_CRON` and `QBT_RULES_SCHEDULE_<N>_CONTEXT` (N from 0, each with a `_FILE` form), which replace the file's list. A list: YAML, or comma-separated. |
 <!-- generated:end settings -->
 
 `schedule` isn't in the table: see [the schedule](#where-configuration-comes-from) above and [Scheduling](Scheduling).

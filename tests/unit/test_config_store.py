@@ -198,6 +198,30 @@ class TestRedactedConfigView:
         assert by_path["server.port"]["line"] == 3
         assert "QBT_RULES_QBITTORRENT_PASSWORD_FILE" in by_path["qbittorrent.password"]["message"]
 
+    @pytest.mark.parametrize(
+        ("environ", "replaced_by"),
+        [
+            ({"QBT_RULES_SCHEDULE_0_CRON": "* * * * *"}, "QBT_RULES_SCHEDULE_<N>_*"),
+            ({"QBT_RULES_SCHEDULE_0_CRON_FILE": "/run/cron"}, "QBT_RULES_SCHEDULE_<N>_*"),
+            # interpose: item 0 exists when any of its variables is set, not only _CRON
+            ({"QBT_RULES_SCHEDULE_0_CONTEXT": "c"}, "QBT_RULES_SCHEDULE_<N>_*"),
+            ({"QBT_RULES_SCHEDULE_0_CONTEXT_FILE": "/run/c"}, "QBT_RULES_SCHEDULE_<N>_*"),
+            ({"QBT_RULES_SCHEDULE_FILE": "/run/schedule.yaml"}, "QBT_RULES_SCHEDULE_FILE"),
+            # Item 0 unset: the list is empty there, so item 1's variables replace nothing
+            ({"QBT_RULES_SCHEDULE_1_CRON": "* * * * *"}, None),
+            ({}, None),
+        ],
+    )
+    def test_schedule_override_is_reported(self, environ, replaced_by):
+        text = "schedule:\n  - {cron: '0 * * * *', context: hourly}\n"
+        issues = redacted_config_view(text, environ=environ)["issues"]
+        if replaced_by is None:
+            assert issues == []
+        else:
+            (issue,) = issues
+            assert (issue["path"], issue["line"]) == ("schedule", 1)
+            assert replaced_by in issue["message"]
+
     def test_syntax_error_shows_nothing(self):
         view = redacted_config_view("server: [\n  api_key: hunter2\n", environ={})
         assert view["content"] == ""

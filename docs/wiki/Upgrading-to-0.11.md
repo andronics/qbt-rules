@@ -118,3 +118,12 @@ Per platform:
 ## Rolling back
 
 Put the 0.10.x image tag back, with its old `/config` mount and command, and remove the 0.11 mounts. Because step 3 copied rather than moved, `/config` still holds the 0.10.x files as they were (the database without the jobs 0.11 ran). Rolling back from a later 0.11.x to 0.11.0 needs nothing but the tag.
+
+## From 0.11.1 to 0.11.2: the schedule on interpose, and configuration warnings
+
+0.11.2 reads `schedule` with interpose's list sections instead of its own loader. Nothing else in the configuration changes, `${VAR}` expansion included. What you may notice:
+
+- **A lone `QBT_RULES_SCHEDULE_<N>_CONTEXT` stops the server.** 0.11.1 ignored a `_CONTEXT` with no `_CRON` beside it; now the entry exists when either variable is set, and the missing one is an error naming both: `schedule[1].cron: QBT_RULES_SCHEDULE_1_CRON is not set, but QBT_RULES_SCHEDULE_1_CONTEXT is`. Set the `_CRON` or remove the `_CONTEXT`.
+- **New warnings at startup.** A key in `config.yaml` that isn't a setting, a `QBT_RULES_*` variable that no setting reads, a misspelt field in a schedule entry, and a schedule variable past the end of the list (`_3_CRON` with no `_2_*`) were ignored silently; they still are, but each is now logged as a warning, with the setting it probably meant. `qbt-rules config` and `qbt-rules validate` print them too.
+- **Schedule errors read differently.** They count entries from 0, as the variables do, and name the file or variable: `schedule[0].cron: a required field, not set (from /etc/qbt-rules/config.yaml)` where 0.11.1 said `schedule entry #1 has no 'cron'`. Anything that matched the old text needs updating.
+- **New:** `QBT_RULES_SCHEDULE_FILE` names a YAML file holding the whole list (for a ConfigMap or secret mount). Setting `QBT_RULES_SCHEDULE` itself is an error saying to use it.

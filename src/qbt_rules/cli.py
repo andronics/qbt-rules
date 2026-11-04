@@ -99,6 +99,8 @@ def show_config(config: ConfigOption = None) -> None:
     """Print the effective configuration and where each value came from. Secrets: set or unset."""
     cfg = _load(config)
     for setting in SETTINGS:
+        if setting.is_section:
+            continue  # the schedule, one line per item below
         shown = cfg.values.get(setting.key)
         if setting.secret:
             # Whether it is set, never its value (template-python v2.4.3). Set means set by
@@ -115,7 +117,7 @@ def show_config(config: ConfigOption = None) -> None:
             shown = "(unset)" if unset else f"{MASK} (set)"
         typer.echo(f"{setting.key} = {shown}  ({cfg.sources[setting.key]})")
     for i, entry in enumerate(cfg.schedule):
-        typer.echo(f"schedule[{i}] = {entry.cron} -> {entry.context}")
+        typer.echo(f"schedule[{i}] = {entry.cron} -> {entry.context}  ({cfg.sources['schedule']})")
     for problem in (*cfg.warnings, *cfg.problems):
         typer.echo(f"warning: {problem}", err=True)
 
@@ -142,7 +144,8 @@ def serve(config: ConfigOption = None) -> None:
     # so /api/health can say what's missing
     for problem in cfg.problems:
         logger.error(f"Configuration: {problem}")
-    # Deprecated spellings (the server.* aliases), each naming its replacement
+    # Deprecated spellings (the server.* aliases), each naming its replacement, and interpose's:
+    # an unknown key or variable, a schedule variable past the end of the list
     for warning in cfg.warnings:
         logger.warning(f"Configuration: {warning}")
     try:
