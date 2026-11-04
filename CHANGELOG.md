@@ -7,6 +7,18 @@ or PR title instead. See the wiki's Release-Process page.
 Releases up to 0.10.2 were written by the old tag-push release workflow, in the
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
 
+## [0.11.4](https://github.com/andronics/qbt-rules/compare/v0.11.3...v0.11.4) (2026-11-04)
+
+
+### 🐛 Bug Fixes
+
+* **validation:** report keys beside a $ref as an error ([#69](https://github.com/andronics/qbt-rules/issues/69)) ([f6daa06](https://github.com/andronics/qbt-rules/commit/f6daa06529549d87df00ad23b9113113f8b61dea))
+
+
+### 📚 Documentation
+
+* **design:** record 0006, a $ref with keys beside it is refused ([#67](https://github.com/andronics/qbt-rules/issues/67)) ([45f8e69](https://github.com/andronics/qbt-rules/commit/45f8e69eedbf0e9313ea1ac3fd9a3b9b6981785f))
+
 ## [0.11.3](https://github.com/andronics/qbt-rules/compare/v0.11.2...v0.11.3) (2026-11-04)
 
 
