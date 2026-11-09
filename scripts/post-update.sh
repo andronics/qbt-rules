@@ -1,7 +1,10 @@
 #!/bin/sh
 # Template-owned: template-base. After `copier update` (template-update.yml runs it, or
-# you do): base's own migrations, then every template's scripts/post-update.d/*.sh, in
-# name order (a lock refresh, say).
+# you do): base's own migrations, then every scripts/post-update.d/*.sh, in name order
+# (a lock refresh, say). Templates number theirs 00-89; a project adds its own as
+# 9N-project-<what>.sh, unmarked, so they run last (decision 0008). Every step must be
+# idempotent and cheap when nothing changed, and never push, tag or call GitHub: the
+# update PR carries what it changes. The first failing step stops the rest.
 # A step may assume sh, python3, git and uv, and in CI the runner image's tools
 # (unpinned, and maybe missing locally). A missing tool fails, naming it.
 set -eu

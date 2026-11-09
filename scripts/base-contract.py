@@ -11,6 +11,8 @@ workflow. It fails when:
   - a slot is missing (base expects it by a fixed name; the stack overlay fills it);
   - a template-owned file names a template with no answers file, or a workflow or
     drop-in doesn't carry its owner's prefix;
+  - a template-owned drop-in takes a project's name: `90`-`99` or `NN-project-*`
+    (decision 0008; an unmarked drop-in is the project's, whatever its name);
   - a composite file the stack overlay owns lacks an entry base depends on;
   - the project's .gitleaks.toml doesn't extend base's .gitleaks.base.toml (decision 0006);
   - the files every AI assistant session loads are over their context budget.
@@ -76,6 +78,8 @@ BUDGET = {
 MARKER = re.compile(r"Template-owned: template-([a-z0-9][a-z0-9-]*)")
 ANSWERS = re.compile(r"^\.copier-answers\.(stack-)?([a-z0-9][a-z0-9-]*)\.yml$")
 DROP_INS = ["scripts/checks.d", "scripts/post-update.d", "scripts/bootstrap.d"]
+# A project's own drop-ins (decision 0008): templates number theirs 00-89 and never say `project`.
+PROJECT_DROP_IN = re.compile(r"^(9\d-|\d+-project[-.])")
 
 
 def owners(root: Path, errors: list[str]) -> dict[str, bool]:
@@ -109,7 +113,9 @@ def check_owners(root: Path, found: dict[str, bool], errors: list[str]) -> None:
         rel = path.relative_to(root).as_posix()
         try:
             head = "\n".join(path.read_text(encoding="utf-8").splitlines()[:12])
-        except (UnicodeDecodeError, OSError):
+        except UnicodeDecodeError:  # one type per clause: ruff formats a bare tuple by target
+            continue
+        except OSError:
             continue
         match = MARKER.search(head)
         if not match:
@@ -121,10 +127,17 @@ def check_owners(root: Path, found: dict[str, bool], errors: list[str]) -> None:
                 f" which has no answers file (.copier-answers.*{owner}.yml)"
             )
             continue
+        drop_in = any(rel.startswith(d + "/") for d in DROP_INS)
+        if drop_in and PROJECT_DROP_IN.match(path.name):
+            errors.append(
+                f"error: {rel}: template-{owner}'s drop-in takes a project's name"
+                " (90-99 or NN-project-*, decision 0008): number it 00-89"
+            )
+            continue
         if owner == "base" or rel in SLOTS:
             continue
         name = path.name
-        if any(rel.startswith(d + "/") for d in DROP_INS):
+        if drop_in:
             name = re.sub(r"^\d+-", "", name)
             prefixed = name.startswith(owner + "-") or name == owner + ".sh"
         elif rel.startswith(".github/workflows/"):
