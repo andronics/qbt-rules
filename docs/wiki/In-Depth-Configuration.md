@@ -83,7 +83,7 @@ Generated from the code: don't edit the table, run `uv run scripts/gen-wiki.py`.
 | `logging.backup_count` | `QBT_RULES_LOGGING_BACKUP_COUNT` | `5` | Rotated log files to keep. |
 | `logging.trace_mode` | `QBT_RULES_LOGGING_TRACE_MODE` | `False` | Add module, function and line to each log line. |
 | `logging.http_access` | `QBT_RULES_LOGGING_HTTP_ACCESS` | `False` | Log every HTTP request (uvicorn's access log); off, none is logged. |
-| `schedule` | `QBT_RULES_SCHEDULE` | *(empty list)* | Jobs the built-in scheduler queues: a list of `{cron, context}` entries, from the file or a YAML file named by `QBT_RULES_SCHEDULE_FILE` (`QBT_RULES_SCHEDULE` itself is refused), or from `QBT_RULES_SCHEDULE_<N>_CRON` and `QBT_RULES_SCHEDULE_<N>_CONTEXT` (N from 0, each with a `_FILE` form), which replace the file's list. A list: YAML, or comma-separated. |
+| `schedule` | `QBT_RULES_SCHEDULE_FILE`, or `QBT_RULES_SCHEDULE_<N>_<FIELD>` | *(empty list)* | Jobs the built-in scheduler queues: a list of `{cron, context}` entries, from the file or a YAML file named by `QBT_RULES_SCHEDULE_FILE` (`QBT_RULES_SCHEDULE` itself is refused), or from `QBT_RULES_SCHEDULE_<N>_CRON` and `QBT_RULES_SCHEDULE_<N>_CONTEXT` (N from 0, each with a `_FILE` form), which replace the file's list. A list of sections: YAML, from the config file or the `_FILE` variable's file. Or item N's fields as indexed variables, N from 0, each with a `_FILE`. |
 <!-- generated:end settings -->
 
 `schedule` isn't in the table: see [the schedule](#where-configuration-comes-from) above and [Scheduling](Scheduling).

@@ -26,3 +26,11 @@ What becomes easier or harder. Migration, rollout and rollback. Which wiki pages
 ## Open questions
 
 What the reviewer must answer before this is approved, each with the author's recommendation and why.
+
+## Change log
+
+Each amendment after approval, as one dated row. A change to the decision itself is a new record.
+
+| Date | Change |
+|---|---|
+| YYYY-MM-DD | What changed, and why |
