@@ -10,7 +10,7 @@ dependencies = [
     "interpose @ git+https://github.com/metalayerlab/interpose@v0.4.1",
     "pyyaml>=6.0",
     "typer>=0.15",
-    "fastapi>=0.115",
+    "fastapi>=0.165.0",
     "uvicorn>=0.34",
     # The dashboard's templates (Jinja2Templates), and the signed session cookie
     # (Starlette's SessionMiddleware)
